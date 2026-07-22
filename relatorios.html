@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Relatórios</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <style>
+    .report-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--spacing-md) }
+    .report-card { background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:var(--spacing-xl);cursor:pointer;transition:all var(--transition-fast);text-align:center }
+    .report-card:hover { border-color:var(--prontidao-color);transform:translateY(-2px);box-shadow:var(--shadow-md) }
+    .report-icon { font-size:2.5rem;margin-bottom:var(--spacing-md) }
+    .report-title { font-size:1rem;font-weight:600;margin-bottom:var(--spacing-xs) }
+    .report-desc { font-size:0.85rem;color:var(--text-secondary) }
+    .report-preview { background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:var(--spacing-xl);margin-top:var(--spacing-xl) }
+    .report-date-selector { display:flex;gap:var(--spacing-md);align-items:center;margin-bottom:var(--spacing-xl);flex-wrap:wrap }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+      <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-xl)">Relatórios</h2>
+
+      <div class="report-date-selector">
+        <div class="input-group"><label class="input-label">Data</label><input class="input" type="date" id="reportDate"></div>
+        <button class="btn btn-primary btn-sm" id="loadBtn" style="margin-top:auto">Carregar</button>
+      </div>
+
+      <div class="report-grid">
+        <div class="report-card" data-tipo="resumo">
+          <div class="report-icon">-</div>
+          <div class="report-title">Resumo do Dia</div>
+          <div class="report-desc">Visão geral do serviço</div>
+        </div>
+        <div class="report-card" data-tipo="prontidao">
+          <div class="report-icon">-</div>
+          <div class="report-title">Resumo da Prontidão</div>
+          <div class="report-desc">Estatísticas da prontidão</div>
+        </div>
+        <div class="report-card" data-tipo="historico">
+          <div class="report-icon">-</div>
+          <div class="report-title">Histórico</div>
+          <div class="report-desc">Todos os eventos do dia</div>
+        </div>
+        <div class="report-card" data-tipo="timeline">
+          <div class="report-icon">-</div>
+          <div class="report-title">Linha do Tempo</div>
+          <div class="report-desc">Cronologia de eventos</div>
+        </div>
+        <div class="report-card" data-tipo="telegrafia">
+          <div class="report-icon">-</div>
+          <div class="report-title">Telegrafia</div>
+          <div class="report-desc">Controle de operadores</div>
+        </div>
+        <div class="report-card" data-tipo="oficiais">
+          <div class="report-icon">-</div>
+          <div class="report-title">Oficiais</div>
+          <div class="report-desc">Controle de entrada/saída</div>
+        </div>
+        <div class="report-card" data-tipo="ocorrencias">
+          <div class="report-icon">-</div>
+          <div class="report-title">Ocorrências</div>
+          <div class="report-desc">Registro de ocorrências atendidas</div>
+        </div>
+        <div class="report-card" data-tipo="auditoria">
+          <div class="report-icon">-</div>
+          <div class="report-title">Auditoria</div>
+          <div class="report-desc">Log de todas as ações</div>
+        </div>
+        <div class="report-card" data-tipo="pdf">
+          <div class="report-icon">-</div>
+          <div class="report-title">PDF Completo</div>
+          <div class="report-desc">Relatório em PDF para impressão</div>
+        </div>
+      </div>
+
+      <div class="report-preview" id="reportPreview" style="display:none">
+        <div id="reportContent"></div>
+      </div>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!Auth.requireAuth()) return;
+      if (!Auth.canTela('relatorios', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+      NAV.init('relatorios');
+
+      const reportDate = document.getElementById('reportDate');
+      const loadBtn = document.getElementById('loadBtn');
+      const preview = document.getElementById('reportPreview');
+      const content = document.getElementById('reportContent');
+
+      reportDate.value = new Date().toISOString().split('T')[0];
+
+      loadBtn.addEventListener('click', () => {
+        generate(reportDate.value);
+      });
+
+      document.querySelectorAll('.report-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const tipo = card.dataset.tipo;
+          if (tipo === 'pdf') {
+            downloadPDF();
+          } else {
+            generate(tipo);
+          }
+        });
+      });
+
+      async function generate(tipo) {
+        const date = reportDate.value;
+        preview.style.display = 'block';
+        content.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+
+        try {
+          const data = await API.getRelatorio(tipo, { data: date });
+          content.innerHTML = renderReport(tipo, data);
+        } catch (e) {
+          content.innerHTML = '<div class="empty-state"><p>Erro ao gerar relatório</p></div>';
+        }
+      }
+
+      function renderReport(tipo, data) {
+        if (!data) return '<div class="empty-state"><p>Sem dados para esta data</p></div>';
+
+        const titles = {
+          resumo: 'Resumo do Dia', prontidao: 'Resumo da Prontidão', historico: 'Histórico Completo',
+          timeline: 'Linha do Tempo', telegrafia: 'Telegrafia', oficiais: 'Oficiais', ocorrencias: 'Ocorrências',
+          auditoria: 'Auditoria', pdf: 'Relatório PDF'
+        };
+
+        let html = '<h3 style="margin-bottom:var(--spacing-md)">' + (titles[tipo] || tipo) + '</h3>';
+
+        if (data.servico) {
+          html += '<p style="color:var(--text-secondary)">Data: ' + (data.servico.data || '-') + ' | Prontidão: ' + (data.servico.prontidao || '-') + ' | Comandante: ' + (data.servico.comandante || '-') + '</p>';
+        }
+
+        if (tipo === 'ocorrencias' && data.ocorrencias && data.ocorrencias.length > 0) {
+          const statusCores = { em_andamento: '#ff9100', finalizada: '#00c853', cancelada: '#9e9e9e' };
+          const statusLabels = { em_andamento: 'Em andamento', finalizada: 'Finalizada', cancelada: 'Cancelada' };
+          const corCores = { verde: '#00c853', amarela: '#ffd600', azul: '#2979ff', branca: '#ffffff' };
+          html += '<table style="width:100%;border-collapse:collapse;margin-top:var(--spacing-md)">';
+          html += '<thead><tr style="border-bottom:1px solid var(--border-color)">';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Nº</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Título</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Viatura(s)</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Efetivo</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Acionamento</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Retorno</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Status</th>';
+          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Prontidão</th>';
+          html += '</tr></thead><tbody>';
+          data.ocorrencias.forEach(o => {
+            const st = o.status || 'em_andamento';
+            html += '<tr style="border-bottom:1px solid var(--border-light)">';
+            html += '<td style="padding:8px;font-size:0.85rem">' + (o.numero || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.titulo || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.viaturaNomes || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.efetivo || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem">' + (o.horaAcionamento || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem">' + (o.horaRetorno || '-') + '</td>';
+            html += '<td style="padding:8px;font-size:0.85rem"><span style="padding:2px 8px;border-radius:20px;font-size:0.75rem;font-weight:600;background:' + (statusCores[st] || '#9e9e9e') + '22;color:' + (statusCores[st] || '#9e9e9e') + '">' + (statusLabels[st] || st) + '</span></td>';
+            html += '<td style="padding:8px;font-size:0.85rem"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:' + (corCores[o.prontidaoCor] || '#9e9e9e') + ';vertical-align:middle"></span></td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          const total = data.ocorrencias.length;
+          const finalizadas = data.ocorrencias.filter(o => o.status === 'finalizada').length;
+          const emAndamento = data.ocorrencias.filter(o => o.status === 'em_andamento').length;
+          html += '<p style="margin-top:12px;font-size:0.85rem;color:var(--text-secondary)">Total: ' + total + ' ocorrências | Finalizadas: ' + finalizadas + ' | Em andamento: ' + emAndamento + '</p>';
+        }
+
+        if (tipo === 'timeline' && data.itens && data.itens.length > 0) {
+          const ocorrencias = data.ocorrencias || [];
+          if (ocorrencias.length > 0) {
+            html += '<div style="margin-top:var(--spacing-md);padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md)">';
+            html += '<h4 style="margin-bottom:8px;font-size:0.9rem;color:var(--prontidao-color)">Ocorrências do Dia</h4>';
+            ocorrencias.forEach(o => {
+              html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem">';
+              html += '<span style="color:var(--text-muted)">' + (o.horaAcionamento || '') + '</span>';
+              html += '<span style="font-weight:600">' + Utils.escapeHtml(o.titulo || '') + '</span>';
+              html += '<span style="color:var(--text-muted)">—</span>';
+              html += '<span>' + Utils.escapeHtml(o.efetivo || '') + '</span>';
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+        }
+
+        if (data.itens && data.itens.length > 0) {
+          html += '<table style="width:100%;border-collapse:collapse;margin-top:var(--spacing-md)">';
+          html += '<thead><tr style="border-bottom:1px solid var(--border-color)">';
+          Object.keys(data.itens[0]).forEach(k => { html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">' + k + '</th>'; });
+          html += '</tr></thead><tbody>';
+          data.itens.forEach(item => {
+            html += '<tr style="border-bottom:1px solid var(--border-light)">';
+            Object.values(item).forEach(v => { html += '<td style="padding:8px;font-size:0.85rem">' + (v || '-') + '</td>'; });
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        }
+
+        return html;
+      }
+
+      async function downloadPDF() {
+        Utils.showToast('Gerando PDF...', 'info');
+        try {
+          const date = reportDate.value;
+          const data = await API.getRelatorio('pdf', { data: date });
+          if (data && data.url) {
+            window.open(data.url, '_blank');
+          } else {
+            Utils.showToast('PDF não disponível', 'warning');
+          }
+        } catch (e) {
+          Utils.showToast('Erro ao gerar PDF', 'error');
+        }
+      }
+    });
+  </script>
+</body>
+</html>

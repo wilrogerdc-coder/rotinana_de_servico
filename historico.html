@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Dashboard Histórico</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <style>
+    .hist-date-bar{display:flex;gap:16px;align-items:end;margin-bottom:24px;flex-wrap:wrap}
+    .hist-date-bar .input-group{min-width:200px}
+    .hist-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+    .hist-stat{background:var(--bg-card);border:1px solid var(--border-light);border-radius:12px;padding:16px;text-align:center}
+    .hist-stat-value{font-size:1.8rem;font-weight:700;color:var(--prontidao-color);font-family:var(--font-mono)}
+    .hist-stat-label{font-size:0.8rem;color:var(--text-muted);margin-top:4px}
+    @media (max-width: 768px) {
+      .hist-date-bar{flex-direction:column;align-items:stretch}
+      .hist-date-bar .input-group{min-width:auto;width:100%}
+      .hist-summary{grid-template-columns:repeat(2,1fr)}
+      .hist-stat-value{font-size:1.4rem}
+    }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="hist-date-bar">
+      <div class="input-group">
+        <label class="input-label">Data do Serviço</label>
+        <input class="input" type="date" id="histDate">
+      </div>
+      <button class="btn btn-primary" onclick="Historico.load()">Carregar</button>
+    </div>
+
+    <div id="histContent" style="display:none">
+      <div class="hist-summary" id="histSummary"></div>
+
+      <div class="dashboard-grid" style="grid-template-columns:1fr 1fr">
+        <div class="dash-card">
+          <div class="dash-card-header"><span class="dash-card-title">Resumo do Serviço</span></div>
+          <div id="histServico"></div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header"><span class="dash-card-title">Telegrafia</span></div>
+          <div id="histTelegrafia"></div>
+        </div>
+
+        <div class="dash-card" style="grid-column:1/-1">
+          <div class="dash-card-header"><span class="dash-card-title">Atividades</span></div>
+          <div id="histRotina"></div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header"><span class="dash-card-title">Oficiais</span></div>
+          <div id="histOficiais"></div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header"><span class="dash-card-title">Linha do Tempo</span></div>
+          <div id="histTimeline"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="histEmpty" class="empty-state" style="padding:80px 0">
+      <p style="font-size:1.1rem;color:var(--text-muted)">Selecione uma data para visualizar o histórico</p>
+    </div>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const Historico = {
+      async init() {
+        if (!Auth.requireAuth()) return;
+        if (!Auth.canTela('historico', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+        NAV.init('historico');
+        document.getElementById('histDate').value = new Date().toISOString().split('T')[0];
+      },
+
+      async load() {
+        const date = document.getElementById('histDate').value;
+        if (!date) { Utils.showToast('Selecione uma data', 'warning'); return; }
+
+        try {
+          const data = await API.getHistorico(date);
+          if (!data || !data.servico) {
+            document.getElementById('histContent').style.display = 'none';
+            document.getElementById('histEmpty').style.display = 'block';
+            document.getElementById('histEmpty').innerHTML = '<p style="font-size:1.1rem;color:var(--text-muted)">Nenhum serviço registrado nesta data</p>';
+            return;
+          }
+
+          document.getElementById('histEmpty').style.display = 'none';
+          document.getElementById('histContent').style.display = 'block';
+
+          NAV.updateProntidao(data.servico.prontidao);
+          this.renderSummary(data);
+          this.renderServico(data.servico);
+          this.renderTelegrafia(data.telegrafia || []);
+          this.renderRotina(data.rotina || []);
+          this.renderOficiais(data.oficiais || [], data.entradas || []);
+          this.renderTimeline(data.rotina || []);
+        } catch (e) {
+          Utils.showToast('Erro ao carregar: ' + e.message, 'error');
+        }
+      },
+
+      renderSummary(data) {
+        const rotina = data.rotina || [];
+        const concluidas = rotina.filter(a => a.status === 'concluida').length;
+        const telegrafia = data.telegrafia || [];
+        const el = document.getElementById('histSummary');
+        el.innerHTML = `
+          <div class="hist-stat"><div class="hist-stat-value">${rotina.length}</div><div class="hist-stat-label">Atividades</div></div>
+          <div class="hist-stat"><div class="hist-stat-value">${concluidas}</div><div class="hist-stat-label">Concluídas</div></div>
+          <div class="hist-stat"><div class="hist-stat-value">${rotina.length - concluidas}</div><div class="hist-stat-label">Pendentes</div></div>
+          <div class="hist-stat"><div class="hist-stat-value">${telegrafia.length}</div><div class="hist-stat-label">Trocas Telegrafia</div></div>
+          <div class="hist-stat"><div class="hist-stat-value">${(data.servico.prontidao || '-').charAt(0).toUpperCase()}</div><div class="hist-stat-label">Prontidão</div></div>
+        `;
+      },
+
+      renderServico(s) {
+        document.getElementById('histServico').innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Data</span><div style="font-weight:500">${s.data || '-'}</div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Prontidão</span><div><span class="badge badge-green">${(s.prontidao || '-').toUpperCase()}</span></div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Comandante</span><div style="font-weight:500">${Utils.escapeHtml(s.comandanteNome || s.comandante || '-')}</div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Horário Início</span><div style="font-family:var(--font-mono)">${s.horarioInicio || s.inicio || '-'}</div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Status</span><div><span class="badge ${s.Status === 'encerrado' ? 'badge-info' : 'badge-green'}">${s.Status || 'ativo'}</span></div></div>
+          </div>
+        `;
+      },
+
+      renderTelegrafia(items) {
+        const el = document.getElementById('histTelegrafia');
+        if (items.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem registros</p>'; return; }
+        el.innerHTML = items.map(t => `
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light)">
+            <span>${Utils.escapeHtml(t.operador || '-')}</span>
+            <span style="font-family:var(--font-mono);color:var(--prontidao-color)">${t.horario || '-'} → ${t.horarioSaida || '-'}</span>
+            <span style="color:var(--text-muted);font-size:0.85rem">${t.duracao || '-'}</span>
+          </div>
+        `).join('');
+      },
+
+      renderRotina(items) {
+        const el = document.getElementById('histRotina');
+        if (items.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem atividades</p>'; return; }
+
+        const badge = (s) => {
+          const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Não realizada</span>' };
+          return m[s] || m.nao_iniciada;
+        };
+
+        el.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">` + items.map(a => `
+          <div style="display:grid;grid-template-columns:80px 1fr auto auto;gap:12px;padding:10px;background:var(--bg-secondary);border-radius:8px;align-items:center">
+            <span style="font-family:var(--font-mono);font-weight:600;color:var(--prontidao-color)">${a.horario}</span>
+            <span style="font-weight:500">${Utils.escapeHtml(a.nome)}</span>
+            <span style="font-size:0.85rem;color:var(--text-secondary)">${Utils.escapeHtml(a.concluidoPor || '-')}</span>
+            ${badge(a.status)}
+          </div>
+        `).join('') + '</div>';
+      },
+
+      renderOficiais(oficiais, entradas) {
+        const el = document.getElementById('histOficiais');
+        if (!oficiais || oficiais.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem registros</p>'; return; }
+        el.innerHTML = oficiais.map(o => {
+          const entrada = (entradas || []).filter(e => e.oficialId === o.id && e.tipo === 'entrada').pop();
+          const saida = (entradas || []).filter(e => e.oficialId === o.id && e.tipo === 'saida').pop();
+          return `
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light)">
+              <span style="font-weight:500">${Utils.escapeHtml(o.nome)}</span>
+              <span style="color:var(--text-muted);font-size:0.85rem">${Utils.escapeHtml(o.posto || '')}</span>
+              <span style="font-family:var(--font-mono);font-size:0.85rem">${entrada ? entrada.horario : '-'} → ${saida ? saida.horario : '-'}</span>
+            </div>
+          `;
+        }).join('');
+      },
+
+      renderTimeline(items) {
+        const el = document.getElementById('histTimeline');
+        const done = items.filter(a => a.status === 'concluida');
+        if (done.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem eventos</p>'; return; }
+        el.innerHTML = `<div class="timeline">` + done.map(a => `
+          <div class="timeline-item">
+            <div class="timeline-time">${a.horaConclusao || a.horario}</div>
+            <div class="timeline-content">${Utils.escapeHtml(a.nome)}</div>
+          </div>
+        `).join('') + '</div>';
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => Historico.init());
+  </script>
+</body>
+</html>

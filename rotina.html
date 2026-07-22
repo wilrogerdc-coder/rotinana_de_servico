@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Rotina</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <style>
+    .rotina-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+    .rotina-filters{display:flex;gap:8px}
+    .filter-btn{padding:8px 16px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:0.85rem;cursor:pointer;transition:all 150ms}
+    .filter-btn.active{background:var(--prontidao-dim);border-color:var(--prontidao-color);color:var(--prontidao-color)}
+    .atividade-row{display:grid;grid-template-columns:80px 1fr 1fr auto;align-items:center;gap:16px;padding:14px 20px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 150ms}
+    .atividade-row:hover{border-color:var(--prontidao-color);background:var(--bg-card-hover)}
+    .atividade-row.done{opacity:0.5}
+    .atividade-h{font-family:var(--font-mono);font-weight:700;font-size:1.1rem;color:var(--prontidao-color)}
+    .prontidao-grid{display:flex;gap:16px;justify-content:center;margin:32px 0}
+    .prontidao-opt{width:110px;height:110px;border-radius:16px;border:3px solid var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all 200ms;background:var(--bg-card)}
+    .prontidao-opt:hover{transform:scale(1.05)}
+    .prontidao-opt.selected{border-color:var(--prontidao-color);box-shadow:0 0 24px var(--prontidao-glow)}
+    .prontidao-opt[data-c="verde"] .pd{background:#00c853}.prontidao-opt[data-c="verde"] .pl{color:#00c853}
+    .prontidao-opt[data-c="amarela"] .pd{background:#ffd600}.prontidao-opt[data-c="amarela"] .pl{color:#ffd600}
+    .prontidao-opt[data-c="azul"] .pd{background:#2979ff}.prontidao-opt[data-c="azul"] .pl{color:#2979ff}
+    .prontidao-opt[data-c="branca"] .pd{background:#e0e0e0}.prontidao-opt[data-c="branca"] .pl{color:#e0e0e0}
+    .pd{width:44px;height:44px;border-radius:50%;margin-bottom:8px}
+    .pl{font-size:0.85rem;font-weight:600}
+    @media(max-width:768px){.atividade-row{grid-template-columns:60px 1fr;gap:8px}.atividade-row>*:nth-child(3),.atividade-row>*:nth-child(4){grid-column:2}}
+    .militar-check{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:10px;cursor:pointer;transition:all 150ms}
+    .militar-check:hover{border-color:var(--prontidao-color);background:var(--bg-card-hover)}
+    .militar-check.selected{border-color:var(--accent-green);background:rgba(0,200,83,0.05)}
+    .militar-check input[type="checkbox"]{width:18px;height:18px;accent-color:var(--accent-green);cursor:pointer;flex-shrink:0}
+    .militar-check-info{flex:1;min-width:0}
+    .militar-check-name{font-weight:500;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .militar-check-detail{font-size:0.78rem;color:var(--text-muted)}
+    .equipe-tag{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:0.82rem;font-weight:500;background:var(--accent-green-dim);color:var(--accent-green);border:1px solid rgba(0,200,83,0.3)}
+    .equipe-tag.avulso{background:var(--accent-yellow-dim);color:var(--accent-yellow);border-color:rgba(255,214,0,0.3)}
+    .equipe-tag button{background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;padding:0 0 0 2px;opacity:0.7;line-height:1}
+    .equipe-tag button:hover{opacity:1}
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div id="iniciarPanel" style="display:none">
+      <div style="max-width:800px;margin:0 auto;padding:24px 0">
+        <div style="text-align:center;margin-bottom:32px">
+          <h2 style="font-size:1.5rem;font-weight:700;margin-bottom:8px">Iniciar Novo Serviço</h2>
+          <p style="color:var(--text-secondary)">Configure a equipe e inicie o plantão</p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:24px">
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">1</span> Posto de Serviço
+            </h3>
+            <div class="input-group" style="max-width:500px">
+              <label class="input-label">Selecione o posto que realizará o serviço</label>
+              <select class="input select" id="postoServicoSelect" onchange="Rotina.selectPostoServico(this.value)"><option value="">Selecione o posto de serviço</option></select>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">Apenas um serviço ativo é permitido por posto por dia</p>
+          </div>
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">2</span> Integrantes do Serviço
+            </h3>
+
+            <div style="display:flex;gap:8px;margin-bottom:16px">
+              <input class="input" id="equipeSearch" placeholder="Buscar por nome ou posto..." oninput="Rotina.filterMilitares()" style="flex:1">
+              <button class="btn btn-secondary btn-sm" onclick="Rotina.selectAllMilitares()" id="selectAllBtn">Selecionar Todos</button>
+            </div>
+
+            <div id="militaresChecklist" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:16px"></div>
+
+            <div class="divider" style="margin:16px 0"></div>
+
+            <h4 style="font-size:0.9rem;font-weight:600;margin-bottom:12px;color:var(--text-secondary)">Adicionar Avulso (sem cadastro)</h4>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+              <div class="input-group" style="flex:2;min-width:180px;margin:0">
+                <label class="input-label">Nome</label>
+                <input class="input" id="avulsoNome" placeholder="Nome completo">
+              </div>
+              <div class="input-group" style="flex:1;min-width:120px;margin:0">
+                <label class="input-label">Posto</label>
+                <input class="input" id="avulsoPosto" placeholder="Ex: Soldado">
+              </div>
+              <div class="input-group" style="flex:1;min-width:120px;margin:0">
+                <label class="input-label">RE/CPF</label>
+                <input class="input" id="avulsoRe" placeholder="Opcional">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="Rotina.addAvulso()" style="height:42px;margin-bottom:0">+ Adicionar</button>
+            </div>
+
+            <div style="margin-top:16px">
+              <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px">
+                Selecionados: <strong id="equipeCount">0</strong> integrante(s)
+              </div>
+              <div id="equipeSelecionados" style="display:flex;flex-direction:column;gap:4px"></div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">3</span> Comandante do Serviço
+            </h3>
+            <div class="input-group" style="max-width:400px">
+              <select class="input select" id="comandanteSelect"><option value="">Selecione o comandante</option></select>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">Apenas integrantes selecionados aparecem nesta lista</p>
+          </div>
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">4</span> Cor da Prontidão
+            </h3>
+            <div class="prontidao-grid" style="margin:16px 0">
+              <div class="prontidao-opt" data-c="verde" onclick="Rotina.selectProntidao('verde')"><div class="pd"></div><span class="pl">Verde</span></div>
+              <div class="prontidao-opt" data-c="amarela" onclick="Rotina.selectProntidao('amarela')"><div class="pd"></div><span class="pl">Amarela</span></div>
+              <div class="prontidao-opt" data-c="azul" onclick="Rotina.selectProntidao('azul')"><div class="pd"></div><span class="pl">Azul</span></div>
+              <div class="prontidao-opt" data-c="branca" onclick="Rotina.selectProntidao('branca')"><div class="pd"></div><span class="pl">Branca</span></div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">5</span> Viaturas do Serviço
+            </h3>
+            <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px">Selecione as viaturas que participarão do serviço e designe motorista e tripulantes</p>
+            <div id="viaturasChecklist" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:16px"></div>
+            <div id="viaturasDetalhes" style="display:flex;flex-direction:column;gap:12px"></div>
+            <div id="viaturasSelecionadas" style="margin-top:12px"></div>
+          </div>
+
+          <div class="card" style="padding:24px">
+            <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--prontidao-color)">6</span> Operador de Telegrafia
+            </h3>
+            <div class="input-group" style="max-width:400px">
+              <label class="input-label">Selecione o operador de telegrafia do serviço</label>
+              <select class="input select" id="telegrafistaSelect"><option value="">Nenhum</option></select>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">Opcional — pode ser alterado durante o serviço</p>
+          </div>
+
+          <div style="text-align:center;padding:8px 0">
+            <button class="btn btn-primary btn-lg" onclick="Rotina.confirmarInicio()" style="min-width:280px">Iniciar Serviço</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="rotinaView" style="display:none">
+      <div class="rotina-toolbar">
+        <div><h2 style="font-size:1.3rem;font-weight:700">Rotina do Dia</h2><p style="color:var(--text-secondary);font-size:0.85rem" id="rotinaDate"></p></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="rotina-filters">
+            <button class="filter-btn active" data-f="todos" onclick="Rotina.filter('todos')">Todos</button>
+            <button class="filter-btn" data-f="pendente" onclick="Rotina.filter('pendente')">Pendentes</button>
+            <button class="filter-btn" data-f="concluida" onclick="Rotina.filter('concluida')">Concluídos</button>
+            <button class="filter-btn" data-f="prejudicada" onclick="Rotina.filter('prejudicada')">Prejudicadas</button>
+          </div>
+          <div style="position:relative">
+            <button class="btn btn-primary btn-sm" onclick="Rotina.showExtraModal()">+ Adicionar</button>
+          </div>
+        </div>
+      </div>
+      <div id="rotinaList"></div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="atividadeModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header"><h3 class="modal-title" id="modalTitle">Atividade</h3><button class="btn btn-ghost btn-icon" onclick="Rotina.closeModal()">✕</button></div>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="extraModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header"><h3 class="modal-title" id="extraModalTitle">Atividade Avulsa</h3><button class="btn btn-ghost btn-icon" onclick="Rotina.closeExtraModal()">✕</button></div>
+      <form id="extraForm" onsubmit="Rotina.saveExtra(event)">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="input-group"><label class="input-label">Nome</label><input class="input" id="extraNome" required placeholder="Nome da atividade"></div>
+          <div class="input-group"><label class="input-label">Horário</label><input class="input" type="time" id="extraHorario" required></div>
+          <div class="input-group"><label class="input-label">Programa</label>
+            <select class="input select" id="extraPrograma" onchange="Rotina.toggleProgramaManual()">
+              <option value="">Selecione</option>
+            </select>
+            <input class="input" id="extraProgramaManual" placeholder="Digite o programa" style="display:none;margin-top:6px">
+          </div>
+          <div class="input-group"><label class="input-label">Responsável</label>
+            <select class="input select" id="extraResp" onchange="Rotina.toggleRespManual()">
+              <option value="">Selecione</option>
+            </select>
+            <input class="input" id="extraRespManual" placeholder="Digite o nome do responsável" style="display:none;margin-top:6px">
+          </div>
+          <div class="input-group"><label class="input-label">Observação</label><textarea class="input" id="extraObs" rows="2"></textarea></div>
+          <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="extraNotificar" checked><label for="extraNotificar" style="font-size:0.85rem;color:var(--text-secondary)">Emitir notificação</label></div>
+          <input type="hidden" id="extraEditId" value="">
+          <button type="submit" class="btn btn-primary btn-block" id="extraSubmitBtn">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/rotina.js"></script>
+</body>
+</html>

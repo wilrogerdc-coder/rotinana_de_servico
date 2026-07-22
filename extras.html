@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Atividades Extras</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <style>
+    .extras-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-xl);flex-wrap:wrap;gap:var(--spacing-md)}
+    .extra-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:var(--spacing-lg);margin-bottom:var(--spacing-md);transition:all var(--transition-fast)}
+    .extra-card:hover{border-color:var(--prontidao-color)}
+    .extra-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--spacing-sm)}
+    .extra-card-horario{font-family:var(--font-mono);font-weight:600;color:var(--prontidao-color);font-size:1.1rem}
+    .extra-card-nome{font-weight:600;font-size:1rem}
+    .extra-card-meta{font-size:0.85rem;color:var(--text-secondary);margin-top:4px}
+    .extra-card-obs{font-size:0.85rem;color:var(--text-muted);margin-top:var(--spacing-sm);padding:var(--spacing-sm);background:var(--bg-secondary);border-radius:var(--radius-sm)}
+    @media (max-width: 768px) {
+      .extras-header{flex-direction:column;align-items:stretch}
+      .extra-card{padding:var(--spacing-md)}
+      .extra-card-horario{font-size:0.95rem}
+      .extra-card-nome{font-size:0.9rem}
+    }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="extras-header">
+      <div><h2 style="font-size:1.3rem;font-weight:700">Atividades Extras</h2><p style="color:var(--text-secondary);font-size:0.85rem">Atividades inseridas durante o plantão</p></div>
+      <button class="btn btn-primary" onclick="Extras.showModal()">+ Nova Atividade Extra</button>
+    </div>
+    <div id="extrasList"></div>
+  </main>
+
+  <div class="modal-overlay" id="extraModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header"><h3 class="modal-title">Nova Atividade Extra</h3><button class="btn btn-ghost btn-icon" onclick="Extras.closeModal()">✕</button></div>
+      <form id="extraForm" onsubmit="Extras.save(event)">
+        <div style="display:flex;flex-direction:column;gap:var(--spacing-md)">
+          <div class="input-group"><label class="input-label">Nome</label><input class="input" type="text" id="extraNome" required placeholder="Nome da atividade"></div>
+          <div class="input-group"><label class="input-label">Horário</label><input class="input" type="time" id="extraHorario" required></div>
+          <div class="input-group"><label class="input-label">Responsável</label><select class="input select" id="extraResp"><option value="">Selecione</option></select></div>
+          <div class="input-group"><label class="input-label">Observação</label><textarea class="input" id="extraObs" rows="2"></textarea></div>
+          <div style="display:flex;align-items:center;gap:var(--spacing-sm)"><input type="checkbox" id="extraNotificar" checked><label for="extraNotificar" style="font-size:0.85rem;color:var(--text-secondary)">Emitir notificação</label></div>
+          <button type="submit" class="btn btn-primary btn-block">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const Extras = {
+      servico: null, extras: [], militares: [],
+
+      async init() {
+        if (!Auth.requireAuth()) return;
+        if (!Auth.canTela('extras', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+        NAV.init('extras');
+        await this.load();
+      },
+
+      async load() {
+        try {
+          const data = await API.getServicoAtual(Auth.userId);
+          if (!data?.servico) return;
+          this.servico = data.servico;
+          NAV.updateProntidao(data.servico.prontidao);
+          this.extras = data.extras || [];
+          this.militares = data.militares || [];
+          this.render();
+          Sync.on('extras_updated', (e) => { this.extras = e; this.render(); });
+          const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+          const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
+          Sync.start(this.servico.id, syncInterval);
+        } catch (e) { console.error(e); }
+      },
+
+      render() {
+        const el = document.getElementById('extrasList');
+        if (this.extras.length === 0) { el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">+</div><p>Nenhuma atividade extra registrada</p></div>'; return; }
+        el.innerHTML = this.extras.map(e => `
+          <div class="extra-card">
+            <div class="extra-card-header">
+              <div><div class="extra-card-nome">${Utils.escapeHtml(e.nome)}</div><div class="extra-card-meta">${Utils.escapeHtml(e.responsavel || '-')} | Criado por: ${Utils.escapeHtml(e.criadoPor || '-')}</div></div>
+              <div class="extra-card-horario">${e.horario}</div>
+            </div>
+            ${e.observacoes ? `<div class="extra-card-obs">${Utils.escapeHtml(e.observacoes)}</div>` : ''}
+            <div style="display:flex;gap:var(--spacing-sm);margin-top:var(--spacing-md)">
+              ${e.status !== 'concluida' ? `<button class="btn btn-primary btn-sm" onclick="Extras.concluir('${e.id}')">Concluir</button>` : '<span class="badge badge-green">Concluída</span>'}
+            </div>
+          </div>
+        `).join('');
+      },
+
+      showModal() {
+        const sel = document.getElementById('extraResp');
+        sel.innerHTML = '<option value="">Selecione</option>';
+        this.militares.forEach(m => { sel.innerHTML += `<option value="${m.id}">${m.nome}</option>`; });
+        document.getElementById('extraModal').style.display = 'flex';
+      },
+      closeModal() { document.getElementById('extraModal').style.display = 'none'; document.getElementById('extraForm').reset(); },
+
+      async save(e) {
+        e.preventDefault();
+        const dados = {
+          nome: document.getElementById('extraNome').value.trim(),
+          horario: document.getElementById('extraHorario').value,
+          responsavelId: document.getElementById('extraResp').value,
+          responsavel: this.militares.find(m => m.id === document.getElementById('extraResp').value)?.nome || '',
+          observacoes: document.getElementById('extraObs').value.trim(),
+          notificar: document.getElementById('extraNotificar').checked,
+          criadoPor: Auth.userName
+        };
+        try {
+          const result = await API.criarAtividadeExtra(this.servico.id, dados);
+          if (result.success) { Utils.showToast('Atividade extra criada', 'success'); Utils.playSound('nova-atividade'); this.closeModal(); await this.load(); }
+        } catch (e) { Utils.showToast('Erro ao criar', 'error'); }
+      },
+
+      async concluir(id) {
+        try {
+          const result = await API.updateAtividade(this.servico.id, id, { status: 'concluida', concluidoPor: Auth.userName, horaConclusao: Utils.formatTime(new Date()) });
+          if (result.success) { Utils.showToast('Atividade concluída', 'success'); await this.load(); }
+        } catch (e) { Utils.showToast('Erro', 'error'); }
+      }
+    };
+    document.addEventListener('DOMContentLoaded', () => Extras.init());
+  </script>
+</body>
+</html>

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Painel TV</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100vw; height: 100vh; overflow: hidden; }
+    body { background: var(--bg-primary); }
+
+    .tv-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 14px;
+      padding: 20px 28px;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .tv-header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+    }
+
+    .tv-logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .tv-logo img {
+      height: 52px;
+    }
+
+    .tv-logo-text {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--text-primary);
+    }
+
+    .tv-prontidao-badge {
+      display: inline-block;
+      margin-top: 2px;
+      padding: 4px 16px;
+      border-radius: var(--radius-xl);
+      background: var(--prontidao-dim);
+      color: var(--prontidao-color);
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .tv-clock {
+      text-align: right;
+    }
+
+    .tv-time {
+      font-family: var(--font-mono);
+      font-size: 2.6rem;
+      font-weight: 700;
+      color: var(--prontidao-color);
+      line-height: 1;
+    }
+
+    .tv-date {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .tv-countdown-section {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 14px 20px;
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-light);
+    }
+
+    .tv-countdown-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+
+    .tv-countdown-time {
+      font-family: var(--font-mono);
+      font-size: 3.2rem;
+      font-weight: 700;
+      color: var(--prontidao-color);
+      margin: 4px 0 6px;
+      line-height: 1;
+    }
+
+    .tv-progress {
+      width: 100%;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .tv-next-activity {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+      border: 1px solid var(--prontidao-color);
+      border-radius: var(--radius-lg);
+    }
+
+    .tv-next-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+
+    .tv-next-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 4px 0;
+      color: var(--text-primary);
+    }
+
+    .tv-next-time {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--prontidao-color);
+    }
+
+    .tv-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .tv-panel-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
+    }
+
+    .tv-timeline {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .tv-timeline-item {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .tv-timeline-time {
+      font-family: var(--font-mono);
+      color: var(--prontidao-color);
+      font-weight: 600;
+      min-width: 52px;
+      flex-shrink: 0;
+    }
+
+    .tv-militares-list {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .tv-militar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .tv-militar-item .avatar {
+      width: 32px;
+      height: 32px;
+      font-size: 0.7rem;
+    }
+
+    .tv-militar-name {
+      font-weight: 500;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .tv-militar-posto {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .tv-alerts {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .tv-alert-item {
+      padding: 8px 10px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+      color: var(--text-primary);
+      border-left: 3px solid var(--prontidao-color);
+    }
+
+    .tv-alert-time {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      margin-left: 6px;
+    }
+
+    .tv-telegrafia-section {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 60px;
+      padding: 12px 20px;
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-light);
+    }
+
+    .tv-tele-item {
+      text-align: center;
+    }
+
+    .tv-tele-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .tv-tele-value {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--prontidao-color);
+    }
+
+    .tv-tele-name {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin: 3px 0;
+      color: var(--text-primary);
+    }
+
+    .tv-empty {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 16px;
+      font-size: 0.8rem;
+    }
+
+    @keyframes tvFadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="tv-layout">
+    <div class="tv-header">
+      <div class="tv-logo">
+        <img src="assets/logos/bombeiros.svg" alt="CBPMESP" id="tvLogo">
+        <div>
+          <div class="tv-logo-text">SGPO</div>
+          <div class="tv-prontidao-badge" id="tvProntidao">PRONTIDAO VERDE</div>
+        </div>
+      </div>
+      <div class="tv-clock">
+        <div class="tv-time" id="tvTime">00:00:00</div>
+        <div class="tv-date" id="tvDate"></div>
+      </div>
+    </div>
+
+    <div class="tv-countdown-section">
+      <div class="tv-countdown-label">Tempo Restante do Plantao</div>
+      <div class="tv-countdown-time" id="tvCountdown">00:00:00</div>
+      <div class="tv-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" id="tvProgress" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tv-next-activity" id="tvNextActivity">
+      <div class="tv-next-label">Proxima Atividade</div>
+      <div class="tv-next-name" id="tvNextName">-</div>
+      <div class="tv-next-time" id="tvNextTime">--:--</div>
+    </div>
+
+    <div class="tv-panel">
+      <div class="tv-panel-title">Linha do Tempo</div>
+      <div class="tv-timeline" id="tvTimeline">
+        <div class="tv-empty">Nenhum evento</div>
+      </div>
+    </div>
+
+    <div class="tv-panel">
+      <div class="tv-panel-title">Efetivo Presente</div>
+      <div class="tv-militares-list" id="tvMilitares">
+        <div class="tv-empty">-</div>
+      </div>
+    </div>
+
+    <div class="tv-panel">
+      <div class="tv-panel-title">Alertas e Notificacoes</div>
+      <div class="tv-alerts" id="tvAlerts">
+        <div class="tv-empty">Sem alertas</div>
+      </div>
+    </div>
+
+    <div class="tv-telegrafia-section">
+      <div class="tv-tele-item">
+        <div class="tv-tele-label">Operador da Telegrafia</div>
+        <div class="tv-tele-name" id="tvTeleOperador">-</div>
+        <div class="tv-tele-label">Ha <span class="tv-tele-value" id="tvTeleTempo">00:00</span></div>
+      </div>
+      <div class="tv-tele-item">
+        <div class="tv-tele-label">Oficial mais Antigo</div>
+        <div class="tv-tele-name" id="tvOficialAntigo">-</div>
+        <div class="tv-tele-label" id="tvOficialPosto">-</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script>
+    const TV = {
+      servico: null,
+      rotina: [],
+      _countdownInterval: null,
+
+      async init() {
+        this.setupClock();
+        this.startCountdownTicker();
+        await this.load();
+        setInterval(() => this.load(), 10000);
+      },
+
+      setupClock() {
+        const update = () => {
+          const now = new Date();
+          document.getElementById('tvTime').textContent =
+            now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          document.getElementById('tvDate').textContent =
+            now.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+        };
+        update();
+        setInterval(update, 1000);
+      },
+
+      startCountdownTicker() {
+        this._countdownInterval = setInterval(() => this.updateCountdown(), 1000);
+      },
+
+      async load() {
+        try {
+          const data = await API.getServicoAtual(Auth.userId);
+          if (!data?.servico) return;
+
+          this.servico = data.servico;
+          this.rotina = data.rotina || [];
+
+          document.documentElement.setAttribute('data-prontidao', this.servico.prontidao || 'verde');
+          document.getElementById('tvProntidao').textContent =
+            'PRONTIDAO ' + (this.servico.prontidao || 'verde').toUpperCase();
+
+          this.updateCountdown();
+          this.updateNextActivity();
+          this.updateTimeline();
+          this.updateMilitares(data.militares || []);
+          this.updateAlerts(data.notificacoes || []);
+          this.updateTelegrafia(data.telegrafia);
+          this.updateOficialAntigo(data.oficiais || []);
+        } catch (e) {
+          console.error('TV load error:', e);
+        }
+      },
+
+      updateCountdown() {
+        if (!this.servico) return;
+        const inicio = new Date(this.servico.inicio);
+        const fim = new Date(inicio);
+        fim.setDate(fim.getDate() + 1);
+
+        const diff = fim - Date.now();
+        if (diff <= 0) {
+          document.getElementById('tvCountdown').textContent = '00:00:00';
+          document.getElementById('tvProgress').style.width = '100%';
+          return;
+        }
+
+        document.getElementById('tvCountdown').textContent = Utils.formatDuration(diff).display;
+        document.getElementById('tvProgress').style.width = Utils.progressPercent(inicio, fim) + '%';
+      },
+
+      updateNextActivity() {
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        let next = null;
+
+        for (const a of this.rotina) {
+          if (a.status === 'cancelada' || a.status === 'nao_realizada') continue;
+          const [h, m] = a.horario.split(':').map(Number);
+          if (h * 60 + m > currentMinutes) {
+            next = a;
+            break;
+          }
+        }
+
+        document.getElementById('tvNextName').textContent = next ? next.nome : '-';
+        document.getElementById('tvNextTime').textContent = next ? next.horario : '--:--';
+      },
+
+      updateTimeline() {
+        const el = document.getElementById('tvTimeline');
+        const items = this.rotina
+          .filter(a => a.status === 'concluida')
+          .slice(-12)
+          .reverse();
+
+        if (items.length === 0) {
+          el.innerHTML = '<div class="tv-empty">Nenhum evento</div>';
+          return;
+        }
+
+        el.innerHTML = items.map(a => `
+          <div class="tv-timeline-item">
+            <div class="tv-timeline-time">${a.horaConclusao || a.horario}</div>
+            <div>${Utils.escapeHtml(a.nome)}</div>
+          </div>
+        `).join('');
+      },
+
+      updateMilitares(militares) {
+        const el = document.getElementById('tvMilitares');
+        if (militares.length === 0) {
+          el.innerHTML = '<div class="tv-empty">-</div>';
+          return;
+        }
+
+        el.innerHTML = militares.slice(0, 15).map(m => `
+          <div class="tv-militar-item">
+            <div class="avatar">${Utils.getInitials(m.nome)}</div>
+            <div>
+              <div class="tv-militar-name">${Utils.escapeHtml(m.nome)}</div>
+              <div class="tv-militar-posto">${Utils.escapeHtml(m.posto || '')}</div>
+            </div>
+          </div>
+        `).join('');
+      },
+
+      updateAlerts(notifs) {
+        const el = document.getElementById('tvAlerts');
+        const recent = notifs.slice(-8).reverse();
+
+        if (recent.length === 0) {
+          el.innerHTML = '<div class="tv-empty">Sem alertas</div>';
+          return;
+        }
+
+        el.innerHTML = recent.map(n => `
+          <div class="tv-alert-item">
+            ${Utils.escapeHtml(n.mensagem)}
+            <span class="tv-alert-time">${n.horario || ''}</span>
+          </div>
+        `).join('');
+      },
+
+      updateTelegrafia(t) {
+        if (!t || !t.operador) return;
+
+        document.getElementById('tvTeleOperador').textContent = t.operador;
+
+        if (t.horario) {
+          const [h, m] = t.horario.split(':').map(Number);
+          const start = new Date();
+          start.setHours(h, m, 0, 0);
+          const diff = Date.now() - start.getTime();
+          document.getElementById('tvTeleTempo').textContent = Utils.formatDuration(diff).display;
+        }
+      },
+
+      updateOficialAntigo(oficiais) {
+        if (!oficiais || oficiais.length === 0) return;
+
+        const sorted = Utils.sortByAntiguidade(oficiais);
+        const maisAntigo = sorted[0];
+        document.getElementById('tvOficialAntigo').textContent = maisAntigo.nome;
+        document.getElementById('tvOficialPosto').textContent = maisAntigo.posto || '';
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => TV.init());
+  </script>
+</body>
+</html>

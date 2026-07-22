@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Postos de Serviço</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <style>
+    @media (max-width: 768px) {
+      .posto-card-inner { flex-direction: column; align-items: flex-start; }
+      .posto-card-info { width: 100%; }
+      .posto-card-actions { width: 100%; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div style="padding:24px 20px;max-width:1100px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h1 style="font-size:1.4rem;color:var(--text-primary);margin:0">Postos de Serviço</h1>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="PostosPage.showViaturas()" style="font-size:.8rem">Viaturas</button>
+          <button class="btn btn-secondary btn-sm" onclick="PostosPage.load()" style="font-size:.8rem">Atualizar</button>
+        </div>
+      </div>
+      <div id="postosStats" style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap"></div>
+      <div id="postosList"></div>
+    </div>
+  </main>
+
+  <!-- Editar Serviço Modal -->
+  <div class="modal-overlay" id="editarServicoModal" style="display:none">
+    <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title" id="editTitle">Editar Serviço</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeEdit()">✕</button></div>
+      <div style="padding:16px 0">
+        <div class="input-group">
+          <label class="input-label">Comandante</label>
+          <select class="input select" id="editComandante"></select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Prontidão</label>
+          <select class="input select" id="editProntidao">
+            <option value="verde">Verde</option><option value="amarela">Amarela</option>
+            <option value="azul">Azul</option><option value="branca">Branca</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Observações</label>
+          <textarea class="input" id="editObs" rows="2" placeholder="Observações do serviço..."></textarea>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#333)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label class="input-label" style="margin:0;font-weight:600">Equipe</label>
+            <button class="btn btn-primary btn-sm" onclick="PostosPage.showAddEquipeModal()" style="font-size:.75rem">+ Integrante</button>
+          </div>
+          <div id="editEquipeList"></div>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#333)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label class="input-label" style="margin:0;font-weight:600">Viaturas</label>
+            <button class="btn btn-primary btn-sm" onclick="PostosPage.showAddViaturaEditModal()" style="font-size:.75rem">+ Viatura</button>
+          </div>
+          <div id="editViaturaList"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border,#333)">
+        <button class="btn btn-secondary" onclick="PostosPage.closeEdit()">Cancelar</button>
+        <button class="btn btn-primary" onclick="PostosPage.saveEdit()">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Adicionar Equipe Modal -->
+  <div class="modal-overlay" id="addEquipeModal" style="display:none">
+    <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title">Adicionar à Equipe</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeAddEquipe()">✕</button></div>
+      <div id="addEquipeList"></div>
+    </div>
+  </div>
+
+  <!-- Adicionar Viatura ao Editar Modal -->
+  <div class="modal-overlay" id="addViaturaEditModal" style="display:none">
+    <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title">Adicionar Viatura</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeAddViaturaEdit()">✕</button></div>
+      <div id="addViaturaEditList"></div>
+    </div>
+  </div>
+
+  <!-- Iniciar Serviço Modal -->
+  <div class="modal-overlay" id="iniciarServicoModal" style="display:none">
+    <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title">Iniciar Serviço</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeIniciar()">✕</button></div>
+      <div style="padding:16px 0">
+        <p style="color:var(--text-secondary);margin-bottom:16px;font-size:.9rem" id="iniciarPostoLabel"></p>
+        <div class="input-group">
+          <label class="input-label">Prontidão</label>
+          <select class="input select" id="iniciarProntidao">
+            <option value="verde">Verde</option><option value="amarela">Amarela</option>
+            <option value="azul">Azul</option><option value="branca">Branca</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Comandante</label>
+          <select class="input select" id="iniciarComandante"></select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Observações</label>
+          <textarea class="input" id="iniciarObs" rows="2" placeholder="Observações iniciais..."></textarea>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#333)">
+          <label class="input-label" style="font-weight:600">Viaturas</label>
+          <div id="iniciarViaturasList" style="margin-top:8px"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border,#333)">
+        <button class="btn btn-secondary" onclick="PostosPage.closeIniciar()">Cancelar</button>
+        <button class="btn btn-primary" onclick="PostosPage.confirmarIniciar()">Iniciar Serviço</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Viaturas CRUD Modal -->
+  <div class="modal-overlay" id="viaturasModal" style="display:none">
+    <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title">Gerenciar Viaturas</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeViaturas()">✕</button></div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="PostosPage.showFormViatura()">+ Nova Viatura</button>
+      </div>
+      <div id="viaturasFormArea" style="display:none;margin-bottom:16px;padding:12px;background:var(--bg-input,#16161f);border-radius:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="input-group"><label class="input-label">Nome/Prefixo</label><input class="input" id="viatFormNome" placeholder="Ex: ABT-01"></div>
+          <div class="input-group"><label class="input-label">Tipo</label><select class="input select" id="viatFormTipo"><option value="">Carregando...</option></select></div>
+          <div class="input-group"><label class="input-label">Placa</label><input class="input" id="viatFormPlaca" placeholder="ABC1D23"></div>
+          <div class="input-group"><label class="input-label">Capacidade</label><input class="input" type="number" id="viatFormCapacidade" value="4"></div>
+          <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="viatFormPosto"><option value="">Todos</option></select></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-secondary btn-sm" onclick="PostosPage.cancelFormViatura()">Cancelar</button>
+          <button class="btn btn-primary btn-sm" onclick="PostosPage.saveFormViatura()">Salvar</button>
+        </div>
+      </div>
+      <div id="viaturasList"></div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const PostosPage = {
+      postos: [],
+      viaturas: [],
+      tiposViatura: [],
+      editServicoId: null,
+      _equipeEdicao: [],
+      _viaturasEdicao: [],
+      _iniciarViaturas: [],
+      _iniciarPostoId: null,
+      _editingViatId: null,
+
+      async init() {
+        if (!Auth.requireAuth()) return;
+        if (!Auth.can('iniciar_servico') && !Auth.can('all')) {
+          document.getElementById('mainContent').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:60vh;color:var(--text-secondary)"><p>Acesso restrito a usuários com permissão de iniciar serviço.</p></div>';
+          return;
+        }
+        NAV.init('postos');
+        await this.load();
+      },
+
+      async load() {
+        try {
+          const [postosResult, viaturasResult, tiposResult] = await Promise.all([
+            API.getPostosComServico(),
+            API.get('viaturas'),
+            API.getTiposViatura()
+          ]);
+          this.postos = postosResult.postos || [];
+          this.viaturas = (viaturasResult || []).filter(v => v.ativo !== false && v.Status !== 'removido');
+          this.tiposViatura = (tiposResult || []).filter(t => t.Status !== 'removido');
+          this.render();
+        } catch (e) {
+          console.error('Postos load error:', e);
+          Utils.showToast('Erro ao carregar postos: ' + e.message, 'error');
+        }
+      },
+
+      render() {
+        const comServico = this.postos.filter(p => p.servico);
+        const semServico = this.postos.filter(p => !p.servico && p.tipo === 'POSTO');
+
+        document.getElementById('postosStats').innerHTML = `
+          <div style="padding:12px 20px;background:var(--surface,#1a1a2e);border-radius:12px;border:1px solid var(--border,#333);min-width:120px">
+            <div style="font-size:1.6rem;font-weight:700;color:var(--text-primary)">${this.postos.length}</div>
+            <div style="font-size:.78rem;color:var(--text-secondary)">Total de Postos</div>
+          </div>
+          <div style="padding:12px 20px;background:rgba(46,160,67,.12);border-radius:12px;border:1px solid rgba(46,160,67,.3);min-width:120px">
+            <div style="font-size:1.6rem;font-weight:700;color:#2ea043">${comServico.length}</div>
+            <div style="font-size:.78rem;color:var(--text-secondary)">Com Serviço</div>
+          </div>
+          <div style="padding:12px 20px;background:rgba(139,148,158,.1);border-radius:12px;border:1px solid var(--border,#333);min-width:120px">
+            <div style="font-size:1.6rem;font-weight:700;color:var(--text-secondary)">${semServico.length}</div>
+            <div style="font-size:.78rem;color:var(--text-secondary)">Sem Serviço</div>
+          </div>
+        `;
+
+        const podeEditar = Auth.can('iniciar_servico') || Auth.can('all');
+        let html = '';
+
+        if (comServico.length > 0) {
+          html += '<h2 style="font-size:1.05rem;color:#2ea043;margin-bottom:12px">Serviços Ativos</h2>';
+          html += comServico.map(p => this.renderPostoCard(p, true, podeEditar)).join('');
+        }
+
+        if (semServico.length > 0) {
+          html += '<h2 style="font-size:1.05rem;color:var(--text-secondary);margin-top:24px;margin-bottom:12px">Sem Serviço</h2>';
+          html += semServico.map(p => this.renderPostoCard(p, false, podeEditar)).join('');
+        }
+
+        document.getElementById('postosList').innerHTML = html || '<p style="color:var(--text-secondary);text-align:center;padding:40px">Nenhum posto cadastrado</p>';
+      },
+
+      renderPostoCard(posto, temServico, podeEditar) {
+        const prontidao = temServico ? posto.servico.prontidao : 'nenhuma';
+        const cores = { verde: '#2ea043', amarela: '#d29922', azul: '#388bfd', branca: '#8b949e', nenhuma: '#333' };
+        const cor = cores[prontidao] || cores.nenhuma;
+        const equipe = temServico ? posto.servico.equipe : [];
+        const comandante = temServico ? posto.servico.comandanteNome : '-';
+        let viaturasHtml = '';
+        if (temServico && posto.servico.viaturas && posto.servico.viaturas.length > 0) {
+          viaturasHtml = `<div style="margin-top:6px;font-size:.82rem;color:var(--text-secondary)">Viaturas: ${posto.servico.viaturas.map(v => {
+            const vt = this.viaturas.find(x => x.id === v.viaturaId) || {};
+            const tc = (this.tiposViatura.find(t => t.sigla === vt.tipo) || {}).cor || '#9e9e9e';
+            return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:6px;background:${tc}22;color:${tc};font-weight:600;font-size:.72rem;margin-right:4px"><span style="font-weight:700">${vt.tipo || '?'}</span> ${Utils.escapeHtml(vt.nome || v.viaturaId)}</span>`;
+          }).join('')}</div>`;
+        }
+
+        return `
+          <div style="background:var(--surface,#1a1a2e);border:1px solid var(--border,#333);border-radius:12px;padding:16px 20px;margin-bottom:12px;border-left:4px solid ${cor}">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-size:1.05rem;font-weight:600;color:var(--text-primary)">${Utils.escapeHtml(posto.nome)}</span>
+                  <span style="font-size:.72rem;padding:2px 8px;border-radius:10px;background:${cor}22;color:${cor};font-weight:600;text-transform:uppercase">${posto.tipo}</span>
+                  ${temServico ? `<span style="font-size:.72rem;padding:2px 8px;border-radius:10px;background:${cor}22;color:${cor}">${prontidao}</span>` : ''}
+                </div>
+                ${temServico ? `
+                  <div style="margin-top:6px;font-size:.85rem;color:var(--text-secondary)">
+                    <span>Comandante: <strong style="color:var(--text-primary)">${Utils.escapeHtml(comandante)}</strong></span>
+                    <span style="margin-left:16px">Horário: <strong style="color:var(--text-primary)">${posto.servico.horarioInicio || '-'}</strong></span>
+                    <span style="margin-left:16px">Equipe: <strong style="color:var(--text-primary)">${equipe.length}</strong></span>
+                  </div>
+                ` : ''}
+                ${viaturasHtml}
+              </div>
+              <div style="display:flex;gap:6px">
+                ${temServico && podeEditar ? `
+                  <button class="btn btn-primary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.openEdit('${posto.id}')">Editar</button>
+                  <button class="btn btn-danger btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.encerrarServico('${posto.id}','${Utils.escapeHtml(posto.nome).replace(/'/g, "\\'")}')">Encerrar</button>
+                ` : ''}
+                ${!temServico && podeEditar ? `
+                  <button class="btn btn-primary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.openIniciar('${posto.id}','${Utils.escapeHtml(posto.nome).replace(/'/g, "\\'")}')">Iniciar</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      /* ═══ EDITAR SERVIÇO ═══ */
+
+      openEdit(postoId) {
+        const posto = this.postos.find(p => p.id === postoId);
+        if (!posto || !posto.servico) return;
+        this.editServicoId = posto.servico.id;
+        this._editPostoId = postoId;
+        this._equipeEdicao = JSON.parse(JSON.stringify(posto.servico.equipe || []));
+        this._viaturasEdicao = JSON.parse(JSON.stringify(posto.servico.viaturas || []));
+
+        document.getElementById('editTitle').textContent = 'Editar Serviço — ' + posto.nome;
+
+        const sel = document.getElementById('editComandante');
+        sel.innerHTML = '<option value="">Selecionar comandante</option>';
+        this._equipeEdicao.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.nome + (m.posto ? ' - ' + m.posto : '');
+          if (m.id === posto.servico.comandanteId) opt.selected = true;
+          sel.appendChild(opt);
+        });
+
+        document.getElementById('editProntidao').value = posto.servico.prontidao || 'verde';
+        document.getElementById('editObs').value = posto.servico.observacoes || '';
+        this._renderEquipeEdicao();
+        this._renderViaturasEdicao();
+        document.getElementById('editarServicoModal').style.display = 'flex';
+      },
+
+      _renderEquipeEdicao() {
+        const el = document.getElementById('editEquipeList');
+        if (!this._equipeEdicao.length) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:.85rem;padding:8px">Nenhum integrante</p>'; return; }
+        el.innerHTML = this._equipeEdicao.map(m => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
+            <span style="font-size:.88rem">${Utils.escapeHtml(m.nome)}${m.posto ? ' — ' + Utils.escapeHtml(m.posto) : ''}</span>
+            <button class="btn btn-danger btn-sm" style="font-size:.72rem;padding:2px 8px" onclick="PostosPage.removeEquipeEdit('${m.id}')">✕</button>
+          </div>
+        `).join('');
+      },
+
+      removeEquipeEdit(id) {
+        this._equipeEdicao = this._equipeEdicao.filter(m => m.id !== id);
+        this._renderEquipeEdicao();
+      },
+
+      showAddEquipeModal() {
+        const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
+        const cadastrados = state.militares || [];
+        const existingIds = this._equipeEdicao.map(m => m.id);
+        const body = document.getElementById('addEquipeList');
+        body.innerHTML = cadastrados.filter(m => !existingIds.includes(m.id)).map(m => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
+            <span style="font-size:.88rem;color:var(--text-primary)">${Utils.escapeHtml(m.nome)}${m.posto ? ' — ' + Utils.escapeHtml(m.posto) : ''}</span>
+            <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:2px 8px" onclick="PostosPage._addMembro('${m.id}','${m.nome.replace(/'/g, "\\'")}','${(m.posto||'').replace(/'/g, "\\'")}')">Adicionar</button>
+          </div>
+        `).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhum cadastrado disponível</p>';
+        document.getElementById('addEquipeModal').style.display = 'flex';
+      },
+
+      _addMembro(id, nome, posto) {
+        if (this._equipeEdicao.some(m => m.id === id)) return;
+        this._equipeEdicao.push({ id, nome, posto: posto || '' });
+        this._renderEquipeEdicao();
+        this.closeAddEquipe();
+      },
+
+      closeAddEquipe() { document.getElementById('addEquipeModal').style.display = 'none'; },
+
+      _renderViaturasEdicao() {
+        const el = document.getElementById('editViaturaList');
+        if (!this._viaturasEdicao.length) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:.85rem;padding:8px">Nenhuma viatura vinculada</p>'; return; }
+        el.innerHTML = this._viaturasEdicao.map(v => {
+          const vt = this.viaturas.find(x => x.id === v.viaturaId) || {};
+          const tc = (this.tiposViatura.find(t => t.sigla === vt.tipo) || {}).cor || '#9e9e9e';
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem">${vt.tipo || '?'}</span>
+                <span style="font-size:.88rem">${Utils.escapeHtml(vt.nome || v.viaturaId)}</span>
+              </div>
+              <button class="btn btn-danger btn-sm" style="font-size:.72rem;padding:2px 8px" onclick="PostosPage.removeViaturaEdit('${v.viaturaId}')">✕</button>
+            </div>
+          `;
+        }).join('');
+      },
+
+      removeViaturaEdit(viaturaId) {
+        this._viaturasEdicao = this._viaturasEdicao.filter(v => v.viaturaId !== viaturaId);
+        this._renderViaturasEdicao();
+      },
+
+      showAddViaturaEditModal() {
+        const existingIds = this._viaturasEdicao.map(v => v.viaturaId);
+        const body = document.getElementById('addViaturaEditList');
+        body.innerHTML = this.viaturas.filter(v => !existingIds.includes(v.id) && (!v.postoId || v.postoId === this._editPostoId)).map(v => {
+          const tc = (this.tiposViatura.find(t => t.sigla === v.tipo) || {}).cor || '#9e9e9e';
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem">${v.tipo || '?'}</span>
+                <span style="font-size:.88rem;color:var(--text-primary)">${Utils.escapeHtml(v.nome)}<span style="font-size:.75rem;color:var(--text-secondary);margin-left:4px">${v.placa || ''}</span></span>
+              </div>
+              <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:2px 8px" onclick="PostosPage._addViaturaEdicao('${v.id}','${v.nome.replace(/'/g, "\\'")}')">Adicionar</button>
+            </div>
+          `;
+        }).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhuma viatura disponível</p>';
+        document.getElementById('addViaturaEditModal').style.display = 'flex';
+      },
+
+      _addViaturaEdicao(id, nome) {
+        if (this._viaturasEdicao.some(v => v.viaturaId === id)) return;
+        this._viaturasEdicao.push({ viaturaId: id });
+        this._renderViaturasEdicao();
+        this.closeAddViaturaEdit();
+      },
+
+      closeAddViaturaEdit() { document.getElementById('addViaturaEditModal').style.display = 'none'; },
+
+      async saveEdit() {
+        if (!this.editServicoId) return;
+        const comandanteId = document.getElementById('editComandante').value;
+        const membro = this._equipeEdicao.find(m => m.id === comandanteId);
+        const comandanteNome = membro ? membro.nome : '';
+        const prontidao = document.getElementById('editProntidao').value;
+        const observacoes = document.getElementById('editObs').value;
+
+        try {
+          const result = await API.editarServico({
+            servicoId: this.editServicoId,
+            comandanteId: comandanteId || undefined,
+            comandanteNome: comandanteNome || undefined,
+            prontidao,
+            equipe: this._equipeEdicao,
+            observacoes
+          });
+          if (result.success) {
+            Utils.log('editar_servico', `Serviço ${this.editServicoId} atualizado`, 'postos');
+            Utils.showToast('Serviço atualizado com sucesso!', 'success');
+            this.closeEdit();
+            await this.load();
+          } else {
+            Utils.showToast(result.error || 'Erro ao salvar', 'error');
+          }
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      closeEdit() {
+        document.getElementById('editarServicoModal').style.display = 'none';
+        this.editServicoId = null;
+      },
+
+      /* ═══ INICIAR SERVIÇO ═══ */
+
+      openIniciar(postoId, postoNome) {
+        this._iniciarPostoId = postoId;
+        this._iniciarViaturas = [];
+        document.getElementById('iniciarPostoLabel').textContent = 'Iniciar serviço para: ' + postoNome;
+
+        const sel = document.getElementById('iniciarComandante');
+        sel.innerHTML = '<option value="">Selecionar comandante</option>';
+        const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
+        const militares = state.militares || [];
+        militares.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.nome + (m.posto ? ' - ' + m.posto : '');
+          sel.appendChild(opt);
+        });
+
+        this._renderIniciarViaturas();
+        document.getElementById('iniciarProntidao').value = 'verde';
+        document.getElementById('iniciarObs').value = '';
+        document.getElementById('iniciarServicoModal').style.display = 'flex';
+      },
+
+      _renderIniciarViaturas() {
+        const el = document.getElementById('iniciarViaturasList');
+        if (this.viaturas.length === 0) {
+          el.innerHTML = '<p style="color:var(--text-secondary);font-size:.85rem">Nenhuma viatura cadastrada. Cadastre em "Gerenciar Viaturas".</p>';
+          return;
+        }
+        const viaturasFiltradas = this.viaturas.filter(v => !v.postoId || v.postoId === this._iniciarPostoId);
+        el.innerHTML = viaturasFiltradas.map(v => {
+          const tc = (this.tiposViatura.find(t => t.sigla === v.tipo) || {}).cor || '#9e9e9e';
+          const checked = this._iniciarViaturas.some(x => x.viaturaId === v.id);
+          return `
+            <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px;cursor:pointer;border:1px solid ${checked ? tc : 'var(--border,#333)'};transition:all 150ms">
+              <input type="checkbox" ${checked ? 'checked' : ''} onchange="PostosPage.toggleIniciarViatura('${v.id}', this.checked)" style="width:16px;height:16px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem">${v.tipo}</span>
+              <div>
+                <div style="font-size:.88rem;color:var(--text-primary)">${Utils.escapeHtml(v.nome)}</div>
+                <div style="font-size:.75rem;color:var(--text-secondary)">${v.placa || ''} — Capacidade: ${v.capacidade || '-'}</div>
+              </div>
+            </label>
+          `;
+        }).join('');
+      },
+
+      toggleIniciarViatura(viaturaId, checked) {
+        if (checked) {
+          if (!this._iniciarViaturas.some(x => x.viaturaId === viaturaId)) {
+            this._iniciarViaturas.push({ viaturaId });
+          }
+        } else {
+          this._iniciarViaturas = this._iniciarViaturas.filter(x => x.viaturaId !== viaturaId);
+        }
+        this._renderIniciarViaturas();
+      },
+
+      async confirmarIniciar() {
+        if (!this._iniciarPostoId) return;
+        const prontidao = document.getElementById('iniciarProntidao').value;
+        const comandanteId = document.getElementById('iniciarComandante').value;
+        const observacoes = document.getElementById('iniciarObs').value;
+
+        const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
+        const militares = state.militares || [];
+        const cmd = militares.find(m => m.id === comandanteId);
+        const comandanteNome = cmd ? cmd.nome : '';
+        const equipe = comandanteId ? [{ id: comandanteId, nome: comandanteNome, posto: cmd ? cmd.posto : '' }] : [];
+
+        try {
+          const result = await API.iniciarServico({
+            prontidao, comandanteId, comandanteNome, equipe,
+            postoId: this._iniciarPostoId, observacoes,
+            viaturas: this._iniciarViaturas
+          });
+          if (result.success) {
+            for (const v of this._iniciarViaturas) {
+              await API.iniciarServicoViatura({
+                servicoId: result.servicoId,
+                viaturaId: v.viaturaId,
+                viaturaNome: (this.viaturas.find(x => x.id === v.viaturaId) || {}).nome || ''
+              }).catch(() => {});
+            }
+            Utils.log('iniciar_servico', `Serviço iniciado no posto ${this._iniciarPostoId} - Prontidão: ${prontidao}`, 'postos');
+            Utils.showToast('Serviço iniciado com sucesso!', 'success');
+            this.closeIniciar();
+            await this.load();
+          } else {
+            Utils.showToast(result.error || 'Erro ao iniciar', 'error');
+          }
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      closeIniciar() {
+        document.getElementById('iniciarServicoModal').style.display = 'none';
+        this._iniciarPostoId = null;
+        this._iniciarViaturas = [];
+      },
+
+      /* ═══ ENCERRAR ═══ */
+
+      async encerrarServico(postoId, postoNome) {
+        if (!confirm('Deseja encerrar o serviço do posto ' + postoNome + '?\n\nEsta ação irá finalizar o plantão.')) return;
+        try {
+          const result = await API.encerrarServico(postoId);
+          if (result.success) {
+            Utils.log('encerrar_servico', `Serviço encerrado no posto ${postoNome}`, 'postos');
+            Utils.showToast('Serviço encerrado com sucesso!', 'success');
+            await this.load();
+          } else {
+            Utils.showToast(result.error || 'Erro ao encerrar', 'error');
+          }
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      /* ═══ VIATURAS CRUD ═══ */
+
+      async showViaturas() {
+        document.getElementById('viaturasModal').style.display = 'flex';
+        this._editingViatId = null;
+        document.getElementById('viaturasFormArea').style.display = 'none';
+        this._renderViaturasList();
+      },
+
+      closeViaturas() { document.getElementById('viaturasModal').style.display = 'none'; },
+
+      _renderViaturasList() {
+        const el = document.getElementById('viaturasList');
+        const getCor = (sigla) => { const t = this.tiposViatura.find(x => x.sigla === sigla); return t ? t.cor : '#9e9e9c'; };
+        if (!this.viaturas.length) { el.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:20px">Nenhuma viatura cadastrada</p>'; return; }
+        el.innerHTML = this.viaturas.map(v => {
+          const tc = getCor(v.tipo);
+          const postoNome = v.postoId ? (this.postos.find(p => p.id === v.postoId) || {}).nome || '' : 'Todos';
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px;border-left:3px solid ${tc}">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:${tc}22;color:${tc};font-weight:700;font-size:.7rem">${v.tipo}</span>
+                <div>
+                  <div style="font-size:.9rem;font-weight:600;color:var(--text-primary)">${Utils.escapeHtml(v.nome)}</div>
+                  <div style="font-size:.78rem;color:var(--text-secondary)">${v.placa || ''} — Cap: ${v.capacidade || '-'} — Posto: ${postoNome}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-secondary btn-sm" style="font-size:.72rem;padding:2px 8px" onclick="PostosPage.editarViatura('${v.id}')">Editar</button>
+                <button class="btn btn-danger btn-sm" style="font-size:.72rem;padding:2px 8px" onclick="PostosPage.excluirViatura('${v.id}','${Utils.escapeHtml(v.nome).replace(/'/g, "\\'")}')">Excluir</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      },
+
+      showFormViatura(data) {
+        this._editingViatId = data ? data.id : null;
+        const sel = document.getElementById('viatFormTipo');
+        sel.innerHTML = this.tiposViatura.map(t => `<option value="${t.sigla}" ${data && data.tipo === t.sigla ? 'selected' : ''}>${t.sigla} — ${Utils.escapeHtml(t.nome)}</option>`).join('');
+        document.getElementById('viatFormNome').value = data ? data.nome : '';
+        if (data && data.tipo) sel.value = data.tipo;
+        document.getElementById('viatFormPlaca').value = data ? (data.placa || '') : '';
+        document.getElementById('viatFormCapacidade').value = data ? (data.capacidade || 4) : 4;
+        const postoEl = document.getElementById('viatFormPosto');
+        postoEl.innerHTML = '<option value="">Todos</option>' + this.postos.map(p => `<option value="${p.id}" ${data && data.postoId === p.id ? 'selected' : ''}>${Utils.escapeHtml(p.nome)}</option>`).join('');
+        document.getElementById('viaturasFormArea').style.display = 'block';
+        document.getElementById('viatFormNome').focus();
+      },
+
+      cancelFormViatura() {
+        this._editingViatId = null;
+        document.getElementById('viaturasFormArea').style.display = 'none';
+      },
+
+      editarViatura(id) {
+        const v = this.viaturas.find(x => x.id === id);
+        if (v) this.showFormViatura(v);
+      },
+
+      async saveFormViatura() {
+        const nome = document.getElementById('viatFormNome').value.trim();
+        const tipo = document.getElementById('viatFormTipo').value;
+        const placa = document.getElementById('viatFormPlaca').value.trim();
+        const capacidade = parseInt(document.getElementById('viatFormCapacidade').value) || 4;
+        const postoId = document.getElementById('viatFormPosto').value || '';
+        if (!nome) { Utils.showToast('Nome é obrigatório', 'warning'); return; }
+
+        try {
+          if (this._editingViatId) {
+            await API.update('viaturas', this._editingViatId, { nome, tipo, placa, capacidade, postoId });
+            Utils.showToast('Viatura atualizada', 'success');
+          } else {
+            await API.create('viaturas', { nome, tipo, placa, capacidade, postoId, ativo: true });
+            Utils.showToast('Viatura criada', 'success');
+          }
+          this.cancelFormViatura();
+          await this.load();
+          this._renderViaturasList();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async excluirViatura(id, nome) {
+        if (!confirm('Excluir a viatura ' + nome + '?')) return;
+        try {
+          await API.delete('viaturas', id);
+          Utils.showToast('Viatura excluída', 'success');
+          await this.load();
+          this._renderViaturasList();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => PostosPage.init());
+  </script>
+</body>
+</html>

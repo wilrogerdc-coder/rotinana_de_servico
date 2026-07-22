@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Dashboard</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="dashboard-grid">
+      <div class="dash-countdown">
+        <div class="dash-countdown-content">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="dash-countdown-label">Tempo Restante do Plantão</div>
+            <button class="btn btn-danger btn-sm" onclick="Dashboard.encerrarServico()" style="font-size:0.75rem;padding:4px 12px">Encerrar Serviço</button>
+            <button class="btn btn-primary btn-sm" onclick="Dashboard.showOcorrenciaNova()" id="btnNovaOcorrencia" style="font-size:0.75rem;padding:4px 12px;background:#e53935;border-color:#e53935">🚨 Ocorrência</button>
+            <button class="btn btn-primary btn-sm" onclick="Dashboard.showEditarServico()" id="btnEditarServico" style="font-size:0.75rem;padding:4px 12px;display:none">Editar Serviço</button>
+            <button class="btn btn-secondary btn-sm" onclick="Dashboard.showSolicitacoes()" id="btnSolicitacoes" style="font-size:0.75rem;padding:4px 12px;display:none">Solicitações</button>
+          </div>
+          <div class="dash-countdown-time" id="countdownTime">00:00:00</div>
+          <div class="dash-progress">
+            <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+            <div class="dash-progress-text">
+              <span id="progressStart">07:30</span>
+              <span id="progressPercent">0%</span>
+              <span id="progressEnd">07:30</span>
+            </div>
+          </div>
+          <div class="dash-info-bar">
+            <div class="dash-info-item" style="cursor:pointer" onclick="Dashboard.showEquipePanel()" title="Gerenciar equipe"><span>Equipe:</span> <span class="value" id="equipeCount">0</span></div>
+            <div class="dash-info-item"><span>Oficiais:</span> <span class="value" id="oficiaisCount">0</span></div>
+            <div class="dash-info-item"><span>Atividades:</span> <span class="value" id="atividadesCount">0</span></div>
+            <div class="dash-info-item"><span>Concluídas:</span> <span class="value" id="concluidasCount">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-card dash-atividade-atual" id="atividadeAtualCard">
+        <div class="dash-card-header">
+          <span class="dash-card-title">Atividade Atual</span>
+          <span class="badge badge-yellow" id="atividadeStatus">-</span>
+        </div>
+        <div class="dash-atividade-nome" id="atividadeAtualNome">-</div>
+        <div class="dash-atividade-horario" id="atividadeAtualHorario">--:--</div>
+        <div class="dash-atividade-responsavel" id="atividadeAtualResp">Responsável: -</div>
+      </div>
+
+      <div class="dash-card dash-telegrafia-card" id="telegrafiaCard" onclick="Dashboard.mostrarSelecaoTelegrafia()" style="cursor:pointer">
+        <div class="dash-telegrafia-label">Telegrafia <span id="telegrafiaBadge" style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--prontidao-color);color:var(--surface-color);margin-left:4px;display:none">+</span></div>
+        <div class="avatar avatar-lg" id="telegrafiaAvatar">--</div>
+        <div class="dash-telegrafia-nome" id="telegrafiaNome">-</div>
+        <div class="dash-telegrafia-tempo" id="telegrafiaTempo">00:00:00</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Assumiu às <span id="telegrafiaInicio">--:--</span></div>
+      </div>
+
+      <div class="dash-card dash-timeline">
+        <div class="dash-card-header"><span class="dash-card-title">Linha do Tempo</span></div>
+        <div class="timeline" id="timeline">
+          <div class="empty-state"><p>Nenhum evento registrado</p></div>
+        </div>
+      </div>
+
+      <div class="dash-card dash-oficiais" onclick="location.href='oficiais.html'" style="cursor:pointer">
+        <div class="dash-card-header"><span class="dash-card-title">Oficiais Presentes <span style="font-size:0.7rem;color:var(--text-muted)">→</span></span></div>
+        <div id="oficiaisList"><div class="empty-state"><p>Nenhum oficial presente</p></div></div>
+      </div>
+
+      <div class="dash-card" style="grid-column:span 2">
+        <div class="dash-card-header"><span class="dash-card-title">Viaturas em Serviço</span><span class="badge" id="viaturasBadge" style="display:none">0</span></div>
+        <div id="viaturasContainer"><div class="empty-state"><p>Nenhuma viatura em serviço</p></div></div>
+      </div>
+
+      <div class="dash-card dash-notificacoes">
+        <div class="dash-card-header"><span class="dash-card-title">Notificações</span></div>
+        <div id="notificacoesList"><div class="empty-state"><p>Sem notificações</p></div></div>
+      </div>
+
+      <div class="dash-card dash-atividades">
+        <div class="dash-card-header"><span class="dash-card-title">Rotina do Dia</span></div>
+        <div class="dash-atividades-list" id="rotinaList">
+          <div class="empty-state"><p>Nenhuma atividade registrada</p></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="noServiceModal" style="display:none">
+    <div class="modal" style="text-align:center">
+      <h3 style="margin-bottom:16px">Nenhum serviço ativo</h3>
+      <p style="color:var(--text-secondary);margin-bottom:24px">Inicie um novo serviço para começar o plantão.</p>
+      <button class="btn btn-primary btn-lg" onclick="location.href='rotina.html?action=iniciar'">Iniciar Serviço</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="acessoModal" style="display:none">
+    <div class="modal" style="max-width:480px">
+      <h3 style="margin-bottom:16px">Solicitar Acesso ao Serviço</h3>
+      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:0.9rem">Você não está vinculado a este serviço. Solicite acesso ao comandante.</p>
+      <div class="input-group"><label class="input-label">Tipo de Acesso</label><select class="input select" id="acessoTipo"><option value="visualizar">Visualizar</option><option value="entrar_equipe">Entrar na Equipe</option></select></div>
+      <div class="input-group"><label class="input-label">Motivo</label><textarea class="input" id="acessoMotivo" rows="3" placeholder="Descreva o motivo da solicitação..."></textarea></div>
+      <div style="display:flex;gap:var(--spacing-sm);justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="Dashboard.closeAcessoModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="Dashboard.enviarSolicitacao()">Enviar Solicitação</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="permissaoPendenteModal" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <h3 style="margin-bottom:16px">Solicitações de Acesso Pendentes</h3>
+      <div id="solicitacoesList"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:var(--spacing-md)">
+        <button class="btn btn-secondary" onclick="document.getElementById('permissaoPendenteModal').style.display='none'">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="equipePanel" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h3 class="modal-title">Gerenciar Equipe</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeEquipePanel()">✕</button></div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:var(--spacing-md)">
+        <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddEquipeModal()">+ Adicionar Integrante</button>
+      </div>
+      <div id="equipePanelList"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="addEquipeModal" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h3 class="modal-title">Adicionar à Equipe</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeAddEquipeModal()">✕</button></div>
+      <div id="addEquipeList"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay" style="display:none">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header"><h3 class="modal-title" id="modalTitle">-</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeModal()">✕</button></div>
+      <div id="modalBody"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="editarServicoModal" style="display:none">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header"><h3 class="modal-title">Editar Serviço Ativo</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeEditarServico()">✕</button></div>
+      <div style="padding:16px 0">
+        <div class="input-group">
+          <label class="input-label">Comandante</label>
+          <select class="input select" id="editServicoComandante"></select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Prontidão</label>
+          <select class="input select" id="editServicoProntidao">
+            <option value="verde">Verde</option>
+            <option value="amarela">Amarela</option>
+            <option value="azul">Azul</option>
+            <option value="branca">Branca</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Observações</label>
+          <textarea class="input" id="editServicoObs" rows="2" placeholder="Observações do serviço..."></textarea>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddEquipeEditModal()">+ Adicionar Integrante</button>
+        </div>
+        <div id="editServicoEquipeList" style="margin-top:12px"></div>
+        <h4 style="font-size:0.85rem;font-weight:600;margin:16px 0 8px">Viaturas</h4>
+        <div id="editServicoViaturasList" style="margin-bottom:8px"></div>
+        <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddViaturaEditModal()">+ Adicionar Viatura</button>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="Dashboard.closeEditarServico()">Cancelar</button>
+        <button class="btn btn-primary" onclick="Dashboard.salvarEditarServico()">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

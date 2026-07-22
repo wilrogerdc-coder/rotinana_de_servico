@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Administração</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <style>
+    .admin-tabs { display:flex;gap:var(--spacing-xs);margin-bottom:var(--spacing-xl);overflow-x:auto;padding-bottom:var(--spacing-sm) }
+    .admin-tab { padding:10px 20px;border-radius:var(--radius-xl);border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);cursor:pointer;white-space:nowrap;transition:all var(--transition-fast);font-size:0.85rem }
+    .admin-tab.active { background:var(--prontidao-dim);border-color:var(--prontidao-color);color:var(--prontidao-color) }
+    .admin-section { display:none }
+    .admin-section.active { display:block }
+    .admin-form { max-width:600px }
+    .admin-form .input-group { margin-bottom:var(--spacing-md) }
+    .admin-list-item { display:flex;align-items:center;justify-content:space-between;padding:var(--spacing-md);background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-md);margin-bottom:var(--spacing-sm) }
+    .admin-actions { display:flex;gap:var(--spacing-sm) }
+    .sound-config { display:flex;align-items:center;gap:var(--spacing-md);padding:var(--spacing-md);background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-md);margin-bottom:var(--spacing-sm) }
+    .sound-toggle { width:48px;height:26px;border-radius:13px;border:none;cursor:pointer;transition:all var(--transition-fast);position:relative }
+    .sound-toggle.on { background:var(--prontidao-color) }
+    .sound-toggle.off { background:var(--text-muted) }
+    .sound-toggle::after { content:'';position:absolute;top:3px;width:20px;height:20px;border-radius:50%;background:white;transition:var(--transition-fast) }
+    .sound-toggle.on::after { left:25px }
+    .sound-toggle.off::after { left:3px }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-lg)">Administração</h2>
+
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="Admin.showTab('usuarios', event)">Usuários</button>
+      <button class="admin-tab" onclick="Admin.showTab('militares', event)">Militares</button>
+      <button class="admin-tab" onclick="Admin.showTab('oficiais', event)">Oficiais</button>
+      <button class="admin-tab" onclick="Admin.showTab('atividades', event)">Atividades Padrão</button>
+      <button class="admin-tab" onclick="Admin.showTab('permissoesTela', event)">Permissões de Tela</button>
+      <button class="admin-tab" onclick="Admin.showTab('sons', event)">Sons</button>
+      <button class="admin-tab" onclick="Admin.showTab('logos', event)">Logos</button>
+      <button class="admin-tab" onclick="Admin.showTab('viaturas', event)">Viaturas</button>
+      <button class="admin-tab" onclick="Admin.showTab('conexao', event)">Conexão</button>
+      <button class="admin-tab" onclick="Admin.showTab('config', event)">Configurações</button>
+    </div>
+
+    <div class="admin-section active" id="tab-usuarios">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Usuários do Sistema</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('usuario')">+ Novo Usuário</button>
+      </div>
+      <div id="usuariosList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-militares">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Militares</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('militar')">+ Novo Militar</button>
+      </div>
+      <div id="militaresList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-oficiais">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Oficiais</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('oficial')">+ Novo Oficial</button>
+      </div>
+      <div id="oficiaisAdminList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-atividades">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Atividades Padrão da Rotina</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('atividade')">+ Nova Atividade</button>
+      </div>
+      <div id="atividadesList"></div>
+    </div>
+
+
+    <div class="admin-section" id="tab-permissoesTela">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Permissões por Tela/Funcionalidade</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('permissaoTela')">+ Nova Regra</button>
+      </div>
+      <div id="permissoesTelaList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-sons">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Configuração de Sons</h3>
+      <div id="sonsList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-logos">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Logos do Sistema</h3>
+      <div id="logosList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-viaturas">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Viaturas</h3>
+        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('viatura')">+ Nova Viatura</button>
+      </div>
+      <div id="viaturasList"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:var(--spacing-lg) 0 var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Tipos de Viatura</h3>
+        <button class="btn btn-secondary btn-sm" onclick="Admin.showForm('tipoViatura')">+ Novo Tipo</button>
+      </div>
+      <div id="tiposViaturaList"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:var(--spacing-lg) 0 var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Naturezas de Ocorrência</h3>
+        <button class="btn btn-secondary btn-sm" onclick="Admin.showForm('natureza')">+ Nova Natureza</button>
+      </div>
+      <div id="naturezasList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-conexao">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Status da Conexão</h3>
+
+      <div class="card" style="padding:var(--spacing-lg);margin-bottom:var(--spacing-lg)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px">
+          <div>
+            <div id="connStatus" style="display:flex;align-items:center;gap:10px;font-size:0.95rem;font-weight:600">
+              <span style="width:12px;height:12px;border-radius:50%;background:var(--text-muted);display:inline-block" id="connDot"></span>
+              <span id="connLabel">Não testado</span>
+            </div>
+            <div id="connDetails" style="font-size:0.8rem;color:var(--text-muted);margin-top:6px"></div>
+          </div>
+          <button class="btn btn-primary" onclick="Admin.testConnection()" id="connTestBtn">Testar Conexão</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--spacing-lg);margin-bottom:var(--spacing-lg)">
+        <div class="card" style="padding:var(--spacing-lg)">
+          <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:var(--spacing-sm)">Banco de Dados</div>
+          <div id="connSheets" style="font-size:1.5rem;font-weight:700;color:var(--prontidao-color)">-</div>
+          <div style="font-size:0.8rem;color:var(--text-secondary)">abas no Google Sheets</div>
+        </div>
+        <div class="card" style="padding:var(--spacing-lg)">
+          <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:var(--spacing-sm)">Latência</div>
+          <div id="connLatency" style="font-size:1.5rem;font-weight:700;color:var(--prontidao-color)">-</div>
+          <div style="font-size:0.8rem;color:var(--text-secondary)">milissegundos (round-trip)</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Usuários Ativos</h3>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--spacing-md)">
+        <p style="font-size:0.85rem;color:var(--text-secondary)" id="ativosInfo">Últimos 10 minutos</p>
+        <button class="btn btn-secondary btn-sm" onclick="Admin.loadAtivos()">Atualizar</button>
+      </div>
+
+      <div id="ativosList"></div>
+      <div id="recentesList" style="margin-top:var(--spacing-lg)"></div>
+    </div>
+
+    <div class="admin-section" id="tab-config">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Configurações Gerais</h3>
+      <div class="admin-form card">
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-md) 0 var(--spacing-sm)">Sistema</h4>
+        <div class="input-group"><label class="input-label">Nome do Sistema (tela de login)</label><input class="input" id="configNomeSistema" placeholder="SGPO"></div>
+        <div class="input-group"><label class="input-label">Subtítulo (tela de login)</label><input class="input" id="configSubtituloSistema" placeholder="Sistema de Gestão da Prontidão Operacional"></div>
+        <div class="input-group"><label class="input-label">Nome da Unidade</label><input class="input" id="configUnidade" placeholder="1º CBPM"></div>
+
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-lg) 0 var(--spacing-sm)">Plantão</h4>
+        <div class="input-group"><label class="input-label">Horário Início Padrão</label><input class="input" type="time" id="configInicio" value="07:30"></div>
+        <div class="input-group"><label class="input-label">Duração do Plantão (horas)</label><input class="input" type="number" id="configDuracao" value="24"></div>
+
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-lg) 0 var(--spacing-sm)">Sincronização</h4>
+        <div class="input-group"><label class="input-label">Intervalo de Atualização (segundos)</label><input class="input" type="number" id="configSyncIntervalo" min="5" max="30" value="30"></div>
+
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-lg) 0 var(--spacing-sm)">API</h4>
+        <div class="input-group"><label class="input-label">URL do Google Apps Script</label><input class="input" type="url" id="configApiUrl" placeholder="https://script.google.com/macros/s/..."></div>
+
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-lg) 0 var(--spacing-sm)">Campanha / Tema</h4>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:var(--spacing-md)">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem">
+            <input type="checkbox" id="configCampanhaAuto" checked> Auto-detectar campanha por data
+          </label>
+        </div>
+        <div id="campanhaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:var(--spacing-md)"></div>
+
+        <h4 style="font-size:0.9rem;font-weight:600;margin:var(--spacing-lg) 0 var(--spacing-sm)">Postos de Serviço (GB > SGB > Postos)</h4>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+          <button class="btn btn-primary btn-sm" onclick="Admin.showForm('posto')">+ Novo Posto</button>
+        </div>
+        <div id="postosTree" style="margin-bottom:var(--spacing-md)"></div>
+
+        <button class="btn btn-primary" onclick="Admin.saveConfig()">Salvar Configurações</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="adminModal" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h3 class="modal-title" id="adminModalTitle">Novo Registro</h3><button class="btn btn-ghost btn-icon" onclick="Admin.closeModal()">✕</button></div>
+      <div id="adminModalContent"></div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const POSTOS_MILITAR = ['Soldado','Cabo','3º Sargento','2º Sargento','1º Sargento','Subtenente','2º Tenente','1º Tenente','Capitão','Major','Tenente Coronel','Coronel'];
+    const POSTOS_OFICIAL = ['2º Tenente','1º Tenente','Capitão','Major','Tenente Coronel','Coronel','General de Brigada'];
+    const PERFIS = ['admin','comandante','operador','visualizador'];
+    const NIVEL_PERMISSAO = ['GB','SGB','POSTO'];
+    const PROGRAMAS = ['Passagem de serviço','Instrução','Treinamento físico','Refeição','Aquartelamento','Manutenção do quartel','Manutenção preventiva'];
+
+    function selectOpts(options, selected) {
+      return options.map(o => `<option value="${o}" ${o === selected ? 'selected' : ''}>${o}</option>`).join('');
+    }
+
+    const Admin = {
+      data: { usuarios: [], militares: [], oficiais: [], atividades: [], sons: [], logos: [] },
+      _editingId: null,
+      _editingType: null,
+
+      async init() {
+        try {
+          if (!Auth.requireAuth()) return;
+          if (!Auth.canTela('admin', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+          API.getConfig();
+          NAV.init('admin');
+          this.hideUnauthorizedTabs();
+          await this.loadConfig();
+          await this.loadAll();
+          await this.testConnection();
+          this.loadAtivos();
+        } catch (e) { console.error('Admin init error:', e); }
+      },
+
+      async loadAll() {
+        try {
+          const results = await Promise.allSettled([
+            API.get('usuarios'), API.getUsuariosEditaveis(Auth.userId), API.get('militares'), API.get('oficiais'),
+            API.get('atividades_padrao'), API.get('sons'), API.get('logos'),
+            API.getPostosServico(), API.get('permissoes_tela'), API.get('viaturas'), API.getTiposViatura(),
+            API.get('naturezas')
+          ]);
+          const extract = (r) => r.status === 'fulfilled' ? r.value : null;
+          const [usuarios, editaveis, militares, oficiais, atividades, sons, logos, postos, permissoesTela, viaturas, tiposViatura, naturezas] = results.map(extract);
+          const users = (editaveis && editaveis.length > 0) ? editaveis : (usuarios || []);
+          this.data = { usuarios: users, allUsuarios: usuarios||[], militares: militares||[], oficiais: oficiais||[], atividades: atividades||[], sons: (sons && sons.length > 0) ? sons : Utils.defaultSounds(), logos: logos||[], postos: Array.isArray(postos) ? postos : (postos?.postos || postos || []), permissoesTela: permissoesTela||[], viaturas: viaturas||[], tiposViatura: tiposViatura||[], naturezas: naturezas||[] };
+          this.renderUsuarios(); this.renderMilitares(); this.renderOficiaisAdmin();
+          this.renderAtividades(); this.renderSons(); this.renderLogos();
+          this.renderPostosTree(); this.renderPermissoesTelaList();
+          this.renderViaturas(); this.renderTiposViaturas(); this.renderNaturezas();
+        } catch (e) { console.warn('Admin loadAll:', e); }
+      },
+
+      hideUnauthorizedTabs() {
+        const tabPerms = {
+          usuarios: 'usuarios', militares: 'militares', oficiais: 'oficiais_a',
+          atividades: 'atividades', permissoesTela: 'permissoes',
+          config: 'config', viaturas: 'usuarios'
+        };
+        let firstAllowed = null;
+        document.querySelectorAll('.admin-tab').forEach(tab => {
+          const onclick = tab.getAttribute('onclick') || '';
+          const match = onclick.match(/showTab\('(\w+)'/);
+          if (!match) return;
+          const tabName = match[1];
+          if (tabPerms[tabName] && !Auth.canTela('admin', tabPerms[tabName])) {
+            tab.style.display = 'none';
+          } else if (!firstAllowed) {
+            firstAllowed = tab;
+          }
+        });
+        if (firstAllowed) firstAllowed.click();
+      },
+
+      showTab(name, evt) {
+        const tabPerms = {
+          usuarios: 'usuarios', militares: 'militares', oficiais: 'oficiais_a',
+          atividades: 'atividades', permissoesTela: 'permissoes',
+          config: 'config', viaturas: 'usuarios'
+        };
+        if (tabPerms[name] && !Auth.canTela('admin', tabPerms[name])) {
+          Utils.showToast('Acesso negado para esta aba', 'error');
+          return;
+        }
+        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        const btn = (evt && evt.target) ? (evt.target.closest('.admin-tab') || evt.target) : document.querySelector(`.admin-tab[onclick*="${name}"]`);
+        if (btn) btn.classList.add('active');
+        document.getElementById('tab-' + name).classList.add('active');
+        if (name === 'conexao') { this.testConnection(); this.loadAtivos(); }
+      },
+
+      renderUsuarios() {
+        const el = document.getElementById('usuariosList');
+        const editorNivel = Auth.nivelPermissao || 'POSTO';
+        el.innerHTML = this.data.usuarios.map(u => {
+          const canDelete = (editorNivel === 'GB') || (editorNivel === 'SGB' && u.nivelPermissao !== 'GB');
+          return `
+          <div class="admin-list-item">
+            <div><div style="font-weight:500">${Utils.escapeHtml(u.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || u.usuario || '')} - ${u.perfil || 'operador'} - ${u.nivelPermissao || 'POSTO'}</div></div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editUsuario('${u.id}')">Editar</button>
+              ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('usuarios','${u.id}','${Utils.escapeHtml(u.nome)}')">Excluir</button>` : ''}
+            </div>
+          </div>`;
+        }).join('') || '<div class="empty-state"><p>Nenhum usuário cadastrado</p></div>';
+      },
+
+      renderMilitares() {
+        const el = document.getElementById('militaresList');
+        el.innerHTML = Utils.sortByName(this.data.militares).map(m => `
+          <div class="admin-list-item">
+            <div><div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.posto || '')}</div></div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editMilitar('${m.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('militares','${m.id}','${Utils.escapeHtml(m.nome)}')">Excluir</button>
+            </div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>Nenhum militar cadastrado</p></div>';
+      },
+
+      renderViaturas() {
+        const el = document.getElementById('viaturasList');
+        el.innerHTML = this.data.viaturas.map(v => {
+          const tc = API.getTipoCor(v.tipo);
+          return `
+          <div class="admin-list-item">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:${tc}22;color:${tc};font-weight:700;font-size:0.75rem">${v.tipo}</span>
+              <div><div style="font-weight:500">${Utils.escapeHtml(v.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(v.placa || '')} - Capacidade: ${v.capacidade || '-'}${v.postoId ? ' - Posto: ' + Utils.escapeHtml((Admin.data.postos.find(p => p.id === v.postoId) || {}).nome || '') : ''}</div></div>
+            </div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editViatura('${v.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('viaturas','${v.id}','${Utils.escapeHtml(v.nome)}')">Excluir</button>
+            </div>
+          </div>
+        `;
+        }).join('') || '<div class="empty-state"><p>Nenhuma viatura cadastrada</p></div>';
+      },
+
+      renderTiposViaturas() {
+        const el = document.getElementById('tiposViaturaList');
+        const tipos = (this.data.tiposViatura || []).filter(t => t.Status !== 'removido');
+        el.innerHTML = tipos.map(t => `
+          <div class="admin-list-item">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:${t.cor}22;color:${t.cor};font-weight:700;font-size:0.75rem">${t.sigla}</span>
+              <div><div style="font-weight:500">${Utils.escapeHtml(t.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(t.descricao || '')}</div></div>
+            </div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editTipoViatura('${t.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDeleteTipoViatura('${t.id}','${Utils.escapeHtml(t.nome)}')">Excluir</button>
+            </div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>Nenhum tipo cadastrado</p></div>';
+      },
+
+      editTipoViatura(id) {
+        const item = (this.data.tiposViatura || []).find(t => t.id === id);
+        if (item) this.showForm('tipoViatura', item);
+      },
+
+      async confirmDeleteTipoViatura(id, nome) {
+        if (!confirm(`Excluir o tipo "${nome}"?`)) return;
+        await API.update('tipos_viatura', id, { Status: 'removido' });
+        Utils.showToast('Tipo removido', 'success');
+        await this.loadAll();
+      },
+
+      async saveTipoViatura() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          sigla: document.getElementById('formSiglaTipo').value.trim().toUpperCase(),
+          cor: document.getElementById('formCorTipo').value,
+          descricao: document.getElementById('formDescTipo').value.trim()
+        };
+        if (!dados.nome || !dados.sigla) { Utils.showToast('Nome e sigla são obrigatórios', 'warning'); return; }
+        try {
+          if (this._editingId) {
+            await API.update('tipos_viatura', this._editingId, dados);
+          } else {
+            await API.create('tipos_viatura', { ...dados, Status: 'ativo' });
+          }
+          Utils.showToast('Tipo salvo com sucesso', 'success');
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      renderNaturezas() {
+        const el = document.getElementById('naturezasList');
+        const items = (this.data.naturezas || []).filter(n => n.Status !== 'removido');
+        el.innerHTML = items.map(n => `
+          <div class="admin-list-item">
+            <div><div style="font-weight:500">${Utils.escapeHtml(n.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(n.valor || n.nome)}</div></div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editNatureza('${n.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDeleteNatureza('${n.id}','${Utils.escapeHtml(n.nome)}')">Excluir</button>
+            </div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>Nenhuma natureza cadastrada</p></div>';
+      },
+
+      editNatureza(id) {
+        const item = (this.data.naturezas || []).find(n => n.id === id);
+        if (item) this.showForm('natureza', item);
+      },
+
+      async confirmDeleteNatureza(id, nome) {
+        if (!confirm(`Excluir a natureza "${nome}"?`)) return;
+        await API.update('naturezas', id, { Status: 'removido' });
+        Utils.showToast('Natureza removida', 'success');
+        await this.loadAll();
+      },
+
+      async saveNatureza() {
+        const dados = {
+          nome: document.getElementById('formNaturezaNome').value.trim(),
+          valor: document.getElementById('formNaturezaValor').value.trim()
+        };
+        if (!dados.nome) { Utils.showToast('Nome é obrigatório', 'warning'); return; }
+        if (!dados.valor) dados.valor = dados.nome;
+        try {
+          if (this._editingId) {
+            await API.update('naturezas', this._editingId, dados);
+          } else {
+            await API.create('naturezas', { ...dados, Status: 'ativo' });
+          }
+          Utils.showToast('Natureza salva com sucesso', 'success');
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      renderOficiaisAdmin() {
+        const el = document.getElementById('oficiaisAdminList');
+        el.innerHTML = Utils.sortByAntiguidade(this.data.oficiais).map(o => `
+          <div class="admin-list-item">
+            <div><div style="font-weight:500">${Utils.escapeHtml(o.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(o.posto)} - Antiguidade: ${o.antiguidade || '-'} - ${Utils.escapeHtml(o.unidade || '')}</div></div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editOficial('${o.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('oficiais','${o.id}','${Utils.escapeHtml(o.nome)}')">Excluir</button>
+            </div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>Nenhum oficial cadastrado</p></div>';
+      },
+
+      renderAtividades() {
+        const el = document.getElementById('atividadesList');
+        el.innerHTML = this.data.atividades.map(a => {
+          const isSistema = !a.postoId;
+          return `
+          <div class="admin-list-item">
+            <div><div style="font-weight:500">${Utils.escapeHtml(a.nome)}${isSistema ? ' <span style="font-size:0.75rem;color:var(--accent-blue)">(Sistema)</span>' : ' <span style="font-size:0.75rem;color:var(--accent-yellow)">(Posto)</span>'}</div><div style="font-size:0.8rem;color:var(--text-muted)">${a.horario} - ${Utils.escapeHtml(a.programa || '')}${a.postoId ? ' - Posto: ' + Utils.escapeHtml(a.postoId) : ''}</div></div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editAtividade('${a.id}')">Editar</button>
+              ${isSistema ? '' : `<button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('atividades_padrao','${a.id}','${Utils.escapeHtml(a.nome)}')">Excluir</button>`}
+            </div>
+          </div>`;
+        }).join('') || '<div class="empty-state"><p>Nenhuma atividade padrão cadastrada</p></div>';
+      },
+
+      renderSons() {
+        const el = document.getElementById('sonsList');
+        el.innerHTML = this.data.sons.map(s => `
+          <div class="sound-config">
+            <button class="sound-toggle ${s.enabled ? 'on' : 'off'}" onclick="Admin.toggleSound('${s.name}', this)"></button>
+            <div style="flex:1"><div style="font-weight:500">${Utils.escapeHtml(s.name)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${s.file}</div></div>
+            <input type="range" min="0" max="100" value="${(s.volume||0.7)*100}" style="width:100px" onchange="Admin.setSoundVolume('${s.name}', this.value)">
+          </div>
+        `).join('') || '<div class="empty-state"><p>Nenhum som configurado</p></div>';
+      },
+
+      renderLogos() {
+        const el = document.getElementById('logosList');
+        el.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--spacing-md)">
+            <div class="card" style="text-align:center;padding:var(--spacing-xl)">
+              <div style="font-weight:500;margin-bottom:var(--spacing-sm)">Logo Principal</div>
+              <img src="assets/logos/bombeiros.svg" style="max-width:120px;max-height:120px;margin:0 auto var(--spacing-md)" onerror="this.style.display='none'">
+              <button class="btn btn-secondary btn-sm">Alterar Logo</button>
+            </div>
+            ${['verde','amarela','azul','branca'].map(c => `
+              <div class="card" style="text-align:center;padding:var(--spacing-xl)">
+                <div style="font-weight:500;margin-bottom:var(--spacing-sm);color:var(--accent-${c === 'verde' ? 'green' : c === 'amarela' ? 'yellow' : c === 'azul' ? 'blue' : 'white-pront'})">Prontidão ${c.charAt(0).toUpperCase() + c.slice(1)}</div>
+                <img src="assets/logos/prontidao-${c}.png" style="max-width:80px;max-height:80px;margin:0 auto var(--spacing-md)" onerror="this.style.display='none'">
+                <button class="btn btn-secondary btn-sm">Alterar</button>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      },
+
+      renderPostosTree() {
+        const el = document.getElementById('postosTree');
+        const postos = this.data.postos || [];
+        const gbs = postos.filter(p => p.tipo === 'GB');
+        const sgb = postos.filter(p => p.tipo === 'SGB');
+        const postosList = postos.filter(p => p.tipo === 'POSTO');
+
+        const renderPostoChildren = (parentId) => {
+          const children = postos.filter(p => p.postoPaiId === parentId);
+          if (children.length === 0) return '';
+          return '<div style="margin-left:24px;margin-top:4px">' + children.map(c => `
+            <div class="admin-list-item" style="border-left:3px solid ${c.tipo === 'SGB' ? 'var(--accent-blue)' : 'var(--accent-yellow)'}">
+              <div>
+                <div style="font-weight:500;font-size:0.9rem">${Utils.escapeHtml(c.nome)}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">${c.tipo}</div>
+              </div>
+              <div class="admin-actions">
+                <button class="btn btn-secondary btn-sm" onclick="Admin.editPosto('${c.id}')">Editar</button>
+                <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('postos_servico','${c.id}','${Utils.escapeHtml(c.nome)}')">Excluir</button>
+              </div>
+            </div>
+            ${renderPostoChildren(c.id)}
+          `).join('') + '</div>';
+        };
+
+        el.innerHTML = postos.length === 0 ? '<div class="empty-state"><p>Nenhum posto cadastrado</p></div>' :
+          gbs.map(gb => `
+            <div style="margin-bottom:var(--spacing-md)">
+              <div class="admin-list-item" style="border-left:3px solid var(--prontidao-color)">
+                <div>
+                  <div style="font-weight:600">${Utils.escapeHtml(gb.nome)}</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted)">${gb.tipo}</div>
+                </div>
+                <div class="admin-actions">
+                  <button class="btn btn-secondary btn-sm" onclick="Admin.editPosto('${gb.id}')">Editar</button>
+                  <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('postos_servico','${gb.id}','${Utils.escapeHtml(gb.nome)}')">Excluir</button>
+                </div>
+              </div>
+              ${renderPostoChildren(gb.id)}
+            </div>
+          `).join('') +
+          (postos.filter(p => !p.postoPaiId && p.tipo !== 'GB').length > 0 ? '<div style="margin-top:var(--spacing-md)"><h4 style="font-size:0.9rem;font-weight:500;margin-bottom:var(--spacing-sm)">Sem pai atribuído</h4>' +
+          postos.filter(p => !p.postoPaiId && p.tipo !== 'GB').map(p => `
+            <div class="admin-list-item" style="border-left:3px solid var(--text-muted)">
+              <div><div style="font-weight:500">${Utils.escapeHtml(p.nome)}</div><div style="font-size:0.75rem;color:var(--text-muted)">${p.tipo}</div></div>
+              <div class="admin-actions">
+                <button class="btn btn-secondary btn-sm" onclick="Admin.editPosto('${p.id}')">Editar</button>
+                <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('postos_servico','${p.id}','${Utils.escapeHtml(p.nome)}')">Excluir</button>
+              </div>
+            </div>
+          `).join('') + '</div>' : '');
+      },
+
+      populatePostosSelect(selectedId) {
+        const el = document.getElementById('formPostoPai');
+        if (!el) return;
+        const postos = this.data.postos || [];
+        el.innerHTML = '<option value="">Nenhum (nível superior)</option>' +
+          postos.filter(p => p.tipo !== 'POSTO').map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.tipo} - ${Utils.escapeHtml(p.nome)}</option>`).join('');
+      },
+
+      populatePostoDefaultSelect(selectedId) {
+        const el = document.getElementById('formPostoDefault');
+        if (!el) return;
+        const postos = this.data.postos || [];
+        const nivel = document.getElementById('formNivelPermissao')?.value || 'POSTO';
+        const user = this.data.allUsuarios?.find(u => u.id === Auth.userId) || {};
+        const userNivel = user.nivelPermissao || 'POSTO';
+        const userPostoIds = (this.data.postos || []).filter(p => {
+          if (userNivel === 'GB') return true;
+          if (userNivel === 'SGB') return p.postoPaiId === user.postoDefaultId || p.id === user.postoDefaultId;
+          return p.id === user.postoDefaultId;
+        }).map(p => p.id);
+        const allowed = nivel === 'GB' ? postos : postos.filter(p => userPostoIds.includes(p.id));
+        el.innerHTML = '<option value="">Nenhum</option>' +
+          allowed.map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.tipo} — ${Utils.escapeHtml(p.nome)}</option>`).join('');
+      },
+
+      populateUsuariosCustomSelect(selectedId) {
+        const el = document.getElementById('formUsuarioCustom');
+        if (!el) return;
+        el.innerHTML = '<option value="">Selecione</option>' +
+          this.data.usuarios.map(u => `<option value="${u.id}" ${u.id === selectedId ? 'selected' : ''}>${Utils.escapeHtml(u.nome)} (${u.perfil})</option>`).join('');
+      },
+
+      renderPermissoesTelaList() {
+        const el = document.getElementById('permissoesTelaList');
+        const perms = this.data.permissoesTela || [];
+        if (perms.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhuma regra de permissão configurada</p></div>'; return; }
+        const telaNames = { dashboard: 'Dashboard', rotina: 'Rotina', telegrafia: 'Telegrafia', oficiais: 'Oficiais', extras: 'Extras', relatorios: 'Relatórios', historico: 'Histórico', admin: 'Admin' };
+        el.innerHTML = perms.map(p => `
+          <div class="admin-list-item">
+            <div>
+              <div style="font-weight:500">${p.perfil === 'custom' ? 'Custom' : p.perfil} — ${telaNames[p.tela] || p.tela}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted)">${(JSON.parse(p.acoes || '[]')).join(', ')}</div>
+            </div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary btn-sm" onclick="Admin.editPermissaoTela('${p.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('permissoes_tela','${p.id}','${p.perfil} - ${telaNames[p.tela] || p.tela}')">Excluir</button>
+            </div>
+          </div>
+        `).join('');
+      },
+
+      showModal(title, html) {
+        document.getElementById('adminModalTitle').textContent = title;
+        document.getElementById('adminModalContent').innerHTML = html;
+        document.getElementById('adminModal').style.display = 'flex';
+      },
+
+      closeModal() {
+        document.getElementById('adminModal').style.display = 'none';
+        this._editingId = null;
+        this._editingType = null;
+      },
+
+      showForm(type, data) {
+        const isEdit = !!data;
+        this._editingId = data ? data.id : null;
+        this._editingType = type;
+
+        const forms = {
+          usuario: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">RE / CPF</label><input class="input" id="formReCpf" placeholder="RE ou CPF (sem dígito verificador)" value="${isEdit ? Utils.escapeHtml(data.reCpf || data.usuario || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Senha</label><input class="input" type="password" id="formSenha" placeholder="${isEdit ? 'Deixe vazio para manter' : ''}"></div>
+            ${isEdit ? '<div style="margin-bottom:12px"><button class="btn btn-danger btn-sm" onclick="Admin.redefinirSenhaUsuario(\'' + data.id + '\')" style="font-size:0.8rem">Redefinir Senha (123456 + obrigatória troca)</button></div>' : ''}
+            <div class="input-group"><label class="input-label">Perfil</label><select class="input select" id="formPerfil">${selectOpts(PERFIS, isEdit ? data.perfil : 'operador')}</select></div>
+            <div class="input-group"><label class="input-label">Nível de Permissão</label><select class="input select" id="formNivelPermissao">${selectOpts(NIVEL_PERMISSAO, isEdit ? data.nivelPermissao : 'POSTO')}</select></div>
+            <div class="input-group"><label class="input-label">Posto Padrão</label><select class="input select" id="formPostoDefault"><option value="">Nenhum</option></select></div>
+            <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Telefone</label><input class="input" id="formTelefone" value="${isEdit ? Utils.escapeHtml(data.telefone || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveUsuario()">${isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
+          </div>`,
+          militar: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPosto">${selectOpts(POSTOS_MILITAR, isEdit ? data.posto : '')}</select></div>
+            <div class="input-group"><label class="input-label">RE / CPF</label><input class="input" id="formReCpf" value="${isEdit ? Utils.escapeHtml(data.reCpf || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Matrícula</label><input class="input" id="formMatricula" value="${isEdit ? Utils.escapeHtml(data.matricula || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Função</label><input class="input" id="formFuncao" value="${isEdit ? Utils.escapeHtml(data.funcao || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Especialidade</label><input class="input" id="formEspecialidade" value="${isEdit ? Utils.escapeHtml(data.especialidade || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Telefone</label><input class="input" id="formTelefone" value="${isEdit ? Utils.escapeHtml(data.telefone || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveMilitar()">${isEdit ? 'Salvar Alterações' : 'Cadastrar Militar'}</button>
+          </div>`,
+          oficial: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPosto">${selectOpts(POSTOS_OFICIAL, isEdit ? data.posto : '')}</select></div>
+            <div class="input-group"><label class="input-label">Antiguidade</label><input class="input" type="number" id="formAntiguidade" value="${isEdit ? (data.antiguidade || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Unidade</label><input class="input" id="formUnidade" value="${isEdit ? Utils.escapeHtml(data.unidade || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Nome de Guerra</label><input class="input" id="formNomeGuerra" value="${isEdit ? Utils.escapeHtml(data.nomeGuerra || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Telefone</label><input class="input" id="formTelefone" value="${isEdit ? Utils.escapeHtml(data.telefone || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveOficial()">${isEdit ? 'Salvar Alterações' : 'Cadastrar Oficial'}</button>
+          </div>`,
+          atividade: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Ordem</label><input class="input" type="number" id="formOrdem" value="${isEdit ? (data.ordem || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Horário</label><input class="input" type="time" id="formHorario" value="${isEdit ? (data.horario || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Programa de Apoio</label><select class="input select" id="formPrograma">${selectOpts(PROGRAMAS, isEdit ? data.programa : 'Passagem de serviço')}</select></div>
+            <div class="input-group"><label class="input-label">Responsável Padrão</label><input class="input" id="formResp" value="${isEdit ? Utils.escapeHtml(data.responsavel_padrao || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Duração (minutos)</label><input class="input" type="number" id="formDuração" value="${isEdit ? (data.duracaoMinutos || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Posto (vazio = Sistema)</label><select class="input select" id="formPostoAtividade"><option value="">Padrão do Sistema</option></select></div>
+            <div class="input-group" style="display:flex;gap:var(--spacing-md);align-items:center">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="formObrigatoria" ${isEdit && data.obrigatoria == true ? 'checked' : ''}> Obrigatória</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="formNotificar" ${isEdit && data.notificar == true ? 'checked' : ''}> Notificar</label>
+            </div>
+            <div class="input-group"><label class="input-label">Observações</label><input class="input" id="formObservacoes" value="${isEdit ? Utils.escapeHtml(data.observacoes || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveAtividade()">${isEdit ? 'Salvar Alterações' : 'Criar Atividade'}</button>
+          </div>`,
+          posto: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" placeholder="Ex: 1º GB PMESP" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Tipo</label><select class="input select" id="formTipoPosto"><option value="GB" ${isEdit && data.tipo === 'GB' ? 'selected' : ''}>GB</option><option value="SGB" ${isEdit && data.tipo === 'SGB' ? 'selected' : ''}>SGB</option><option value="POSTO" ${!isEdit || (isEdit && data.tipo === 'POSTO') ? 'selected' : ''}>POSTO</option></select></div>
+            <div class="input-group"><label class="input-label">Posto Pai</label><select class="input select" id="formPostoPai"><option value="">Nenhum (nível superior)</option></select></div>
+            <div class="input-group"><label class="input-label">Ordem</label><input class="input" type="number" id="formOrdem" value="${isEdit ? (data.ordem || 0) : 0}"></div>
+            <div class="input-group"><label class="input-label">Logo (URL ou base64)</label><input class="input" id="formLogo" placeholder="URL da imagem do logo" value="${isEdit ? Utils.escapeHtml(data.logo || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.savePosto()">${isEdit ? 'Salvar Alterações' : 'Criar Posto'}</button>
+          </div>`,
+          permissaoTela: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Perfil</label><select class="input select" id="formPerfilTela"><option value="admin">admin</option><option value="comandante">comandante</option><option value="operador">operador</option><option value="visualizador">visualizador</option><option value="custom">custom (usuário específico)</option></select></div>
+            <div class="input-group" id="customUserGroup" style="display:none"><label class="input-label">Usuário</label><select class="input select" id="formUsuarioCustom"></select></div>
+            <div class="input-group"><label class="input-label">Tela</label><select class="input select" id="formTelaPermissao"><option value="dashboard">Dashboard</option><option value="rotina">Rotina</option><option value="telegrafia">Telegrafia</option><option value="oficiais">Oficiais</option><option value="extras">Extras</option><option value="relatorios">Relatórios</option><option value="historico">Histórico</option><option value="admin">Administração</option></select></div>
+            <div class="input-group"><label class="input-label">Ações Permitidas</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="ver"> ver</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="editar"> editar</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="excluir"> excluir</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="status"> status</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="adicionar"> adicionar</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="admin"> admin</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="config"> config</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="gerar"> gerar</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="ver_equipe"> ver_equipe</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="ver_notificacoes"> ver_notificacoes</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="ver_countdown"> ver_countdown</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="entrada_saida"> entrada_saida</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="usuarios"> usuarios</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="militares"> militares</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="oficiais_a"> oficiais_a</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="atividades"> atividades</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="postos"> postos</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="checkbox" class="permAcao" value="permissoes"> permissoes</label>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="Admin.savePermissaoTela()">${isEdit ? 'Salvar Alterações' : 'Criar Permissão'}</button>
+          </div>`,
+          viatura: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome / Identificação</label><input class="input" id="formNome" placeholder="Ex: ABT-01" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Tipo</label><select class="input select" id="formTipoViatura">${(this.data.tiposViatura || []).map(t => `<option value="${t.sigla}" ${isEdit && data.tipo === t.sigla ? 'selected' : ''}>${t.sigla} — ${Utils.escapeHtml(t.nome)}</option>`).join('')}</select></div>
+            <div class="input-group"><label class="input-label">Placa</label><input class="input" id="formPlaca" placeholder="ABC1D23" value="${isEdit ? Utils.escapeHtml(data.placa || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Capacidade (tripulantes)</label><input class="input" type="number" id="formCapacidade" min="1" max="20" value="${isEdit ? (data.capacidade || 4) : 4}"></div>
+            <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPostoViatura"><option value="">Selecione (disponível para todos)</option>${(this.data.postos || []).map(p => `<option value="${p.id}" ${isEdit && data.postoId === p.id ? 'selected' : ''}>${Utils.escapeHtml(p.nome)}</option>`).join('')}</select></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveViatura()">${isEdit ? 'Salvar Alterações' : 'Cadastrar Viatura'}</button>
+          </div>`,
+          tipoViatura: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" placeholder="Ex: Resgate" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="input-group"><label class="input-label">Sigla</label><input class="input" id="formSiglaTipo" placeholder="Ex: RES" maxlength="10" value="${isEdit ? Utils.escapeHtml(data.sigla) : ''}"></div>
+              <div class="input-group"><label class="input-label">Cor</label><input class="input" type="color" id="formCorTipo" value="${isEdit ? (data.cor || '#9e9e9e') : '#9e9e9e'}" style="height:42px;padding:4px"></div>
+            </div>
+            <div class="input-group"><label class="input-label">Descrição</label><input class="input" id="formDescTipo" placeholder="Descrição do tipo" value="${isEdit ? Utils.escapeHtml(data.descricao || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveTipoViatura()">${isEdit ? 'Salvar Alterações' : 'Criar Tipo'}</button>
+          </div>`,
+          natureza: `<div class="admin-form">
+            <div class="input-group"><label class="input-label">Nome (exibição)</label><input class="input" id="formNaturezaNome" placeholder="Ex: Incêndio" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
+            <div class="input-group"><label class="input-label">Valor (armazenado)</label><input class="input" id="formNaturezaValor" placeholder="Ex: Incêndio (deixe em branco para usar o nome)" value="${isEdit ? Utils.escapeHtml(data.valor || '') : ''}"></div>
+            <button class="btn btn-primary btn-block" onclick="Admin.saveNatureza()">${isEdit ? 'Salvar Alterações' : 'Criar Natureza'}</button>
+          </div>`
+        };
+
+        const titles = {
+          usuario: isEdit ? 'Editar Usuário' : 'Novo Usuário',
+          militar: isEdit ? 'Editar Militar' : 'Novo Militar',
+          oficial: isEdit ? 'Editar Oficial' : 'Novo Oficial',
+          atividade: isEdit ? 'Editar Atividade' : 'Nova Atividade',
+          posto: isEdit ? 'Editar Posto' : 'Novo Posto de Serviço',
+          permissaoTela: isEdit ? 'Editar Permissão' : 'Nova Permissão de Tela',
+          viatura: isEdit ? 'Editar Viatura' : 'Nova Viatura',
+          tipoViatura: isEdit ? 'Editar Tipo de Viatura' : 'Novo Tipo de Viatura',
+          natureza: isEdit ? 'Editar Natureza' : 'Nova Natureza'
+        };
+
+        this.showModal(titles[type] || 'Registro', forms[type] || '');
+
+        if (type === 'posto') this.populatePostosSelect(isEdit ? data.postoPaiId : '');
+        if (type === 'atividade') {
+          const sel = document.getElementById('formPostoAtividade');
+          if (sel) {
+            sel.innerHTML = '<option value="">Padrão do Sistema</option>' +
+              (this.data.postos || []).map(p => `<option value="${p.id}" ${isEdit && data.postoId === p.id ? 'selected' : ''}>${Utils.escapeHtml(p.nome)}</option>`).join('');
+          }
+        }
+        if (type === 'usuario') {
+          this.populatePostoDefaultSelect(isEdit ? data.postoDefaultId : '');
+          document.getElementById('formNivelPermissao').addEventListener('change', (e) => {
+            this.populatePostoDefaultSelect(isEdit ? data.postoDefaultId : '');
+          });
+        }
+        if (type === 'permissaoTela') {
+          if (isEdit && data.acoes) {
+            const acoes = JSON.parse(data.acoes || '[]');
+            document.querySelectorAll('.permAcao').forEach(cb => { cb.checked = acoes.includes(cb.value); });
+            if (data.perfil === 'custom') document.getElementById('customUserGroup').style.display = 'block';
+            document.getElementById('formPerfilTela').value = data.perfil || 'operador';
+            document.getElementById('formTelaPermissao').value = data.tela || 'dashboard';
+          }
+          document.getElementById('formPerfilTela').addEventListener('change', (e) => {
+            document.getElementById('customUserGroup').style.display = e.target.value === 'custom' ? 'block' : 'none';
+          });
+          this.populateUsuariosCustomSelect(isEdit ? data.usuarioId : '');
+        }
+      },
+
+      async redefinirSenhaUsuario(id) {
+        if (!confirm('Redefinir a senha deste usuário para 123456?\nSerá solicitada alteração no próximo login.')) return;
+        try {
+          const result = await API.redefinirSenha(id);
+          if (result.success) {
+            Utils.showToast('Senha redefinida (123456) — obrigatória troca no próximo login', 'success');
+          } else {
+            Utils.showToast(result.error || 'Erro ao redefinir senha', 'error');
+          }
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async saveUsuario() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          reCpf: document.getElementById('formReCpf').value,
+          perfil: document.getElementById('formPerfil').value,
+          nivelPermissao: document.getElementById('formNivelPermissao').value,
+          postoDefaultId: document.getElementById('formPostoDefault').value,
+          email: document.getElementById('formEmail').value,
+          telefone: document.getElementById('formTelefone').value,
+          editorId: Auth.userId
+        };
+        const senha = document.getElementById('formSenha').value;
+        if (senha) dados.senha = senha;
+        if (!this._editingId && !senha) { Utils.showToast('Senha é obrigatória', 'warning'); return; }
+
+        try {
+          if (this._editingId) {
+            await API.update('usuarios', this._editingId, dados);
+            Utils.showToast('Usuário atualizado', 'success');
+          } else {
+            dados.senha = senha;
+            await API.create('usuarios', dados);
+            Utils.showToast('Usuário criado', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async saveMilitar() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          posto: document.getElementById('formPosto').value,
+          reCpf: document.getElementById('formReCpf').value,
+          matricula: document.getElementById('formMatricula').value,
+          funcao: document.getElementById('formFuncao').value,
+          especialidade: document.getElementById('formEspecialidade').value,
+          email: document.getElementById('formEmail').value,
+          telefone: document.getElementById('formTelefone').value
+        };
+        try {
+          if (this._editingId) {
+            await API.update('militares', this._editingId, dados);
+            Utils.showToast('Militar atualizado', 'success');
+          } else {
+            await API.create('militares', dados);
+            Utils.showToast('Militar cadastrado', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async saveOficial() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          posto: document.getElementById('formPosto').value,
+          antiguidade: parseInt(document.getElementById('formAntiguidade').value) || 0,
+          unidade: document.getElementById('formUnidade').value,
+          nomeGuerra: document.getElementById('formNomeGuerra').value,
+          email: document.getElementById('formEmail').value,
+          telefone: document.getElementById('formTelefone').value
+        };
+        try {
+          if (this._editingId) {
+            await API.update('oficiais', this._editingId, dados);
+            Utils.showToast('Oficial atualizado', 'success');
+          } else {
+            await API.create('oficiais', dados);
+            Utils.showToast('Oficial cadastrado', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async saveAtividade() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          ordem: parseInt(document.getElementById('formOrdem').value) || 0,
+          horario: document.getElementById('formHorario').value,
+          programa: document.getElementById('formPrograma').value,
+          responsavel_padrao: document.getElementById('formResp').value,
+          duracaoMinutos: parseInt(document.getElementById('formDuração').value) || 0,
+          obrigatoria: document.getElementById('formObrigatoria').checked,
+          notificar: document.getElementById('formNotificar').checked,
+          observacoes: document.getElementById('formObservacoes').value,
+          postoId: document.getElementById('formPostoAtividade')?.value || ''
+        };
+        try {
+          if (this._editingId) {
+            await API.update('atividades_padrao', this._editingId, dados);
+            Utils.showToast('Atividade atualizada', 'success');
+          } else {
+            await API.create('atividades_padrao', dados);
+            Utils.showToast('Atividade criada', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      editUsuario(id) {
+        const item = this.data.usuarios.find(u => u.id === id);
+        if (item) this.showForm('usuario', item);
+      },
+      editMilitar(id) {
+        const item = this.data.militares.find(m => m.id === id);
+        if (item) this.showForm('militar', item);
+      },
+      editOficial(id) {
+        const item = this.data.oficiais.find(o => o.id === id);
+        if (item) this.showForm('oficial', item);
+      },
+      editAtividade(id) {
+        const item = this.data.atividades.find(a => a.id === id);
+        if (item) this.showForm('atividade', item);
+      },
+
+      editPosto(id) {
+        const item = (this.data.postos || []).find(p => p.id === id);
+        if (item) this.showForm('posto', item);
+      },
+
+      editPermissaoTela(id) {
+        const item = (this.data.permissoesTela || []).find(p => p.id === id);
+        if (item) this.showForm('permissaoTela', item);
+      },
+
+      editViatura(id) {
+        const item = (this.data.viaturas || []).find(v => v.id === id);
+        if (item) this.showForm('viatura', item);
+      },
+
+  async savePosto() {
+  const dados = {
+    nome: document.getElementById('formNome').value,
+    tipo: document.getElementById('formTipoPosto').value,
+    postoPaiId: document.getElementById('formPostoPai').value,
+    ordem: parseInt(document.getElementById('formOrdem').value) || 0,
+    logo: document.getElementById('formLogo')?.value || ''
+  };
+        if (!dados.nome) { Utils.showToast('Nome é obrigatório', 'warning'); return; }
+        try {
+          if (this._editingId) {
+            await API.update('postos_servico', this._editingId, dados);
+            Utils.showToast('Posto atualizado', 'success');
+          } else {
+            await API.create('postos_servico', dados);
+            Utils.showToast('Posto criado', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async savePermissaoTela() {
+        const acoes = [];
+        document.querySelectorAll('.permAcao:checked').forEach(cb => acoes.push(cb.value));
+        if (acoes.length === 0) { Utils.showToast('Selecione ao menos uma ação', 'warning'); return; }
+        const dados = {
+          perfil: document.getElementById('formPerfilTela').value,
+          usuarioId: document.getElementById('formPerfilTela').value === 'custom' ? (document.getElementById('formUsuarioCustom').value || '') : '',
+          tela: document.getElementById('formTelaPermissao').value,
+          acoes: JSON.stringify(acoes)
+        };
+        try {
+          if (this._editingId) {
+            await API.update('permissoes_tela', this._editingId, dados);
+            Utils.showToast('Permissão atualizada', 'success');
+          } else {
+            await API.create('permissoes_tela', dados);
+            Utils.showToast('Permissão criada', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async saveViatura() {
+        const dados = {
+          nome: document.getElementById('formNome').value,
+          tipo: document.getElementById('formTipoViatura').value,
+          placa: document.getElementById('formPlaca').value,
+          capacidade: parseInt(document.getElementById('formCapacidade').value) || 4,
+          postoId: document.getElementById('formPostoViatura').value || '',
+          ativo: true
+        };
+        if (!dados.nome) { Utils.showToast('Nome é obrigatório', 'warning'); return; }
+        try {
+          if (this._editingId) {
+            await API.update('viaturas', this._editingId, dados);
+            Utils.showToast('Viatura atualizada', 'success');
+          } else {
+            await API.create('viaturas', dados);
+            Utils.showToast('Viatura cadastrada', 'success');
+          }
+          this.closeModal(); await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      confirmDelete(sheet, id, nome) {
+        if (!confirm(`Deseja realmente excluir "${nome}"?\n\nEsta ação não pode ser desfeita.`)) return;
+        this.deleteItem(sheet, id);
+      },
+
+      async deleteItem(sheet, id) {
+        try {
+          await API.delete(sheet, id);
+          Utils.showToast('Excluído com sucesso', 'success');
+          await this.loadAll();
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      async toggleSound(name, btn) {
+        const sound = this.data.sons.find(s => s.name === name);
+        if (sound) {
+          sound.enabled = !sound.enabled;
+          btn.className = `sound-toggle ${sound.enabled ? 'on' : 'off'}`;
+          try { await API.update('configuracoes', { tipo: 'sons', sons: this.data.sons }); } catch(e) {}
+        }
+      },
+      async setSoundVolume(name, val) {
+        const sound = this.data.sons.find(s => s.name === name);
+        if (sound) {
+          sound.volume = val / 100;
+          try { await API.update('configuracoes', { tipo: 'sons', sons: this.data.sons }); } catch(e) {}
+        }
+      },
+
+      async loadConfig() {
+        try {
+          if (!API.isDemo && API.BASE_URL) {
+            try {
+              const result = await API.request('getConfig', {});
+              if (result && result.config) {
+                const local = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+                const merged = { ...local, ...result.config };
+                localStorage.setItem('sgpo_config', JSON.stringify(merged));
+                if (API._config) API._config = merged;
+              }
+            } catch (e) {}
+          }
+          const el = (id) => document.getElementById(id);
+          const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+          if (el('configNomeSistema')) el('configNomeSistema').value = config.nomeSistema || '';
+          if (el('configSubtituloSistema')) el('configSubtituloSistema').value = config.subtituloSistema || '';
+          if (el('configUnidade')) el('configUnidade').value = config.nomeUnidade || '';
+          if (el('configInicio')) el('configInicio').value = config.inicioPlantao || '07:30';
+          if (el('configDuracao')) el('configDuracao').value = config.duracaoPlantao || 24;
+          if (el('configSyncIntervalo')) el('configSyncIntervalo').value = config.syncIntervalo || 30;
+          if (el('configApiUrl')) el('configApiUrl').value = config.apiUrl || API.DEFAULT_URL;
+          if (el('configCampanhaAuto')) el('configCampanhaAuto').checked = config.campanhaAuto !== false;
+          this.renderCampanhaGrid(config.campanha || 'nenhuma');
+        } catch (e) { console.warn('loadConfig error:', e); }
+      },
+
+      renderCampanhaGrid(current) {
+        const el = document.getElementById('campanhaGrid');
+        if (!el) return;
+        el.innerHTML = Utils.CAMPANHAS.map(c => `
+          <div class="campanha-card" onclick="Admin.selectCampanha('${c.id}')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 12px;background:${c.id === current ? 'var(--prontidao-dim)' : 'var(--bg-secondary)'};border:2px solid ${c.id === current ? 'var(--prontidao-color)' : 'var(--border-color)'};border-radius:12px;cursor:pointer;transition:all 150ms;text-align:center">
+            <span style="font-size:1.8rem">${c.icone || '🎨'}</span>
+            <span style="font-size:0.78rem;font-weight:500;color:${c.id === current ? 'var(--prontidao-color)' : 'var(--text-secondary)'}">${c.nome}</span>
+            ${c.id === current ? '<span style="font-size:0.7rem;color:var(--prontidao-color);font-weight:700">ATIVO</span>' : ''}
+          </div>
+        `).join('');
+      },
+
+      selectCampanha(campanhaId) {
+        this._selectedCampanha = campanhaId;
+        this.renderCampanhaGrid(campanhaId);
+      },
+
+      saveConfig() {
+        const existing = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+        const config = {
+          ...existing,
+          nomeSistema: document.getElementById('configNomeSistema').value,
+          subtituloSistema: document.getElementById('configSubtituloSistema').value,
+          nomeUnidade: document.getElementById('configUnidade').value,
+          inicioPlantao: document.getElementById('configInicio').value,
+          duracaoPlantao: parseInt(document.getElementById('configDuracao').value) || 24,
+          syncIntervalo: parseInt(document.getElementById('configSyncIntervalo').value) || 30,
+          apiUrl: document.getElementById('configApiUrl').value,
+          campanhaAuto: document.getElementById('configCampanhaAuto').checked,
+          campanha: this._selectedCampanha || existing.campanha || 'nenhuma'
+        };
+        localStorage.setItem('sgpo_config', JSON.stringify(config));
+        API._config = config;
+        if (config.apiUrl) API.init(config.apiUrl);
+        const campanhaAtiva = config.campanhaAuto ? Utils.autoDetectCampanha() : config.campanha;
+        Utils.applyCampanha(campanhaAtiva);
+        Utils.showToast('Configurações salvas', 'success');
+        if (!API.isDemo) API.request('updateConfig', { config }).catch(() => {});
+        if (typeof Sync !== 'undefined') Sync.broadcastConfigChanged(config);
+      },
+
+      async testConnection() {
+        const btn = document.getElementById('connTestBtn');
+        const dot = document.getElementById('connDot');
+        const label = document.getElementById('connLabel');
+        const details = document.getElementById('connDetails');
+        const sheetsEl = document.getElementById('connSheets');
+        const latencyEl = document.getElementById('connLatency');
+
+        btn.disabled = true;
+        btn.textContent = 'Testando...';
+        dot.style.background = 'var(--text-muted)';
+        label.textContent = 'Conectando...';
+        details.textContent = '';
+
+        try {
+          const result = await API.testConnection();
+          if (result.success) {
+            dot.style.background = 'var(--accent-green)';
+            label.textContent = 'Conectado';
+            const mode = result.mode === 'demo' ? ' (modo demonstração)' : '';
+            details.textContent = `Versão ${result.version}${mode} — ${new Date().toLocaleTimeString('pt-BR')}`;
+            sheetsEl.textContent = result.sheets || '-';
+            sheetsEl.style.color = 'var(--accent-green)';
+            latencyEl.textContent = result.latency + 'ms';
+            latencyEl.style.color = result.latency < 200 ? 'var(--accent-green)' : result.latency < 1000 ? 'var(--accent-yellow)' : 'var(--accent-red, #f44336)';
+          } else {
+            dot.style.background = 'var(--accent-red, #f44336)';
+            label.textContent = 'Falha na conexão';
+            details.textContent = result.error || 'Erro desconhecido';
+            sheetsEl.textContent = '-';
+            latencyEl.textContent = '-';
+          }
+        } catch (e) {
+          dot.style.background = 'var(--accent-red, #f44336)';
+          label.textContent = 'Erro';
+          details.textContent = e.message || 'Falha ao conectar';
+          sheetsEl.textContent = '-';
+          latencyEl.textContent = '-';
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Testar Conexão';
+      },
+
+      async loadAtivos() {
+        const el = document.getElementById('ativosList');
+        const relEl = document.getElementById('recentesList');
+        el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">Carregando...</div>';
+        relEl.innerHTML = '';
+
+        try {
+          const result = await API.getUsuariosAtivos();
+          const ativos = result.ativos || [];
+          const recentes = result.recentes || [];
+          const total = result.total || 0;
+
+          document.getElementById('ativosInfo').textContent = `${ativos.length} ativo(s) de ${total} cadastrado(s) — últimos 10 min`;
+
+          if (ativos.length === 0) {
+            el.innerHTML = '<div class="empty-state" style="padding:24px"><p>Nenhum usuário ativo nos últimos 10 minutos</p></div>';
+          } else {
+            el.innerHTML = ativos.map(u => `
+              <div class="admin-list-item" style="border-left:3px solid var(--accent-green)">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span style="width:10px;height:10px;border-radius:50%;background:var(--accent-green);flex-shrink:0"></span>
+                  <div>
+                    <div style="font-weight:600">${Utils.escapeHtml(u.nome)}</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
+                  </div>
+                </div>
+                <span class="badge badge-green">Online</span>
+              </div>
+            `).join('');
+          }
+
+          if (recentes.length > 0) {
+            relEl.innerHTML = `
+              <h4 style="font-size:0.9rem;font-weight:600;margin-bottom:var(--spacing-sm);color:var(--text-secondary)">Recentes (última hora)</h4>
+              ${recentes.map(u => `
+                <div class="admin-list-item" style="opacity:0.7">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <span style="width:10px;height:10px;border-radius:50%;background:var(--text-muted);flex-shrink:0"></span>
+                    <div>
+                      <div style="font-weight:500">${Utils.escapeHtml(u.nome)}</div>
+                      <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
+                    </div>
+                  </div>
+                  <span class="badge badge-info">Recente</span>
+                </div>
+              `).join('')}
+            `;
+          }
+        } catch (e) {
+          el.innerHTML = `<div class="empty-state" style="padding:24px"><p>Erro ao carregar: ${Utils.escapeHtml(e.message)}</p></div>`;
+        }
+      }
+    };
+    document.addEventListener('DOMContentLoaded', () => Admin.init());
+  </script>
+</body>
+</html>

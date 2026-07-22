@@ -1,0 +1,20 @@
+{
+  "name": "SGPO - Sistema de Gestão da Prontidão Operacional",
+  "short_name": "SGPO",
+  "description": "Sistema de gestão da rotina operacional do Corpo de Bombeiros PMESP",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "any",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    {
+      "src": "assets/logos/bombeiros.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

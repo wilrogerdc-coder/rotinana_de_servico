@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>SGPO - Telegrafia</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <style>
+    .tele-current {
+      text-align: center;
+      padding: var(--spacing-xxl);
+      background: var(--bg-card);
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border-light);
+      margin-bottom: var(--spacing-xl);
+    }
+    .tele-current-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: var(--spacing-md);
+    }
+    .tele-current-avatar {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: var(--prontidao-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--prontidao-color);
+      margin: 0 auto var(--spacing-md);
+      border: 3px solid var(--prontidao-color);
+    }
+    .tele-current-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: var(--spacing-xs);
+    }
+    .tele-current-time {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--prontidao-color);
+      margin-top: var(--spacing-md);
+    }
+    .tele-select-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+    .tele-militar-card {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      padding: var(--spacing-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+    .tele-militar-card:hover {
+      border-color: var(--prontidao-color);
+      background: var(--bg-card-hover);
+    }
+    .tele-history {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .tele-history-item {
+      display: grid;
+      grid-template-columns: 80px 1fr 80px;
+      gap: var(--spacing-md);
+      padding: var(--spacing-md);
+      border-bottom: 1px solid var(--border-light);
+      align-items: center;
+    }
+    .tele-history-time {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--prontidao-color);
+    }
+    .tele-duration {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-align: right;
+    }
+    @media (max-width: 768px) {
+      .tele-current { padding: var(--spacing-xl); }
+      .tele-current-avatar { width: 80px; height: 80px; font-size: 1.5rem; }
+      .tele-current-name { font-size: 1.2rem; }
+      .tele-current-time { font-size: 1.5rem; }
+      .tele-select-grid { grid-template-columns: 1fr; }
+      .tele-history-item { grid-template-columns: 60px 1fr 60px; gap: var(--spacing-sm); padding: var(--spacing-sm); }
+      .tele-history-time { font-size: 0.85rem; }
+      .tele-duration { font-size: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-xl)">Telegrafia</h2>
+
+    <div class="tele-current" id="currentOperador">
+      <div class="tele-current-label">Operador Atual</div>
+      <div class="tele-current-avatar" id="teleAvatar">--</div>
+      <div class="tele-current-name" id="teleNome">Nenhum operador</div>
+      <div style="color:var(--text-muted);font-size:0.85rem">Assumiu às <span id="teleInicio">--:--</span></div>
+      <div class="tele-current-time" id="teleTempo">00:00:00</div>
+    </div>
+
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Selecionar Operador</h3>
+    <div class="tele-select-grid" id="militaresGrid"></div>
+
+    <div style="margin-top:var(--spacing-xl)">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Histórico de Trocas</h3>
+      <div class="card tele-history" id="teleHistory">
+        <div class="empty-state"><p>Nenhuma troca registrada</p></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const Telegrafia = {
+      servico: null,
+      militares: [],
+      current: null,
+      history: [],
+
+      async init() {
+        if (!Auth.requireAuth()) return;
+        if (!Auth.canTela('telegrafia', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+        NAV.init('telegrafia');
+        await this.load();
+      },
+
+      async load() {
+        try {
+          const data = await API.getServicoAtual(Auth.userId);
+          if (!data?.servico) return;
+          this.servico = data.servico;
+          NAV.updateProntidao(data.servico.prontidao);
+          this.militares = data.militares || [];
+          this.current = data.telegrafia || null;
+          this.history = data.telegrafiaHistorico || [];
+
+          this.render();
+          this.renderGrid();
+          this.renderHistory();
+
+          Sync.on('telegrafia_updated', (t) => {
+            this.current = t;
+            this.render();
+          });
+          const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+          const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
+          Sync.start(this.servico.id, syncInterval);
+        } catch (e) {
+          console.error(e);
+        }
+      },
+
+      render() {
+        if (!this.current || !this.current.operador) {
+          document.getElementById('teleAvatar').textContent = '--';
+          document.getElementById('teleNome').textContent = 'Nenhum operador';
+          document.getElementById('teleInicio').textContent = '--:--';
+          document.getElementById('teleTempo').textContent = '00:00:00';
+          return;
+        }
+
+        document.getElementById('teleAvatar').textContent = Utils.getInitials(this.current.operador);
+        document.getElementById('teleNome').textContent = this.current.operador;
+        document.getElementById('teleInicio').textContent = this.current.horario || '--:--';
+
+        if (this.current.horario) {
+          const [h, m] = this.current.horario.split(':').map(Number);
+          const start = new Date();
+          start.setHours(h, m, 0, 0);
+          const update = () => {
+            const diff = Date.now() - start.getTime();
+            if (diff > 0) document.getElementById('teleTempo').textContent = Utils.formatDuration(diff).display;
+          };
+          update();
+          setInterval(update, 1000);
+        }
+      },
+
+      renderGrid() {
+        const grid = document.getElementById('militaresGrid');
+        grid.innerHTML = this.militares.map(m => `
+          <div class="tele-militar-card" onclick="Telegrafia.trocar('${m.id}')">
+            <div class="avatar">${Utils.getInitials(m.nome)}</div>
+            <div>
+              <div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div>
+              <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.posto || '')}</div>
+            </div>
+          </div>
+        `).join('');
+      },
+
+      renderHistory() {
+        const container = document.getElementById('teleHistory');
+        if (!this.history || this.history.length === 0) {
+          container.innerHTML = '<div class="empty-state"><p>Nenhuma troca registrada</p></div>';
+          return;
+        }
+        container.innerHTML = this.history.map(h => `
+          <div class="tele-history-item">
+            <div class="tele-history-time">${h.horario || '--:--'}</div>
+            <div style="font-weight:500">${Utils.escapeHtml(h.operador)}</div>
+            <div class="tele-duration">${h.duracao || '-'}</div>
+          </div>
+        `).join('');
+      },
+
+      async trocar(militarId) {
+        const militar = this.militares.find(m => m.id === militarId);
+        if (!militar) return;
+
+        if (!confirm(`Trocar telegrafia para ${militar.nome}?`)) return;
+
+        try {
+          const result = await API.registrarTelegrafia(this.servico.id, militarId);
+          if (result.success) {
+            Utils.showToast(`${militar.nome} assumiu a telegrafia`, 'success');
+            Utils.playSound('telegrafia');
+            await this.load();
+          }
+        } catch (e) {
+          Utils.showToast('Erro ao registrar telegrafia', 'error');
+        }
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => Telegrafia.init());
+  </script>
+</body>
+</html>

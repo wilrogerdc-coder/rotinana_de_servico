@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta name="description" content="SGPO - Sistema de Gestão da Prontidão Operacional">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Login</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/login.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-bg"></div>
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-logos">
+          <div class="login-logo-bombeiros">
+            <img src="assets/logos/bombeiros.svg" alt="CBPMESP" onerror="this.style.display='none'">
+          </div>
+          <div class="login-divider"></div>
+          <div class="login-logo-prontidao">
+            <img src="assets/logos/prontidao-verde.png" alt="Prontidão" id="logoProntidao" onerror="this.style.display='none'">
+          </div>
+        </div>
+
+        <h1 class="login-title" id="loginTitle">SGPO</h1>
+        <p class="login-subtitle" id="loginSubtitle">Sistema de Gestão da Prontidão Operacional</p>
+
+        <form class="login-form" id="loginForm">
+          <div class="input-group">
+            <label class="input-label" for="usuario">RE / CPF</label>
+            <input class="input" type="text" id="usuario" placeholder="Digite seu RE ou CPF" autocomplete="username" required inputmode="numeric">
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="senha">Senha</label>
+            <input class="input" type="password" id="senha" placeholder="Digite sua senha" autocomplete="current-password" required>
+          </div>
+
+          <div class="login-error" id="loginError"></div>
+
+          <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Entrar</button>
+        </form>
+
+        <div id="demoHint" style="margin-top:16px;padding:12px;background:var(--accent-green-dim);border-radius:8px;font-size:0.8rem;color:var(--accent-green);display:none">
+          <strong>Modo Demonstração:</strong><br>
+          Todos os dados são simulados localmente.<br>
+          <span style="font-size:0.75rem;opacity:0.8">Clique em "Modo Demo" para começar.</span>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="startDemo()" style="background:var(--accent-green);min-width:140px">Modo Demo</button>
+          <button class="btn btn-ghost btn-sm" onclick="showApiConfig()" style="font-size:0.8rem">Configurar API</button>
+        </div>
+
+        <div class="login-footer">
+          SGPO v1.0 - Corpo de Bombeiros PMESP
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="apiModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Configurar API</h3>
+        <button class="btn btn-ghost btn-icon" onclick="closeApiConfig()">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="input-group">
+          <label class="input-label">URL do Google Apps Script (Web App)</label>
+          <input class="input" type="url" id="apiUrlInput" placeholder="https://script.google.com/macros/s/SEU_ID/exec">
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-muted)">
+          Cole a URL do Web App publicado no Google Apps Script.<br>
+          O Apps Script deve estar configurado como "Executar como mim" e "Qualquer pessoa pode acessar".
+        </p>
+        <div id="loginConnResult" style="display:none;padding:10px;border-radius:8px;font-size:0.8rem"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" style="flex:1" onclick="saveApiConfig()">Salvar e Conectar</button>
+          <button class="btn btn-secondary" onclick="testLoginConnection()">Testar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+      if (config.nomeSistema) document.getElementById('loginTitle').textContent = config.nomeSistema;
+      if (config.subtituloSistema) document.getElementById('loginSubtitle').textContent = config.subtituloSistema;
+      document.getElementById('loginTitle').classList.add('fade-in');
+
+      const campanhaId = config.campanhaAuto !== false ? Utils.autoDetectCampanha() : (config.campanha || 'nenhuma');
+      Utils.applyCampanha(campanhaId);
+
+      API.getConfig();
+
+      if (Auth.isLoggedIn) {
+        window.location.href = 'dashboard.html';
+        return;
+      }
+
+      if (!API.BASE_URL && !API.isDemo) {
+        document.getElementById('demoHint').style.display = 'block';
+      }
+
+      document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const usuario = document.getElementById('usuario').value.trim();
+        const senha = document.getElementById('senha').value.trim();
+        const errorEl = document.getElementById('loginError');
+        const btn = document.getElementById('loginBtn');
+
+        if (!usuario || !senha) {
+          errorEl.textContent = 'Preencha todos os campos';
+          errorEl.classList.add('visible');
+          return;
+        }
+
+        if (!API.BASE_URL && !API.isDemo) {
+          errorEl.textContent = 'Clique em "Modo Demo" ou configure a API';
+          errorEl.classList.add('visible');
+          btn.disabled = false;
+          btn.textContent = 'Entrar';
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Entrando...';
+        errorEl.classList.remove('visible');
+
+        const result = await Auth.login(usuario, senha);
+
+        if (result.success) {
+          window.location.href = 'dashboard.html';
+        } else {
+          errorEl.textContent = result.error;
+          errorEl.classList.add('visible');
+          btn.disabled = false;
+          btn.textContent = 'Entrar';
+        }
+      });
+    });
+
+    function showApiConfig() {
+      const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+      document.getElementById('apiUrlInput').value = config.apiUrl || API.DEFAULT_URL || '';
+      document.getElementById('apiModal').style.display = 'flex';
+    }
+
+    function closeApiConfig() {
+      document.getElementById('apiModal').style.display = 'none';
+    }
+
+    function saveApiConfig() {
+      const url = document.getElementById('apiUrlInput').value.trim();
+      if (!url) { Utils.showToast('Digite a URL da API', 'warning'); return; }
+      API.init(url);
+      Utils.showToast('API configurada com sucesso!', 'success');
+      closeApiConfig();
+    }
+
+    async function testLoginConnection() {
+      const url = document.getElementById('apiUrlInput').value.trim();
+      const result = document.getElementById('loginConnResult');
+      if (!url) { result.style.display = 'block'; result.style.background = 'var(--accent-red-dim, #f4433633)'; result.style.color = 'var(--accent-red, #f44336)'; result.textContent = 'Digite uma URL primeiro'; return; }
+      API.init(url);
+      result.style.display = 'block';
+      result.style.background = 'var(--accent-yellow-dim, #ffd60033)';
+      result.style.color = 'var(--accent-yellow, #ffd600)';
+      result.textContent = 'Testando conexão...';
+      try {
+        const res = await API.testConnection();
+        if (res.success) {
+          result.style.background = 'var(--accent-green-dim, #00c85333)';
+          result.style.color = 'var(--accent-green, #00c853)';
+          result.textContent = `✓ Conectado — ${res.sheets} abas — ${res.latency}ms — v${res.version}`;
+        } else {
+          result.style.background = 'var(--accent-red-dim, #f4433633)';
+          result.style.color = 'var(--accent-red, #f44336)';
+          result.textContent = '✗ Falha: ' + (res.error || 'Erro desconhecido');
+        }
+      } catch (e) {
+        result.style.background = 'var(--accent-red-dim, #f4433633)';
+        result.style.color = 'var(--accent-red, #f44336)';
+        result.textContent = '✗ Erro: ' + e.message;
+      }
+    }
+
+    async function startDemo() {
+      API.enableDemo();
+      const btn = document.querySelector('[onclick="startDemo()"]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Carregando...'; }
+      const result = await Auth.login('0000000', 'admin');
+      if (result.success) {
+        window.location.href = 'dashboard.html';
+      } else {
+        Utils.showToast('Erro ao iniciar demo: ' + (result.error || ''), 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Modo Demo'; }
+      }
+    }
+
+    if (API.isDemo) {
+      document.getElementById('demoHint').style.display = 'block';
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

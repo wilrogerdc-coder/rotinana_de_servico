@@ -1,0 +1,340 @@
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: var(--spacing-md);
+}
+
+.dash-countdown {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--spacing-xl);
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.dash-countdown::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, var(--prontidao-dim) 0%, transparent 70%);
+  opacity: 0.3;
+}
+
+.dash-countdown-content {
+  position: relative;
+  z-index: 1;
+}
+
+.dash-countdown-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.dash-countdown-time {
+  font-family: var(--font-mono);
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: var(--prontidao-color);
+  letter-spacing: 4px;
+  margin-bottom: var(--spacing-md);
+}
+
+.dash-progress {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.dash-progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+.dash-info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xl);
+  margin-top: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.dash-info-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.dash-info-item .value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.dash-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.dash-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.dash-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dash-atividade-atual {
+  grid-column: 1 / 3;
+}
+
+.dash-atividade-nome {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: var(--spacing-sm);
+}
+
+.dash-atividade-horario {
+  font-family: var(--font-mono);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--prontidao-color);
+}
+
+.dash-atividade-responsavel {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: var(--spacing-sm);
+}
+
+.dash-telegrafia-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.dash-telegrafia-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-sm);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.dash-telegrafia-nome {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: var(--spacing-xs);
+}
+
+.dash-telegrafia-tempo {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--prontidao-color);
+}
+
+.dash-timeline {
+  grid-column: 1 / 2;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dash-oficiais {
+  grid-column: 2 / 3;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dash-notificacoes {
+  grid-column: 3 / 4;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dash-atividades {
+  grid-column: 1 / -1;
+}
+
+.dash-atividades-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.dash-atividade-item {
+  display: grid;
+  grid-template-columns: 80px 1fr auto auto;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.dash-atividade-item:hover {
+  border-color: var(--prontidao-color);
+  background: var(--bg-card-hover);
+}
+
+.dash-atividade-item.status-concluida {
+  opacity: 0.6;
+}
+
+.dash-atividade-item.status-concluida .dash-atividade-item-horario {
+  text-decoration: line-through;
+}
+
+.dash-atividade-item-horario {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--prontidao-color);
+}
+
+.dash-atividade-item-nome {
+  font-weight: 500;
+}
+
+.dash-atividade-item-responsavel {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.dash-atividade-item-status {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dash-atividade-atual {
+    grid-column: 1 / -1;
+  }
+
+  .dash-timeline {
+    grid-column: 1 / -1;
+  }
+
+  .dash-oficiais {
+    grid-column: 1 / 2;
+  }
+
+  .dash-notificacoes {
+    grid-column: 2 / 3;
+  }
+
+  .dash-atividades {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-countdown-time {
+    font-size: 2.5rem;
+  }
+
+  .dash-oficiais,
+  .dash-notificacoes {
+    grid-column: 1;
+  }
+
+  .dash-atividade-item {
+    grid-template-columns: 60px 1fr;
+    gap: var(--spacing-sm);
+  }
+
+  .dash-atividade-item-responsavel,
+  .dash-atividade-item-status {
+    grid-column: 2;
+  }
+
+  .dash-countdown {
+    padding: var(--spacing-lg);
+  }
+
+  .dash-countdown-label {
+    font-size: 0.75rem;
+    letter-spacing: 1px;
+  }
+
+  .dash-card {
+    padding: var(--spacing-md);
+  }
+
+  .dash-card-title {
+    font-size: 0.8rem;
+  }
+
+  .dash-info-bar {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .dash-info-item {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dash-timeline,
+  .dash-oficiais,
+  .dash-notificacoes {
+    max-height: 250px;
+  }
+
+  .timeline-item {
+    padding-bottom: var(--spacing-md);
+  }
+
+  .timeline-content {
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .dash-countdown-time {
+    font-size: 2rem;
+    letter-spacing: 2px;
+  }
+
+  .dash-atividade-item {
+    grid-template-columns: 50px 1fr;
+    padding: var(--spacing-sm);
+  }
+
+  .dash-atividade-item-horario {
+    font-size: 0.85rem;
+  }
+
+  .dash-atividade-item-nome {
+    font-size: 0.85rem;
+  }
+}

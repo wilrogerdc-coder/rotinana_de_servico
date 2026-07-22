@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-prontidao="verde">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <title>SGPO - Oficiais</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <style>
+    .oficiais-presentes {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-xl);
+    }
+    .oficial-card {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      padding: var(--spacing-lg);
+      background: var(--bg-card);
+      border: 1px solid var(--prontidao-color);
+      border-radius: var(--radius-lg);
+      position: relative;
+    }
+    .oficial-card .oficial-info { flex: 1; }
+    .oficial-card .oficial-nome { font-weight: 600; font-size: 1rem; }
+    .oficial-card .oficial-posto { font-size: 0.85rem; color: var(--text-secondary); }
+    .oficial-card .oficial-tempo { font-family: var(--font-mono); font-size: 0.8rem; color: var(--prontidao-color); margin-top: 4px; }
+    .oficial-card .oficial-antiguidade { position: absolute; top: 8px; right: 12px; font-size: 0.7rem; color: var(--text-muted); }
+    .oficial-card .btn-saida { position: absolute; bottom: 8px; right: 8px; }
+    .oficiais-disponiveis { margin-top: var(--spacing-xl); }
+    .oficial-disponivel {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      padding: var(--spacing-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--spacing-sm);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+    .oficial-disponivel:hover { border-color: var(--prontidao-color); }
+    @media (max-width: 768px) {
+      .oficiais-presentes { grid-template-columns: 1fr; }
+      .oficial-card { padding: var(--spacing-md); }
+      .oficial-card .oficial-nome { font-size: 0.9rem; }
+      .oficial-card .oficial-posto { font-size: 0.8rem; }
+      .oficial-card .oficial-antiguidade { position: static; margin-top: 4px; }
+      .oficial-card .btn-saida { position: static; margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="page-header">
+      <div>
+        <h2 style="font-size:1.3rem;font-weight:700">Oficiais</h2>
+        <p style="color:var(--text-secondary);font-size:0.85rem">Controle de entrada e saida de oficiais</p>
+      </div>
+      <button class="btn btn-primary" onclick="Oficiais.mostrarAnunciar()">📢 Anunciar Oficial</button>
+    </div>
+
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Presentes no Quartel</h3>
+    <div class="oficiais-presentes" id="presentesList">
+      <div class="empty-state" style="grid-column:1/-1"><p>Nenhum oficial presente</p></div>
+    </div>
+
+    <div class="oficiais-disponiveis">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Registrar Entrada</h3>
+      <div id="disponiveisList"></div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="anunciarModal" style="display:none">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:var(--spacing-lg);border-bottom:1px solid var(--border-color)">
+        <h3 style="font-size:1.1rem;font-weight:700">📢 Anunciar Oficial</h3>
+        <button class="btn btn-sm" onclick="Oficiais.fecharAnunciar()" style="background:transparent;border:none;font-size:1.3rem;cursor:pointer;color:var(--text-secondary)">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:var(--spacing-lg);max-height:400px;overflow-y:auto">
+        <div class="input-group" style="margin-bottom:12px">
+          <label class="input-label">Selecionar oficial cadastrado</label>
+          <div id="anunciarLista" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div style="border-top:1px solid var(--border-color);padding-top:12px">
+          <label class="input-label">Ou digitar nome para novo oficial</label>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <input type="text" class="input" id="anunciarNomeInput" placeholder="Nome completo" style="flex:1">
+            <button class="btn btn-primary" onclick="Oficiais.anunciarNovo()">Anunciar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const Oficiais = {
+      servico: null,
+      todos: [],
+      presentes: [],
+
+      async init() {
+        if (!Auth.requireAuth()) return;
+        if (!Auth.canTela('oficiais', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
+        await this.load();
+      },
+
+      async load() {
+        try {
+          const data = await API.getServicoAtual(Auth.userId);
+          if (!data?.servico) return;
+          this.servico = data.servico;
+          this.todos = data.oficiaisTodos || [];
+          this.presentes = data.oficiais || [];
+          NAV.updateProntidao(data.servico.prontidao);
+          this.render();
+          Sync.on('oficiais_updated', (o) => { this.presentes = o; this.render(); });
+          const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
+          const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
+          Sync.start(this.servico.id, syncInterval);
+        } catch (e) { console.error(e); }
+      },
+
+      render() {
+        const presEl = document.getElementById('presentesList');
+        if (this.presentes.length === 0) {
+          presEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><p>Nenhum oficial presente</p></div>';
+        } else {
+          const sorted = Utils.sortByAntiguidade(this.presentes);
+          presEl.innerHTML = sorted.map(o => {
+            const parts = (o.horarioEntrada || '').split(':');
+            const start = new Date();
+            if (parts.length >= 2) start.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+            const tempo = Utils.formatDuration(Date.now() - start.getTime()).display;
+            const anunciado = o.anunciado;
+            return `
+              <div class="oficial-card">
+                <div class="oficial-antiguidade">${anunciado ? '📢' : '#'}${anunciado ? '' : (o.antiguidade || '-')}</div>
+                <div class="avatar avatar-lg">${Utils.getInitials(o.nome)}</div>
+                <div class="oficial-info">
+                  <div class="oficial-nome">${Utils.escapeHtml(o.nome)} ${anunciado ? '<span style="font-size:0.7rem;padding:1px 6px;border-radius:6px;background:var(--prontidao-dim);color:var(--prontidao-color);font-weight:500">📢 Anunciado</span>' : ''}</div>
+                  <div class="oficial-posto">${Utils.escapeHtml(o.posto)}${o.unidade ? ' - ' + Utils.escapeHtml(o.unidade) : ''}</div>
+                  <div class="oficial-tempo">No quartel ha ${tempo}</div>
+                </div>
+                <button class="btn btn-danger btn-sm btn-saida" onclick="Oficiais.saida('${o.id}')">Saida</button>
+              </div>
+            `;
+          }).join('');
+        }
+
+        const idsPresentes = new Set(this.presentes.map(o => o.id));
+        const disponiveis = this.todos.filter(o => !idsPresentes.has(o.id));
+        const dispEl = document.getElementById('disponiveisList');
+        if (disponiveis.length === 0) {
+          dispEl.innerHTML = '<div class="empty-state"><p>Todos os oficiais ja estao presentes</p></div>';
+        } else {
+          dispEl.innerHTML = Utils.sortByName(disponiveis).map(o => `
+            <div class="oficial-disponivel" onclick="Oficiais.entrada('${o.id}')">
+              <div class="avatar">${Utils.getInitials(o.nome)}</div>
+              <div style="flex:1">
+                <div style="font-weight:500">${Utils.escapeHtml(o.nome)}</div>
+                <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(o.posto)} - Antiguidade: ${o.antiguidade || '-'}</div>
+              </div>
+              <span style="color:var(--prontidao-color);font-size:0.85rem;font-weight:600">+ Entrada</span>
+            </div>
+          `).join('');
+        }
+      },
+
+      async entrada(oficialId) {
+        try {
+          const result = await API.registrarEntradaOficial(oficialId);
+          if (result.success) {
+            Utils.showToast('Entrada registrada', 'success');
+            Utils.playSound('oficial-quartel');
+            await this.load();
+          }
+        } catch (e) { Utils.showToast('Erro ao registrar entrada', 'error'); }
+      },
+
+      async saida(oficialId) {
+        if (!confirm('Registrar saida deste oficial?')) return;
+        try {
+          const result = await API.registrarSaidaOficial(oficialId);
+          if (result.success) {
+            Utils.showToast('Saida registrada', 'success');
+            await this.load();
+          }
+        } catch (e) { Utils.showToast('Erro ao registrar saida', 'error'); }
+      },
+
+      mostrarAnunciar() {
+        const idsPresentes = new Set(this.presentes.map(o => o.id));
+        const disponiveis = this.todos.filter(o => !idsPresentes.has(o.id));
+        const el = document.getElementById('anunciarLista');
+        if (disponiveis.length === 0) {
+          el.innerHTML = '<div class="empty-state"><p>Todos os oficiais já estão presentes</p></div>';
+        } else {
+          el.innerHTML = Utils.sortByName(disponiveis).map(o => `
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;cursor:pointer" onclick="Oficiais.anunciarOficial('${o.id}')">
+              <span style="width:32px;height:32px;border-radius:50%;background:var(--surface-color);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:0.75rem;color:var(--text-secondary)">${Utils.getInitials(o.nome)}</span>
+              <div>
+                <div style="font-weight:500;font-size:0.88rem">${Utils.escapeHtml(o.nome)}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">${Utils.escapeHtml(o.posto)}</div>
+              </div>
+            </label>
+          `).join('');
+        }
+        document.getElementById('anunciarNomeInput').value = '';
+        document.getElementById('anunciarModal').style.display = 'flex';
+      },
+
+      fecharAnunciar() {
+        document.getElementById('anunciarModal').style.display = 'none';
+      },
+
+      async anunciarOficial(oficialId) {
+        try {
+          const result = await API.registrarEntradaOficial(oficialId, true);
+          if (result.success) {
+            Utils.showToast('Oficial anunciado', 'success');
+            Utils.playSound('oficial-quartel');
+            this.fecharAnunciar();
+            await this.load();
+          }
+        } catch (e) { Utils.showToast('Erro ao anunciar oficial', 'error'); }
+      },
+
+      async anunciarNovo() {
+        const nome = document.getElementById('anunciarNomeInput').value.trim();
+        if (!nome) { Utils.showToast('Digite o nome do oficial', 'warning'); return; }
+        try {
+          const result = await API.registrarEntradaOficial('', true, nome);
+          if (result.success) {
+            Utils.showToast('Oficial anunciado', 'success');
+            Utils.playSound('oficial-quartel');
+            this.fecharAnunciar();
+            await this.load();
+          }
+        } catch (e) { Utils.showToast('Erro ao anunciar oficial', 'error'); }
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      NAV.init('oficiais');
+      Oficiais.init();
+    });
+  </script>
+</body>
+</html>
