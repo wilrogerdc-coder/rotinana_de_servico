@@ -887,13 +887,17 @@ const Dashboard = {
     const efetivo = [sv?.motorista, ...(sv?.tripulantes || []).map(t => t.nome)].filter(Boolean);
 
     try {
+      const dataOcorrencia = document.getElementById('ocorrData')?.value || '';
+      const horaOcorrencia = document.getElementById('ocorrHora')?.value || '';
       const ocorrResult = await API.criarOcorrencia({
         titulo, natureza, descricao,
         viaturaIds: [sv?.viaturaId],
         servicoViaturaIds: [svId],
         efetivo: efetivo,
         prontidaoCor: this.servico?.prontidao || 'verde',
-        servicoId: this.servico?.id
+        servicoId: this.servico?.id,
+        dataOcorrencia: dataOcorrencia || undefined,
+        horaOcorrencia: horaOcorrencia || undefined
       });
       if (!ocorrResult.success) { Utils.showToast(ocorrResult.error || 'Erro ao criar ocorrência', 'error'); return; }
       const despResult = await API.despacharViatura(svId, ocorrResult.numero, titulo);
@@ -942,6 +946,16 @@ const Dashboard = {
         <label class="input-label">Observações</label>
         <textarea class="input" id="ocorrDescricao" rows="3" placeholder="Detalhes da ocorrência"></textarea>
       </div>
+      <div style="display:flex;gap:12px;margin-bottom:12px">
+        <div class="input-group" style="flex:1">
+          <label class="input-label">Data (deixe vazio para agora)</label>
+          <input type="date" class="input" id="ocorrData" value="">
+        </div>
+        <div class="input-group" style="flex:1">
+          <label class="input-label">Hora (deixe vazio para agora)</label>
+          <input type="time" class="input" id="ocorrHora" value="">
+        </div>
+      </div>
       <div style="font-size:0.78rem;color:var(--text-muted)">Prontidão do serviço: <strong>${this.servico?.prontidao || 'verde'}</strong> &mdash; Hora de acionamento: ${new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</div>
     `;
     document.getElementById('modalFooter').innerHTML = `
@@ -956,6 +970,8 @@ const Dashboard = {
     if (!titulo) { Utils.showToast('Título é obrigatório', 'warning'); return; }
     const natureza = document.getElementById('ocorrNatureza')?.value || '';
     const descricao = document.getElementById('ocorrDescricao').value;
+    const dataOcorrencia = document.getElementById('ocorrData')?.value || '';
+    const horaOcorrencia = document.getElementById('ocorrHora')?.value || '';
     const sv = (this.servicoViaturas || []).find(x => x.id === servicoViaturaId);
     const efetivo = [sv?.motorista, ...(sv?.tripulantes || []).map(t => t.nome)].filter(Boolean);
 
@@ -966,7 +982,9 @@ const Dashboard = {
         servicoViaturaIds: [servicoViaturaId],
         efetivo: efetivo,
         prontidaoCor: this.servico?.prontidao || 'verde',
-        servicoId: this.servico?.id
+        servicoId: this.servico?.id,
+        dataOcorrencia: dataOcorrencia || undefined,
+        horaOcorrencia: horaOcorrencia || undefined
       });
       if (result.success) {
         Utils.log('criar_ocorrencia', `Ocorrência #${result.numero}: ${titulo} (${natureza || 's/natureza'})`, 'dashboard');

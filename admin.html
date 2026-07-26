@@ -35,6 +35,7 @@
       <button class="admin-tab" onclick="Admin.showTab('militares', event)">Militares</button>
       <button class="admin-tab" onclick="Admin.showTab('oficiais', event)">Oficiais</button>
       <button class="admin-tab" onclick="Admin.showTab('atividades', event)">Atividades Padrão</button>
+      <button class="admin-tab" onclick="Admin.showTab('rotinaPersonalizada', event)">Rotina por Posto</button>
       <button class="admin-tab" onclick="Admin.showTab('permissoesTela', event)">Permissões de Tela</button>
       <button class="admin-tab" onclick="Admin.showTab('sons', event)">Sons</button>
       <button class="admin-tab" onclick="Admin.showTab('logos', event)">Logos</button>
@@ -70,9 +71,36 @@
     <div class="admin-section" id="tab-atividades">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
         <h3 style="font-size:1rem;font-weight:600">Atividades Padrão da Rotina</h3>
-        <button class="btn btn-primary btn-sm" onclick="Admin.showForm('atividade')">+ Nova Atividade</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="Admin.importarDoDemo()">Importar do Demo</button>
+          <button class="btn btn-primary btn-sm" onclick="Admin.showForm('atividade')">+ Nova Atividade</button>
+        </div>
       </div>
       <div id="atividadesList"></div>
+    </div>
+
+    <div class="admin-section" id="tab-rotinaPersonalizada" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md)">
+        <h3 style="font-size:1rem;font-weight:600">Rotina Personalizada por Posto</h3>
+        <select id="rpPostoSelect" class="form-select" style="max-width:300px" onchange="Admin.carregarRotinaPersonalizada(this.value)">
+          <option value="">Selecione um posto...</option>
+        </select>
+      </div>
+      <div id="rpInfo" style="margin-bottom:var(--spacing-md);padding:var(--spacing-md);border-radius:var(--radius-lg);background:var(--bg-secondary);display:none">
+        <p style="font-size:0.85rem;color:var(--text-secondary)">Selecione um posto para visualizar/editar sua rotina personalizada. Deixe vazio para usar a rotina padrão do sistema.</p>
+      </div>
+      <div id="rpEditor" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:var(--spacing-md)">
+          <button class="btn btn-primary btn-sm" onclick="Admin.adicionarItemRotinaPersonalizada()">+ Adicionar Item</button>
+          <button class="btn btn-secondary btn-sm" onclick="Admin.importarPadraoParaPersonalizada()">Importar Rotina Padrão</button>
+          <button class="btn btn-danger btn-sm" onclick="Admin.resetarRotinaPersonalizada()">Resetar para Padrão</button>
+        </div>
+        <div id="rpItensList"></div>
+        <div style="margin-top:var(--spacing-md);display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="Admin.salvarRotinaPersonalizada()">Salvar Alterações</button>
+          <button class="btn btn-secondary btn-sm" onclick="Admin.cancelarEdicaoRP()">Cancelar</button>
+        </div>
+      </div>
     </div>
 
 
@@ -243,17 +271,25 @@
           const [usuarios, editaveis, militares, oficiais, atividades, sons, logos, postos, permissoesTela, viaturas, tiposViatura, naturezas] = results.map(extract);
           const users = (editaveis && editaveis.length > 0) ? editaveis : (usuarios || []);
           this.data = { usuarios: users, allUsuarios: usuarios||[], militares: militares||[], oficiais: oficiais||[], atividades: atividades||[], sons: (sons && sons.length > 0) ? sons : Utils.defaultSounds(), logos: logos||[], postos: Array.isArray(postos) ? postos : (postos?.postos || postos || []), permissoesTela: permissoesTela||[], viaturas: viaturas||[], tiposViatura: tiposViatura||[], naturezas: naturezas||[] };
-          this.renderUsuarios(); this.renderMilitares(); this.renderOficiaisAdmin();
-          this.renderAtividades(); this.renderSons(); this.renderLogos();
-          this.renderPostosTree(); this.renderPermissoesTelaList();
-          this.renderViaturas(); this.renderTiposViaturas(); this.renderNaturezas();
+          try { this.renderUsuarios(); } catch(e) { console.error('renderUsuarios:', e); }
+          try { this.renderMilitares(); } catch(e) { console.error('renderMilitares:', e); }
+          try { this.renderOficiaisAdmin(); } catch(e) { console.error('renderOficiaisAdmin:', e); }
+          try { this.renderAtividades(); } catch(e) { console.error('renderAtividades:', e); }
+          try { this.renderSons(); } catch(e) { console.error('renderSons:', e); }
+          try { this.renderLogos(); } catch(e) { console.error('renderLogos:', e); }
+          try { this.renderPostosTree(); } catch(e) { console.error('renderPostosTree:', e); }
+          try { this.renderPermissoesTelaList(); } catch(e) { console.error('renderPermissoesTelaList:', e); }
+          try { this.renderViaturas(); } catch(e) { console.error('renderViaturas:', e); }
+          try { this.renderTiposViaturas(); } catch(e) { console.error('renderTiposViaturas:', e); }
+          try { this.renderNaturezas(); } catch(e) { console.error('renderNaturezas:', e); }
+          try { this.renderRotinaPersonalizadaSelect(); } catch(e) { console.error('renderRotinaPersonalizadaSelect:', e); }
         } catch (e) { console.warn('Admin loadAll:', e); }
       },
 
       hideUnauthorizedTabs() {
         const tabPerms = {
           usuarios: 'usuarios', militares: 'militares', oficiais: 'oficiais_a',
-          atividades: 'atividades', permissoesTela: 'permissoes',
+          atividades: 'atividades', rotinaPersonalizada: 'atividades', permissoesTela: 'permissoes',
           config: 'config', viaturas: 'usuarios'
         };
         let firstAllowed = null;
@@ -274,7 +310,7 @@
       showTab(name, evt) {
         const tabPerms = {
           usuarios: 'usuarios', militares: 'militares', oficiais: 'oficiais_a',
-          atividades: 'atividades', permissoesTela: 'permissoes',
+          atividades: 'atividades', rotinaPersonalizada: 'atividades', permissoesTela: 'permissoes',
           config: 'config', viaturas: 'usuarios'
         };
         if (tabPerms[name] && !Auth.canTela('admin', tabPerms[name])) {
@@ -292,7 +328,8 @@
       renderUsuarios() {
         const el = document.getElementById('usuariosList');
         const editorNivel = Auth.nivelPermissao || 'POSTO';
-        el.innerHTML = this.data.usuarios.map(u => {
+        const users = (this.data.usuarios || []).filter(u => u && u.id && u.nome);
+        el.innerHTML = users.map(u => {
           const canDelete = (editorNivel === 'GB') || (editorNivel === 'SGB' && u.nivelPermissao !== 'GB');
           return `
           <div class="admin-list-item">
@@ -444,11 +481,13 @@
 
       renderAtividades() {
         const el = document.getElementById('atividadesList');
+        const postos = this.data.postos || [];
         el.innerHTML = this.data.atividades.map(a => {
           const isSistema = !a.postoId;
+          const postoNome = isSistema ? '' : (postos.find(p => p.id === a.postoId)?.nome || a.postoId);
           return `
           <div class="admin-list-item">
-            <div><div style="font-weight:500">${Utils.escapeHtml(a.nome)}${isSistema ? ' <span style="font-size:0.75rem;color:var(--accent-blue)">(Sistema)</span>' : ' <span style="font-size:0.75rem;color:var(--accent-yellow)">(Posto)</span>'}</div><div style="font-size:0.8rem;color:var(--text-muted)">${a.horario} - ${Utils.escapeHtml(a.programa || '')}${a.postoId ? ' - Posto: ' + Utils.escapeHtml(a.postoId) : ''}</div></div>
+            <div><div style="font-weight:500">${Utils.escapeHtml(a.nome)}${isSistema ? ' <span style="font-size:0.75rem;color:var(--accent-blue)">(Sistema)</span>' : ' <span style="font-size:0.75rem;color:var(--accent-yellow)">(Posto)</span>'}</div><div style="font-size:0.8rem;color:var(--text-muted)">${a.horario} - ${Utils.escapeHtml(a.programa || '')}${postoNome ? ' - ' + Utils.escapeHtml(postoNome) : ''}</div></div>
             <div class="admin-actions">
               <button class="btn btn-secondary btn-sm" onclick="Admin.editAtividade('${a.id}')">Editar</button>
               ${isSistema ? '' : `<button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('atividades_padrao','${a.id}','${Utils.escapeHtml(a.nome)}')">Excluir</button>`}
@@ -480,7 +519,7 @@
             ${['verde','amarela','azul','branca'].map(c => `
               <div class="card" style="text-align:center;padding:var(--spacing-xl)">
                 <div style="font-weight:500;margin-bottom:var(--spacing-sm);color:var(--accent-${c === 'verde' ? 'green' : c === 'amarela' ? 'yellow' : c === 'azul' ? 'blue' : 'white-pront'})">Prontidão ${c.charAt(0).toUpperCase() + c.slice(1)}</div>
-                <img src="assets/logos/prontidao-${c}.png" style="max-width:80px;max-height:80px;margin:0 auto var(--spacing-md)" onerror="this.style.display='none'">
+                <img src="assets/logos/prontidao-${c}.svg" style="max-width:80px;max-height:80px;margin:0 auto var(--spacing-md)" onerror="this.style.display='none'">
                 <button class="btn btn-secondary btn-sm">Alterar</button>
               </div>
             `).join('')}
@@ -626,7 +665,6 @@
             <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
             <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPosto">${selectOpts(POSTOS_MILITAR, isEdit ? data.posto : '')}</select></div>
             <div class="input-group"><label class="input-label">RE / CPF</label><input class="input" id="formReCpf" value="${isEdit ? Utils.escapeHtml(data.reCpf || '') : ''}"></div>
-            <div class="input-group"><label class="input-label">Matrícula</label><input class="input" id="formMatricula" value="${isEdit ? Utils.escapeHtml(data.matricula || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Função</label><input class="input" id="formFuncao" value="${isEdit ? Utils.escapeHtml(data.funcao || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Especialidade</label><input class="input" id="formEspecialidade" value="${isEdit ? Utils.escapeHtml(data.especialidade || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
@@ -806,7 +844,6 @@
           nome: document.getElementById('formNome').value,
           posto: document.getElementById('formPosto').value,
           reCpf: document.getElementById('formReCpf').value,
-          matricula: document.getElementById('formMatricula').value,
           funcao: document.getElementById('formFuncao').value,
           especialidade: document.getElementById('formEspecialidade').value,
           email: document.getElementById('formEmail').value,
@@ -886,6 +923,44 @@
       editAtividade(id) {
         const item = this.data.atividades.find(a => a.id === id);
         if (item) this.showForm('atividade', item);
+      },
+
+      async importarDoDemo() {
+        const DEMO_ATIVIDADES = [
+          { ordem: 1, horario: '07:30', nome: 'Revista Matinal', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+          { ordem: 2, horario: '07:45', nome: 'Ordem do Dia', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 45, obrigatoria: true, postoId: '' },
+          { ordem: 3, horario: '08:30', nome: 'Nós do Dia', programa: 'Instrução', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 5, obrigatoria: true, postoId: '' },
+          { ordem: 4, horario: '08:35', nome: 'Conferência das instalações', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+          { ordem: 5, horario: '08:45', nome: 'Conferência de viaturas, equipamentos e materiais', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 15, obrigatoria: true, postoId: '' },
+          { ordem: 6, horario: '09:00', nome: 'Registro do mapa força operacional', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+          { ordem: 7, horario: '08:30', nome: 'Check-up de viaturas', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt USv', duracaoMinutos: 30, obrigatoria: true, postoId: '' },
+          { ordem: 8, horario: '09:00', nome: 'Armar Geral', programa: 'Instrução', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 40, obrigatoria: true, postoId: '' },
+          { ordem: 9, horario: '09:40', nome: 'Lanche (se possível)', programa: 'Refeição', responsavel_padrao: 'Aux Rancho', duracaoMinutos: 20, obrigatoria: false, postoId: '' },
+          { ordem: 10, horario: '10:30', nome: 'Condicionamento físico individual', programa: 'Treinamento físico', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 60, obrigatoria: false, postoId: '' },
+          { ordem: 11, horario: '11:30', nome: 'Atividade recreativa', programa: 'Treinamento físico', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 30, obrigatoria: false, postoId: '' },
+          { ordem: 12, horario: '12:00', nome: 'Almoço', programa: 'Refeição', responsavel_padrao: 'Refeição', duracaoMinutos: 120, obrigatoria: true, postoId: '' },
+          { ordem: 13, horario: '14:00', nome: 'Instrução Regular Coletiva', programa: 'Instrução', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 90, obrigatoria: false, postoId: '' },
+          { ordem: 14, horario: '15:30', nome: 'Lanche (se possível)', programa: 'Refeição', responsavel_padrao: 'Aux Rancho', duracaoMinutos: 20, obrigatoria: false, postoId: '' },
+          { ordem: 15, horario: '15:50', nome: 'Hora da estação', programa: 'Manutenção do quartel', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 100, obrigatoria: true, postoId: '' },
+          { ordem: 16, horario: '17:30', nome: 'Atividade recreativa', programa: 'Treinamento físico', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 90, obrigatoria: false, postoId: '' },
+          { ordem: 17, horario: '19:00', nome: 'Jantar', programa: 'Refeição', responsavel_padrao: 'Aux Rancho', duracaoMinutos: 90, obrigatoria: true, postoId: '' },
+          { ordem: 18, horario: '20:30', nome: 'Revista noturna', programa: 'Aquartelamento', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+          { ordem: 19, horario: '20:40', nome: 'Aquecimento de viaturas', programa: 'Manutenção preventiva', responsavel_padrao: 'Chefe dos Motoristas', duracaoMinutos: 80, obrigatoria: true, postoId: '' },
+          { ordem: 20, horario: '22:00', nome: 'Silêncio', programa: 'Aquartelamento', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 5, obrigatoria: true, postoId: '' },
+          { ordem: 21, horario: '06:00', nome: 'Alvorada', programa: 'Aquartelamento', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+          { ordem: 22, horario: '06:20', nome: 'Faxina Geral', programa: 'Manutenção do quartel', responsavel_padrao: 'Cb Dia', duracaoMinutos: 40, obrigatoria: false, postoId: '' },
+          { ordem: 23, horario: '07:00', nome: 'Café da Manhã', programa: 'Refeição', responsavel_padrao: 'Aux Rancho', duracaoMinutos: 30, obrigatoria: true, postoId: '' },
+          { ordem: 24, horario: '07:30', nome: 'Revista Matinal (encerramento)', programa: 'Passagem de serviço', responsavel_padrao: 'Cmt Prontidão', duracaoMinutos: 10, obrigatoria: true, postoId: '' },
+        ];
+        try {
+          const result = await API.importarAtividadesPadrao(DEMO_ATIVIDADES);
+          if (result.success) {
+            Utils.showToast(`Importadas: ${result.importadas} | Ignoradas (duplicadas): ${result.ignoradas}`, 'success');
+            await this.loadAll();
+          } else {
+            Utils.showToast(result.error || 'Erro na importação', 'error');
+          }
+        } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
       },
 
       editPosto(id) {
@@ -1160,6 +1235,146 @@
         } catch (e) {
           el.innerHTML = `<div class="empty-state" style="padding:24px"><p>Erro ao carregar: ${Utils.escapeHtml(e.message)}</p></div>`;
         }
+      },
+
+      _rpEditando: null,
+      _rpPostoId: null,
+
+      renderRotinaPersonalizadaSelect() {
+        const sel = document.getElementById('rpPostoSelect');
+        if (!sel) return;
+        const postos = (this.data.postos || []).filter(p => p.ativo !== false && p.Status !== 'removido');
+        sel.innerHTML = '<option value="">Selecione um posto...</option>' + postos.map(p => `<option value="${p.id}">${Utils.escapeHtml(p.nome)}</option>`).join('');
+      },
+
+      async carregarRotinaPersonalizada(postoId) {
+        this._rpPostoId = postoId;
+        document.getElementById('rpInfo').style.display = postoId ? 'none' : 'block';
+        document.getElementById('rpEditor').style.display = postoId ? 'block' : 'none';
+        if (!postoId) return;
+
+        try {
+          const result = await API.getRotinaPersonalizada(postoId);
+          this._rpEditando = (result.itens || []).map(i => ({ ...i }));
+          this._renderRpItens();
+        } catch (e) {
+          console.error('Erro ao carregar rotina personalizada:', e);
+          Toast.show('Erro ao carregar rotina', 'error');
+        }
+      },
+
+      _renderRpItens() {
+        const el = document.getElementById('rpItensList');
+        if (!el) return;
+        const itens = this._rpEditando || [];
+        if (itens.length === 0) {
+          el.innerHTML = '<div class="empty-state" style="padding:24px"><p>Nenhuma atividade personalizada. Clique em "Importar Rotina Padrão" para começar.</p></div>';
+          return;
+        }
+        el.innerHTML = itens.map((item, idx) => `
+          <div class="admin-list-item" data-idx="${idx}" style="display:flex;align-items:center;gap:8px;padding:10px;margin-bottom:6px">
+            <span style="cursor:grab;color:var(--text-muted);font-size:1.2rem" title="Arrastar">☰</span>
+            <input type="number" value="${item.ordem || idx + 1}" style="width:50px" class="form-input rp-ordem" data-idx="${idx}" onchange="Admin._rpAtualizarCampo(${idx}, 'ordem', parseInt(this.value))">
+            <input type="text" value="${Utils.escapeHtml(item.horario || '')}" placeholder="HH:MM" class="form-input rp-horario" data-idx="${idx}" style="width:80px" onchange="Admin._rpAtualizarCampo(${idx}, 'horario', this.value)">
+            <input type="text" value="${Utils.escapeHtml(item.nome || '')}" class="form-input rp-nome" data-idx="${idx}" style="flex:1" onchange="Admin._rpAtualizarCampo(${idx}, 'nome', this.value)">
+            <select class="form-select rp-programa" style="width:140px" onchange="Admin._rpAtualizarCampo(${idx}, 'programa', this.value)">
+              ${['', 'Passagem de serviço', 'Instrução', 'Treinamento físico', 'Refeição', 'Aquartelamento', 'Manutenção do quartel', 'Manutenção preventiva'].map(p => `<option value="${p}" ${item.programa === p ? 'selected' : ''}>${p || 'Programa'}</option>`).join('')}
+            </select>
+            <input type="text" value="${Utils.escapeHtml(item.responsavel_padrao || '')}" placeholder="Responsável" class="form-input rp-resp" data-idx="${idx}" style="width:140px" onchange="Admin._rpAtualizarCampo(${idx}, 'responsavel_padrao', this.value)">
+            <label style="font-size:0.8rem;display:flex;align-items:center;gap:4px;white-space:nowrap">
+              <input type="checkbox" ${item.obrigatoria ? 'checked' : ''} onchange="Admin._rpAtualizarCampo(${idx}, 'obrigatoria', this.checked)"> Obl.
+            </label>
+            <button class="btn btn-danger btn-sm" onclick="Admin._rpRemover(${idx})" title="Remover">×</button>
+          </div>
+        `).join('');
+      },
+
+      _rpAtualizarCampo(idx, campo, valor) {
+        if (!this._rpEditando || !this._rpEditando[idx]) return;
+        this._rpEditando[idx][campo] = valor;
+      },
+
+      _rpRemover(idx) {
+        if (!this._rpEditando) return;
+        this._rpEditando.splice(idx, 1);
+        this._renderRpItens();
+      },
+
+      adicionarItemRotinaPersonalizada() {
+        if (!this._rpEditando) this._rpEditando = [];
+        const maxOrdem = this._rpEditando.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+        this._rpEditando.push({
+          id: 'rp-' + Date.now(),
+          ordem: maxOrdem + 1,
+          horario: '',
+          nome: 'Nova atividade',
+          programa: '',
+          responsavel_padrao: '',
+          duracaoMinutos: 10,
+          obrigatoria: false,
+          notificar: false,
+          observacoes: '',
+          ativo: true,
+          Status: 'ativo'
+        });
+        this._renderRpItens();
+      },
+
+      async importarPadraoParaPersonalizada() {
+        if (!this._rpPostoId) return;
+        try {
+          const result = await API.getRotinaParaServico(this._rpPostoId);
+          if (result.itens && result.itens.length > 0) {
+            this._rpEditando = result.itens.map((item, idx) => ({
+              ...item,
+              id: 'rp-' + Date.now() + '-' + idx,
+              ativo: true,
+              Status: 'ativo'
+            }));
+            this._renderRpItens();
+            Toast.show(`${result.itens.length} atividade(s) importada(s) da rotina ${result.fonte}`, 'success');
+          } else {
+            Toast.show('Nenhuma atividade padrão encontrada', 'warning');
+          }
+        } catch (e) {
+          Toast.show('Erro ao importar', 'error');
+        }
+      },
+
+      async resetarRotinaPersonalizada() {
+        if (!this._rpPostoId) return;
+        if (!confirm('Tem certeza? Isso removerá todas as personalizações deste posto e ele voltará a usar a rotina padrão.')) return;
+        try {
+          await API.resetarRotinaPersonalizada(this._rpPostoId);
+          this._rpEditando = [];
+          this._renderRpItens();
+          Toast.show('Rotina resetada para o padrão', 'success');
+        } catch (e) {
+          Toast.show('Erro ao resetar', 'error');
+        }
+      },
+
+      async salvarRotinaPersonalizada() {
+        if (!this._rpPostoId) return;
+        const posto = (this.data.postos || []).find(p => p.id === this._rpPostoId);
+        try {
+          const result = await API.salvarRotinaPersonalizada(this._rpPostoId, posto?.nome || '', this._rpEditando || []);
+          if (result.success) {
+            Toast.show('Rotina personalizada salva!', 'success');
+          } else {
+            Toast.show(result.error || 'Erro ao salvar', 'error');
+          }
+        } catch (e) {
+          Toast.show('Erro ao salvar', 'error');
+        }
+      },
+
+      cancelarEdicaoRP() {
+        this._rpEditando = null;
+        this._rpPostoId = null;
+        document.getElementById('rpPostoSelect').value = '';
+        document.getElementById('rpInfo').style.display = 'block';
+        document.getElementById('rpEditor').style.display = 'none';
       }
     };
     document.addEventListener('DOMContentLoaded', () => Admin.init());

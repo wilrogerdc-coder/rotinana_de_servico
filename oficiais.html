@@ -10,49 +10,38 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/layout.css">
   <style>
-    .oficiais-presentes {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: var(--spacing-md);
-      margin-bottom: var(--spacing-xl);
-    }
-    .oficial-card {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-lg);
-      background: var(--bg-card);
-      border: 1px solid var(--prontidao-color);
-      border-radius: var(--radius-lg);
-      position: relative;
-    }
-    .oficial-card .oficial-info { flex: 1; }
-    .oficial-card .oficial-nome { font-weight: 600; font-size: 1rem; }
-    .oficial-card .oficial-posto { font-size: 0.85rem; color: var(--text-secondary); }
-    .oficial-card .oficial-tempo { font-family: var(--font-mono); font-size: 0.8rem; color: var(--prontidao-color); margin-top: 4px; }
-    .oficial-card .oficial-antiguidade { position: absolute; top: 8px; right: 12px; font-size: 0.7rem; color: var(--text-muted); }
-    .oficial-card .btn-saida { position: absolute; bottom: 8px; right: 8px; }
-    .oficiais-disponiveis { margin-top: var(--spacing-xl); }
-    .oficial-disponivel {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-md);
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: var(--radius-md);
-      margin-bottom: var(--spacing-sm);
-      cursor: pointer;
-      transition: all var(--transition-fast);
-    }
-    .oficial-disponivel:hover { border-color: var(--prontidao-color); }
-    @media (max-width: 768px) {
-      .oficiais-presentes { grid-template-columns: 1fr; }
-      .oficial-card { padding: var(--spacing-md); }
-      .oficial-card .oficial-nome { font-size: 0.9rem; }
-      .oficial-card .oficial-posto { font-size: 0.8rem; }
-      .oficial-card .oficial-antiguidade { position: static; margin-top: 4px; }
-      .oficial-card .btn-saida { position: static; margin-top: 8px; }
+    .oficiais-presentes { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:var(--spacing-md); margin-bottom:var(--spacing-xl); }
+    .oficial-card { display:flex; align-items:center; gap:var(--spacing-md); padding:var(--spacing-lg); background:var(--bg-card); border:1px solid var(--prontidao-color); border-radius:var(--radius-lg); position:relative; }
+    .oficial-card .oficial-info { flex:1; }
+    .oficial-card .oficial-nome { font-weight:600; font-size:1rem; }
+    .oficial-card .oficial-posto { font-size:0.85rem; color:var(--text-secondary); }
+    .oficial-card .oficial-tempo { font-family:var(--font-mono); font-size:0.8rem; color:var(--prontidao-color); margin-top:4px; }
+    .oficial-card .oficial-antiguidade { position:absolute; top:8px; right:12px; font-size:0.7rem; color:var(--text-muted); }
+    .oficial-card .btn-saida { position:absolute; bottom:8px; right:8px; }
+    .oficiais-disponiveis { margin-top:var(--spacing-xl); }
+    .oficial-disponivel { display:flex; align-items:center; gap:var(--spacing-md); padding:var(--spacing-md); background:var(--bg-card); border:1px solid var(--border-light); border-radius:var(--radius-md); margin-bottom:var(--spacing-sm); cursor:pointer; transition:all var(--transition-fast); }
+    .oficial-disponivel:hover { border-color:var(--prontidao-color); }
+    .timeline-section { margin-top:var(--spacing-xl); }
+    .timeline { position:relative; padding-left:28px; }
+    .timeline::before { content:''; position:absolute; left:10px; top:0; bottom:0; width:2px; background:var(--border-color); }
+    .timeline-item { position:relative; margin-bottom:var(--spacing-md); padding:var(--spacing-md); background:var(--bg-card); border-radius:var(--radius-md); border:1px solid var(--border-light); }
+    .timeline-item::before { content:''; position:absolute; left:-22px; top:16px; width:10px; height:10px; border-radius:50%; border:2px solid var(--prontidao-color); background:var(--bg-card); }
+    .timeline-item.entrada::before { background:#4caf50; border-color:#4caf50; }
+    .timeline-item.saida::before { background:#e53935; border-color:#e53935; }
+    .timeline-item .tl-horario { font-family:var(--font-mono); font-size:0.8rem; color:var(--prontidao-color); font-weight:600; }
+    .timeline-item .tl-nome { font-weight:500; font-size:0.9rem; }
+    .timeline-item .tl-tipo { font-size:0.75rem; padding:2px 8px; border-radius:6px; font-weight:500; }
+    .timeline-item .tl-tipo.entrada { background:rgba(76,175,80,.15); color:#4caf50; }
+    .timeline-item .tl-tipo.saida { background:rgba(229,57,53,.15); color:#e53935; }
+    .timeline-item .tl-obs { font-size:0.8rem; color:var(--text-secondary); margin-top:4px; }
+    .confirma-modal .modal { max-width:420px; }
+    .confirma-info { display:flex; align-items:center; gap:12px; padding:16px; background:var(--surface-color); border-radius:var(--radius-md); margin:16px 0; }
+    .confirma-info .avatar { width:48px; height:48px; font-size:1rem; }
+    .ja-anunciado { padding:8px 12px; background:rgba(255,193,7,.12); border:1px solid rgba(255,193,7,.3); border-radius:var(--radius-md); margin:8px 0; font-size:0.85rem; color:#ffb300; }
+    @media (max-width:768px) {
+      .oficiais-presentes { grid-template-columns:1fr; }
+      .oficial-card { padding:var(--spacing-md); }
+      .oficial-card .btn-saida { position:static; margin-top:8px; }
     }
   </style>
 </head>
@@ -66,6 +55,15 @@
       <button class="btn btn-primary" onclick="Oficiais.mostrarAnunciar()">📢 Anunciar Oficial</button>
     </div>
 
+    <div id="nenhumPresenteBanner" style="display:none;padding:16px;background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.3);border-radius:var(--radius-md);margin-bottom:var(--spacing-lg);display:flex;align-items:center;gap:12px">
+      <span style="font-size:1.5rem">📢</span>
+      <div>
+        <div style="font-weight:600;font-size:0.9rem">Nenhum oficial no quartel</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Recomenda-se anunciar a chegada do oficial antes de registrar entrada.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="Oficiais.mostrarAnunciar()" style="white-space:nowrap">Anunciar</button>
+    </div>
+
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Presentes no Quartel</h3>
     <div class="oficiais-presentes" id="presentesList">
       <div class="empty-state" style="grid-column:1/-1"><p>Nenhum oficial presente</p></div>
@@ -75,7 +73,31 @@
       <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Registrar Entrada</h3>
       <div id="disponiveisList"></div>
     </div>
+
+    <div class="timeline-section">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Linha do Tempo - Oficiais</h3>
+      <div class="timeline" id="timelineList">
+        <div class="empty-state"><p>Nenhum registro hoje</p></div>
+      </div>
+    </div>
   </main>
+
+  <div class="modal-overlay confirma-modal" id="confirmaModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:var(--spacing-lg);border-bottom:1px solid var(--border-color)">
+        <h3 style="font-size:1.1rem;font-weight:700">Confirmar Entrada</h3>
+        <button class="btn btn-sm" onclick="Oficiais.fecharConfirmacao()" style="background:transparent;border:none;font-size:1.3rem;cursor:pointer;color:var(--text-secondary)">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:var(--spacing-lg)">
+        <div class="confirma-info" id="confirmaInfo"></div>
+        <div id="jaAnunciadoInfo" style="display:none"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn btn-primary" style="flex:1" onclick="Oficiais.confirmarEntrada()">Confirmar Entrada</button>
+          <button class="btn btn-secondary" onclick="Oficiais.fecharConfirmacao()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="anunciarModal" style="display:none">
     <div class="modal" style="max-width:480px">
@@ -109,6 +131,8 @@
       servico: null,
       todos: [],
       presentes: [],
+      historico: [],
+      _pendingEntrada: null,
 
       async init() {
         if (!Auth.requireAuth()) return;
@@ -124,6 +148,7 @@
           this.todos = data.oficiaisTodos || [];
           this.presentes = data.oficiais || [];
           NAV.updateProntidao(data.servico.prontidao);
+          await this.loadHistorico();
           this.render();
           Sync.on('oficiais_updated', (o) => { this.presentes = o; this.render(); });
           const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
@@ -132,7 +157,18 @@
         } catch (e) { console.error(e); }
       },
 
+      async loadHistorico() {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const hist = await API.getHistorico(today);
+          this.historico = hist.entradas || [];
+        } catch (e) { this.historico = []; }
+      },
+
       render() {
+        const banner = document.getElementById('nenhumPresenteBanner');
+        if (banner) banner.style.display = this.presentes.length === 0 ? 'flex' : 'none';
+
         const presEl = document.getElementById('presentesList');
         if (this.presentes.length === 0) {
           presEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><p>Nenhum oficial presente</p></div>';
@@ -166,7 +202,7 @@
           dispEl.innerHTML = '<div class="empty-state"><p>Todos os oficiais ja estao presentes</p></div>';
         } else {
           dispEl.innerHTML = Utils.sortByName(disponiveis).map(o => `
-            <div class="oficial-disponivel" onclick="Oficiais.entrada('${o.id}')">
+            <div class="oficial-disponivel" onclick="Oficiais.confirmarEntradaModal('${o.id}')">
               <div class="avatar">${Utils.getInitials(o.nome)}</div>
               <div style="flex:1">
                 <div style="font-weight:500">${Utils.escapeHtml(o.nome)}</div>
@@ -176,9 +212,75 @@
             </div>
           `).join('');
         }
+
+        this.renderTimeline();
       },
 
-      async entrada(oficialId) {
+      renderTimeline() {
+        const el = document.getElementById('timelineList');
+        if (!this.historico || this.historico.length === 0) {
+          el.innerHTML = '<div class="empty-state"><p>Nenhum registro hoje</p></div>';
+          return;
+        }
+        const sorted = [...this.historico].sort((a, b) => (b.horario || '').localeCompare(a.horario || ''));
+        el.innerHTML = sorted.map(h => {
+          const tipo = h.tipo || 'entrada';
+          const isAnunciado = h.anunciado || (h.observacao || '').includes('anunciado');
+          return `
+            <div class="timeline-item ${tipo}">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="tl-horario">${Utils.escapeHtml(h.horario || '--:--')}</span>
+                <span class="tl-nome">${Utils.escapeHtml(h.nome || '-')}</span>
+                <span class="tl-tipo ${tipo}">${tipo === 'entrada' ? 'ENTRADA' : 'SAIDA'}</span>
+                ${isAnunciado ? '<span style="font-size:0.7rem;padding:1px 6px;border-radius:6px;background:rgba(255,193,7,.15);color:#ffb300">📢 Anunciado</span>' : ''}
+              </div>
+              ${h.posto ? `<div class="tl-obs">${Utils.escapeHtml(h.posto)}${h.observacao ? ' - ' + Utils.escapeHtml(h.observacao) : ''}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+      },
+
+      confirmarEntradaModal(oficialId) {
+        const oficial = this.todos.find(o => o.id === oficialId);
+        if (!oficial) return;
+        this._pendingEntrada = oficialId;
+
+        const info = document.getElementById('confirmaInfo');
+        info.innerHTML = `
+          <div class="avatar avatar-lg">${Utils.getInitials(oficial.nome)}</div>
+          <div>
+            <div style="font-weight:600">${Utils.escapeHtml(oficial.nome)}</div>
+            <div style="font-size:0.85rem;color:var(--text-secondary)">${Utils.escapeHtml(oficial.posto)}${oficial.unidade ? ' - ' + Utils.escapeHtml(oficial.unidade) : ''}</div>
+          </div>
+        `;
+
+        const jaAnunciadoEl = document.getElementById('jaAnunciadoInfo');
+        jaAnunciadoEl.style.display = 'none';
+        jaAnunciadoEl.innerHTML = '';
+
+        const ant = (this.historico || []).find(h => h.oficialId === oficialId && (h.observacao || '').toLowerCase().includes('anunciado'));
+        if (ant) {
+          jaAnunciadoEl.style.display = 'block';
+          jaAnunciadoEl.innerHTML = `<div class="ja-anunciado">📢 Este oficial ja foi anunciado as <strong>${Utils.escapeHtml(ant.horario || '--:--')}</strong>. Entrada sera registrada normalmente.</div>`;
+        }
+
+        if (this.presentes.length === 0) {
+          jaAnunciadoEl.style.display = 'block';
+          jaAnunciadoEl.innerHTML += `<div class="ja-anunciado" style="border-color:rgba(76,175,80,.3);background:rgba(76,175,80,.1);color:#4caf50">Nenhum oficial no quartel. Considere anunciar a chegada.</div>`;
+        }
+
+        document.getElementById('confirmaModal').style.display = 'flex';
+      },
+
+      fecharConfirmacao() {
+        document.getElementById('confirmaModal').style.display = 'none';
+        this._pendingEntrada = null;
+      },
+
+      async confirmarEntrada() {
+        if (!this._pendingEntrada) return;
+        const oficialId = this._pendingEntrada;
+        this.fecharConfirmacao();
         try {
           const result = await API.registrarEntradaOficial(oficialId);
           if (result.success) {
@@ -205,7 +307,7 @@
         const disponiveis = this.todos.filter(o => !idsPresentes.has(o.id));
         const el = document.getElementById('anunciarLista');
         if (disponiveis.length === 0) {
-          el.innerHTML = '<div class="empty-state"><p>Todos os oficiais já estão presentes</p></div>';
+          el.innerHTML = '<div class="empty-state"><p>Todos os oficiais ja estao presentes</p></div>';
         } else {
           el.innerHTML = Utils.sortByName(disponiveis).map(o => `
             <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;cursor:pointer" onclick="Oficiais.anunciarOficial('${o.id}')">

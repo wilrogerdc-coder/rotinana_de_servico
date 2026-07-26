@@ -9,99 +9,40 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/layout.css">
   <style>
-    .tele-current {
-      text-align: center;
-      padding: var(--spacing-xxl);
-      background: var(--bg-card);
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--border-light);
-      margin-bottom: var(--spacing-xl);
-    }
-    .tele-current-label {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: var(--spacing-md);
-    }
-    .tele-current-avatar {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      background: var(--prontidao-dim);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--prontidao-color);
-      margin: 0 auto var(--spacing-md);
-      border: 3px solid var(--prontidao-color);
-    }
-    .tele-current-name {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin-bottom: var(--spacing-xs);
-    }
-    .tele-current-time {
-      font-family: var(--font-mono);
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--prontidao-color);
-      margin-top: var(--spacing-md);
-    }
-    .tele-select-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: var(--spacing-md);
-    }
-    .tele-militar-card {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-md);
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      transition: all var(--transition-fast);
-    }
-    .tele-militar-card:hover {
-      border-color: var(--prontidao-color);
-      background: var(--bg-card-hover);
-    }
-    .tele-history {
-      max-height: 400px;
-      overflow-y: auto;
-    }
-    .tele-history-item {
-      display: grid;
-      grid-template-columns: 80px 1fr 80px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-md);
-      border-bottom: 1px solid var(--border-light);
-      align-items: center;
-    }
-    .tele-history-time {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: var(--prontidao-color);
-    }
-    .tele-duration {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      text-align: right;
-    }
-    @media (max-width: 768px) {
-      .tele-current { padding: var(--spacing-xl); }
-      .tele-current-avatar { width: 80px; height: 80px; font-size: 1.5rem; }
-      .tele-current-name { font-size: 1.2rem; }
-      .tele-current-time { font-size: 1.5rem; }
-      .tele-select-grid { grid-template-columns: 1fr; }
-      .tele-history-item { grid-template-columns: 60px 1fr 60px; gap: var(--spacing-sm); padding: var(--spacing-sm); }
-      .tele-history-time { font-size: 0.85rem; }
-      .tele-duration { font-size: 0.75rem; }
+    .tele-current { text-align:center; padding:var(--spacing-xxl); background:var(--bg-card); border-radius:var(--radius-xl); border:1px solid var(--border-light); margin-bottom:var(--spacing-xl); }
+    .tele-current-label { font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:2px; margin-bottom:var(--spacing-md); }
+    .tele-current-avatar { width:100px; height:100px; border-radius:50%; background:var(--prontidao-dim); display:flex; align-items:center; justify-content:center; font-size:2rem; font-weight:700; color:var(--prontidao-color); margin:0 auto var(--spacing-md); border:3px solid var(--prontidao-color); }
+    .tele-current-name { font-size:1.5rem; font-weight:700; margin-bottom:var(--spacing-xs); }
+    .tele-current-time { font-family:var(--font-mono); font-size:2rem; font-weight:700; color:var(--prontidao-color); margin-top:var(--spacing-md); }
+    .tele-vazio-banner { padding:12px 16px; background:rgba(229,57,53,.1); border:1px solid rgba(229,57,53,.3); border-radius:var(--radius-md); margin-bottom:var(--spacing-lg); display:flex; align-items:center; gap:10px; }
+    .tele-vazio-banner .tempo-vazio { font-family:var(--font-mono); font-weight:700; color:#e53935; }
+    .tele-select-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:var(--spacing-md); }
+    .tele-militar-card { display:flex; align-items:center; gap:var(--spacing-md); padding:var(--spacing-md); background:var(--bg-card); border:1px solid var(--border-light); border-radius:var(--radius-md); cursor:pointer; transition:all var(--transition-fast); }
+    .tele-militar-card:hover { border-color:var(--prontidao-color); background:var(--bg-card-hover); }
+    .tele-history { max-height:400px; overflow-y:auto; }
+    .tele-history-item { display:grid; grid-template-columns:80px 1fr 80px; gap:var(--spacing-md); padding:var(--spacing-md); border-bottom:1px solid var(--border-light); align-items:center; }
+    .tele-history-time { font-family:var(--font-mono); font-weight:600; color:var(--prontidao-color); }
+    .tele-duration { font-family:var(--font-mono); font-size:0.85rem; color:var(--text-muted); text-align:right; }
+    .tele-stats { margin-top:var(--spacing-xl); }
+    .tele-stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--spacing-md); margin-bottom:var(--spacing-lg); }
+    .tele-stat-card { padding:var(--spacing-lg); background:var(--bg-card); border:1px solid var(--border-light); border-radius:var(--radius-lg); text-align:center; }
+    .tele-stat-card .stat-value { font-family:var(--font-mono); font-size:1.5rem; font-weight:700; color:var(--prontidao-color); }
+    .tele-stat-card .stat-label { font-size:0.8rem; color:var(--text-muted); margin-top:4px; }
+    .tele-chart-container { padding:var(--spacing-lg); background:var(--bg-card); border:1px solid var(--border-light); border-radius:var(--radius-lg); margin-top:var(--spacing-md); }
+    .tele-chart-title { font-weight:600; font-size:0.9rem; margin-bottom:var(--spacing-md); }
+    .chart-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .chart-bar-label { width:120px; font-size:0.8rem; color:var(--text-secondary); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .chart-bar-track { flex:1; height:24px; background:var(--surface-color); border-radius:4px; overflow:hidden; position:relative; }
+    .chart-bar-fill { height:100%; border-radius:4px; display:flex; align-items:center; padding:0 8px; font-size:0.75rem; font-weight:600; color:#fff; min-width:fit-content; transition:width .5s ease; }
+    .chart-bar-value { font-family:var(--font-mono); font-size:0.8rem; width:50px; text-align:right; color:var(--text-secondary); }
+    @media (max-width:768px) {
+      .tele-current { padding:var(--spacing-xl); }
+      .tele-current-avatar { width:80px; height:80px; font-size:1.5rem; }
+      .tele-current-name { font-size:1.2rem; }
+      .tele-current-time { font-size:1.5rem; }
+      .tele-select-grid { grid-template-columns:1fr; }
+      .tele-history-item { grid-template-columns:60px 1fr 60px; gap:var(--spacing-sm); padding:var(--spacing-sm); }
+      .tele-stats-grid { grid-template-columns:1fr 1fr; }
     }
   </style>
 </head>
@@ -109,19 +50,37 @@
   <main class="main-content" id="mainContent">
     <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-xl)">Telegrafia</h2>
 
+    <div id="vazioBanner" class="tele-vazio-banner" style="display:none">
+      <span style="font-size:1.3rem">⚠️</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:0.88rem">Sem operador de telegrafia</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Todos os integrantes estao em ocorrencia fora do quartel.</div>
+      </div>
+      <div class="tempo-vazio" id="tempoVazio">00:00:00</div>
+    </div>
+
     <div class="tele-current" id="currentOperador">
       <div class="tele-current-label">Operador Atual</div>
       <div class="tele-current-avatar" id="teleAvatar">--</div>
       <div class="tele-current-name" id="teleNome">Nenhum operador</div>
-      <div style="color:var(--text-muted);font-size:0.85rem">Assumiu às <span id="teleInicio">--:--</span></div>
+      <div style="color:var(--text-muted);font-size:0.85rem">Assumiu as <span id="teleInicio">--:--</span></div>
       <div class="tele-current-time" id="teleTempo">00:00:00</div>
     </div>
 
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Selecionar Operador</h3>
     <div class="tele-select-grid" id="militaresGrid"></div>
 
+    <div class="tele-stats">
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Estatisticas do Servico</h3>
+      <div class="tele-stats-grid" id="statsGrid"></div>
+      <div class="tele-chart-container" id="chartContainer" style="display:none">
+        <div class="tele-chart-title">Horas por Integrante na Telegrafia</div>
+        <div id="chartBars"></div>
+      </div>
+    </div>
+
     <div style="margin-top:var(--spacing-xl)">
-      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Histórico de Trocas</h3>
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Historico de Trocas</h3>
       <div class="card tele-history" id="teleHistory">
         <div class="empty-state"><p>Nenhuma troca registrada</p></div>
       </div>
@@ -139,6 +98,7 @@
       militares: [],
       current: null,
       history: [],
+      vazioDesde: null,
 
       async init() {
         if (!Auth.requireAuth()) return;
@@ -156,24 +116,47 @@
           this.militares = data.militares || [];
           this.current = data.telegrafia || null;
           this.history = data.telegrafiaHistorico || [];
+          this.vazioDesde = data.telegrafiaVazioDesde || null;
 
           this.render();
           this.renderGrid();
           this.renderHistory();
+          this.renderStats();
 
           Sync.on('telegrafia_updated', (t) => {
             this.current = t;
             this.render();
           });
+          Sync.on('telegrafiavazio_updated', (v) => {
+            this.vazioDesde = v;
+            this.renderVazioBanner();
+          });
           const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
           const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
           Sync.start(this.servico.id, syncInterval);
-        } catch (e) {
-          console.error(e);
+        } catch (e) { console.error(e); }
+      },
+
+      renderVazioBanner() {
+        const banner = document.getElementById('vazioBanner');
+        if (!this.vazioDesde || this.current) {
+          banner.style.display = 'none';
+          return;
         }
+        banner.style.display = 'flex';
+        const parts = this.vazioDesde.split(':');
+        const start = new Date();
+        if (parts.length >= 2) start.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+        const update = () => {
+          const diff = Date.now() - start.getTime();
+          if (diff > 0) document.getElementById('tempoVazio').textContent = Utils.formatDuration(diff).display;
+        };
+        update();
+        setInterval(update, 1000);
       },
 
       render() {
+        this.renderVazioBanner();
         if (!this.current || !this.current.operador) {
           document.getElementById('teleAvatar').textContent = '--';
           document.getElementById('teleNome').textContent = 'Nenhum operador';
@@ -227,12 +210,65 @@
         `).join('');
       },
 
+      renderStats() {
+        const all = [...(this.history || [])];
+        if (this.current && this.current.operador) {
+          all.push({ operador: this.current.operador, militarId: this.current.militarId, horario: this.current.horario, duracao: null });
+        }
+
+        const horasPorOperador = {};
+        all.forEach(h => {
+          const nome = h.operador || 'Desconhecido';
+          if (!horasPorOperador[nome]) horasPorOperador[nome] = 0;
+          if (h.duracao) {
+            const match = h.duracao.match(/(\d+)h\s*(\d+)m/);
+            if (match) horasPorOperador[nome] += parseInt(match[1]) * 60 + parseInt(match[2]);
+            else {
+              const parts = h.duracao.split(':');
+              if (parts.length === 3) horasPorOperador[nome] += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            }
+          }
+        });
+
+        const totalTrocas = this.history ? this.history.length : 0;
+        const totalMinutos = Object.values(horasPorOperador).reduce((a, b) => a + b, 0);
+        const operadores = Object.keys(horasPorOperador).length;
+        const mediaMin = operadores > 0 ? Math.round(totalMinutos / operadores) : 0;
+
+        const statsGrid = document.getElementById('statsGrid');
+        statsGrid.innerHTML = `
+          <div class="tele-stat-card"><div class="stat-value">${totalTrocas}</div><div class="stat-label">Total de Trocas</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${operadores}</div><div class="stat-label">Integrantes</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${Math.floor(totalMinutos / 60)}h ${totalMinutos % 60}m</div><div class="stat-label">Tempo Total</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${Math.floor(mediaMin / 60)}h ${mediaMin % 60}m</div><div class="stat-label">Media por Integrante</div></div>
+        `;
+
+        const chartContainer = document.getElementById('chartContainer');
+        const chartBars = document.getElementById('chartBars');
+        const entries = Object.entries(horasPorOperador).sort((a, b) => b[1] - a[1]);
+        if (entries.length === 0) { chartContainer.style.display = 'none'; return; }
+        chartContainer.style.display = 'block';
+        const maxMin = Math.max(...entries.map(e => e[1]), 1);
+        const colors = ['#7c5cfc','#4caf50','#ff9800','#e53935','#3b82f6','#e91e63','#00bcd4','#8bc34a'];
+        chartBars.innerHTML = entries.map(([nome, min], i) => {
+          const pct = Math.max((min / maxMin) * 100, 5);
+          const h = Math.floor(min / 60);
+          const m = min % 60;
+          const color = colors[i % colors.length];
+          return `
+            <div class="chart-bar-row">
+              <div class="chart-bar-label">${Utils.escapeHtml(nome)}</div>
+              <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${pct}%;background:${color}">${h}h${m > 0 ? m + 'm' : ''}</div></div>
+              <div class="chart-bar-value">${h}h${m > 0 ? ' ' + m + 'm' : ''}</div>
+            </div>
+          `;
+        }).join('');
+      },
+
       async trocar(militarId) {
         const militar = this.militares.find(m => m.id === militarId);
         if (!militar) return;
-
         if (!confirm(`Trocar telegrafia para ${militar.nome}?`)) return;
-
         try {
           const result = await API.registrarTelegrafia(this.servico.id, militarId);
           if (result.success) {
@@ -240,9 +276,7 @@
             Utils.playSound('telegrafia');
             await this.load();
           }
-        } catch (e) {
-          Utils.showToast('Erro ao registrar telegrafia', 'error');
-        }
+        } catch (e) { Utils.showToast('Erro ao registrar telegrafia', 'error'); }
       }
     };
 

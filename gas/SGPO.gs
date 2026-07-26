@@ -41,7 +41,7 @@
 const SGPO_VERSION = '3.6';
 
 function _hashPassword(str) {
-  var raw = Utilities.computeDigest(Utilities.Algorithm.SHA_256, str, Utilities.Charset.UTF_8);
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, str, Utilities.Charset.UTF_8);
   var hash = '';
   for (var i = 0; i < raw.length; i++) {
     var byte = raw[i];
@@ -145,7 +145,9 @@ const SHEET_NAMES = {
   viaturas: 'Viaturas',
   servico_viatura: 'ServicoViatura',
   ocorrencias: 'Ocorrencias',
-  tipos_viatura: 'TiposViatura'
+  rotinaPersonalizada: 'RotinaPersonalizada',
+  tipos_viatura: 'TiposViatura',
+  naturezas: 'Naturezas'
 };
 
 
@@ -196,7 +198,6 @@ function getDefinicaoAbas() {
         { nome: 'nome',            largura: 240, tipo: 'texto',     obrigatoria: true },
         { nome: 'posto',           largura: 160, tipo: 'dropdown',  opcoes: POSTOS_MILITAR },
         { nome: 'reCpf',           largura: 130, tipo: 'texto',     descricao: 'RE ou CPF' },
-        { nome: 'matricula',       largura: 120, tipo: 'texto' },
         { nome: 'dataNascimento',  largura: 130, tipo: 'data' },
         { nome: 'email',           largura: 220, tipo: 'texto' },
         { nome: 'telefone',        largura: 140, tipo: 'texto' },
@@ -206,16 +207,16 @@ function getDefinicaoAbas() {
         { nome: 'Status',          largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
       ],
       dados: [
-        [gerarId(), now, 'Carlos Eduardo da Silva',     '1º Tenente', '', '', '', '', '', 'Comandante de Esquadra', '', true, 'ativo'],
-        [gerarId(), now, 'André Felipe de Oliveira',    'Sargento',   '', '', '', '', '', 'Comandante de Pelotão', '', true, 'ativo'],
-        [gerarId(), now, 'Lucas Gabriel dos Santos',    'Cabo',       '', '', '', '', '', 'Operador de Viatura', '', true, 'ativo'],
-        [gerarId(), now, 'Pedro Henrique Ferreira',     'Soldado',    '', '', '', '', '', 'Sentinela', '', true, 'ativo'],
-        [gerarId(), now, 'Marcos Vinícius Costa',       '2º Tenente', '', '', '', '', '', 'Adjunto', '', true, 'ativo'],
-        [gerarId(), now, 'Roberto Carlos Lima',         '1º Sargento','', '', '', '', '', 'Subcomandante', '', true, 'ativo'],
-        [gerarId(), now, 'Fernando Augusto Souza',      'Cabo',       '', '', '', '', '', 'Operador de Rádio', '', true, 'ativo'],
-        [gerarId(), now, 'Ricardo Mendes Pereira',      'Soldado',    '', '', '', '', '', 'Sentinela', '', true, 'ativo'],
-        [gerarId(), now, 'Thiago Almeida Ribeiro',      '3º Sargento','', '', '', '', '', 'Inspetor', '', true, 'ativo'],
-        [gerarId(), now, 'Bruno Nascimento Reis',       'Soldado',    '', '', '', '', '', 'Auxiliar', '', true, 'ativo']
+        [gerarId(), now, 'Carlos Eduardo da Silva',     '1º Tenente', '', '', '', '', 'Comandante de Esquadra', '', true, 'ativo'],
+        [gerarId(), now, 'André Felipe de Oliveira',    'Sargento',   '', '', '', '', 'Comandante de Pelotão', '', true, 'ativo'],
+        [gerarId(), now, 'Lucas Gabriel dos Santos',    'Cabo',       '', '', '', '', 'Operador de Viatura', '', true, 'ativo'],
+        [gerarId(), now, 'Pedro Henrique Ferreira',     'Soldado',    '', '', '', '', 'Sentinela', '', true, 'ativo'],
+        [gerarId(), now, 'Marcos Vinícius Costa',       '2º Tenente', '', '', '', '', 'Adjunto', '', true, 'ativo'],
+        [gerarId(), now, 'Roberto Carlos Lima',         '1º Sargento','', '', '', '', 'Subcomandante', '', true, 'ativo'],
+        [gerarId(), now, 'Fernando Augusto Souza',      'Cabo',       '', '', '', '', 'Operador de Rádio', '', true, 'ativo'],
+        [gerarId(), now, 'Ricardo Mendes Pereira',      'Soldado',    '', '', '', '', 'Sentinela', '', true, 'ativo'],
+        [gerarId(), now, 'Thiago Almeida Ribeiro',      '3º Sargento','', '', '', '', 'Inspetor', '', true, 'ativo'],
+        [gerarId(), now, 'Bruno Nascimento Reis',       'Soldado',    '', '', '', '', 'Auxiliar', '', true, 'ativo']
       ]
     },
     {
@@ -306,33 +307,34 @@ function getDefinicaoAbas() {
         { nome: 'obrigatoria',        largura: 100, tipo: 'booleano',  descricao: 'Se true, não pode ser pulada' },
         { nome: 'notificar',          largura: 80,  tipo: 'booleano' },
         { nome: 'observacoes',        largura: 300, tipo: 'texto' },
+        { nome: 'postoId',           largura: 160, tipo: 'texto',     descricao: 'ID do posto (vazio = todos)' },
         { nome: 'Status',             largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
       ],
       dados: [
-        [gerarId(), now, 1,  '07:30', 'Revista Matinal',                                              'Passagem de serviço',   'Cmt Prontidão', 10, true,  true,  '', 'ativo'],
-        [gerarId(), now, 2,  '07:45', 'Ordem do Dia',                                                 'Passagem de serviço',   'Cmt Prontidão', 45, true,  false, '', 'ativo'],
-        [gerarId(), now, 3,  '08:30', 'Nós do Dia',                                                   'Instrução',             'Cmt Prontidão', 5,  true,  false, '', 'ativo'],
-        [gerarId(), now, 4,  '08:35', 'Conferência das instalações',                                  'Passagem de serviço',   'Cmt Prontidão', 10, true,  false, '', 'ativo'],
-        [gerarId(), now, 5,  '08:45', 'Conferência de viaturas, equipamentos e materiais',            'Passagem de serviço',   'Cmt Prontidão', 15, true,  false, '', 'ativo'],
-        [gerarId(), now, 6,  '09:00', 'Registro do mapa força operacional no sistema de gerenciamento e despacho de viaturas', 'Passagem de serviço', 'Cmt Prontidão', 10, true, false, '', 'ativo'],
-        [gerarId(), now, 7,  '08:30', 'Check-up de viaturas',                                         'Passagem de serviço',   'Cmt USv',       30, true,  false, '', 'ativo'],
-        [gerarId(), now, 8,  '09:00', 'Armar Geral',                                                  'Instrução',             'Cmt Prontidão', 40, true,  false, '', 'ativo'],
-        [gerarId(), now, 9,  '09:40', 'Lanche (se possível)',                                         'Refeição',              'Aux Rancho',     20, false, false, '', 'ativo'],
-        [gerarId(), now, 10, '10:30', 'Condicionamento físico individual',                            'Treinamento físico',    'Cmt Prontidão', 60, false, false, '', 'ativo'],
-        [gerarId(), now, 11, '11:30', 'Atividade recreativa',                                         'Treinamento físico',    'Cmt Prontidão', 30, false, false, '', 'ativo'],
-        [gerarId(), now, 12, '12:00', 'Almoço',                                                       'Refeição',              'Refeição',       120,true,  false, '', 'ativo'],
-        [gerarId(), now, 13, '14:00', 'Instrução Regular Coletiva',                                   'Instrução',             'Cmt Prontidão', 90, false, false, '', 'ativo'],
-        [gerarId(), now, 14, '15:30', 'Lanche (se possível)',                                         'Refeição',              'Aux Rancho',     20, false, false, '', 'ativo'],
-        [gerarId(), now, 15, '15:50', 'Hora da estação',                                              'Manutenção do quartel', 'Cmt Prontidão', 100,true,  false, '', 'ativo'],
-        [gerarId(), now, 16, '17:30', 'Atividade recreativa',                                         'Treinamento físico',    'Cmt Prontidão', 90, false, false, '', 'ativo'],
-        [gerarId(), now, 17, '19:00', 'Jantar',                                                       'Refeição',              'Aux Rancho',     90, true,  false, '', 'ativo'],
-        [gerarId(), now, 18, '20:30', 'Revista noturna',                                              'Aquartelamento',        'Cmt Prontidão', 10, true,  true,  '', 'ativo'],
-        [gerarId(), now, 19, '20:40', 'Aquecimento de viaturas',                                      'Manutenção preventiva', 'Chefe dos Motoristas', 80, true, false, '', 'ativo'],
-        [gerarId(), now, 20, '22:00', 'Silêncio',                                                     'Aquartelamento',        'Cmt Prontidão', 5,  true,  true,  '', 'ativo'],
-        [gerarId(), now, 21, '06:00', 'Alvorada',                                                     'Aquartelamento',        'Cmt Prontidão', 10, true,  true,  '', 'ativo'],
-        [gerarId(), now, 22, '06:20', 'Faxina Geral',                                                 'Manutenção do quartel', 'Cb Dia',         40, false, false, '', 'ativo'],
-        [gerarId(), now, 23, '07:00', 'Café da Manhã',                                                'Refeição',              'Aux Rancho',     30, true,  false, '', 'ativo'],
-        [gerarId(), now, 24, '07:30', 'Revista Matinal (encerramento)',                               'Passagem de serviço',   'Cmt Prontidão', 10, true,  true,  '', 'ativo']
+        [gerarId(), now, 1,  '07:30', 'Revista Matinal',                                              'Passagem de serviço',   'Cmt Prontidão', 10, true,  true,  '', '', 'ativo'],
+        [gerarId(), now, 2,  '07:45', 'Ordem do Dia',                                                 'Passagem de serviço',   'Cmt Prontidão', 45, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 3,  '08:30', 'Nós do Dia',                                                   'Instrução',             'Cmt Prontidão', 5,  true,  false, '', '', 'ativo'],
+        [gerarId(), now, 4,  '08:35', 'Conferência das instalações',                                  'Passagem de serviço',   'Cmt Prontidão', 10, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 5,  '08:45', 'Conferência de viaturas, equipamentos e materiais',            'Passagem de serviço',   'Cmt Prontidão', 15, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 6,  '09:00', 'Registro do mapa força operacional no sistema de gerenciamento e despacho de viaturas', 'Passagem de serviço', 'Cmt Prontidão', 10, true, false, '', '', 'ativo'],
+        [gerarId(), now, 7,  '08:30', 'Check-up de viaturas',                                         'Passagem de serviço',   'Cmt USv',       30, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 8,  '09:00', 'Armar Geral',                                                  'Instrução',             'Cmt Prontidão', 40, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 9,  '09:40', 'Lanche (se possível)',                                         'Refeição',              'Aux Rancho',     20, false, false, '', '', 'ativo'],
+        [gerarId(), now, 10, '10:30', 'Condicionamento físico individual',                            'Treinamento físico',    'Cmt Prontidão', 60, false, false, '', '', 'ativo'],
+        [gerarId(), now, 11, '11:30', 'Atividade recreativa',                                         'Treinamento físico',    'Cmt Prontidão', 30, false, false, '', '', 'ativo'],
+        [gerarId(), now, 12, '12:00', 'Almoço',                                                       'Refeição',              'Refeição',       120,true,  false, '', '', 'ativo'],
+        [gerarId(), now, 13, '14:00', 'Instrução Regular Coletiva',                                   'Instrução',             'Cmt Prontidão', 90, false, false, '', '', 'ativo'],
+        [gerarId(), now, 14, '15:30', 'Lanche (se possível)',                                         'Refeição',              'Aux Rancho',     20, false, false, '', '', 'ativo'],
+        [gerarId(), now, 15, '15:50', 'Hora da estação',                                              'Manutenção do quartel', 'Cmt Prontidão', 100,true,  false, '', '', 'ativo'],
+        [gerarId(), now, 16, '17:30', 'Atividade recreativa',                                         'Treinamento físico',    'Cmt Prontidão', 90, false, false, '', '', 'ativo'],
+        [gerarId(), now, 17, '19:00', 'Jantar',                                                       'Refeição',              'Aux Rancho',     90, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 18, '20:30', 'Revista noturna',                                              'Aquartelamento',        'Cmt Prontidão', 10, true,  true,  '', '', 'ativo'],
+        [gerarId(), now, 19, '20:40', 'Aquecimento de viaturas',                                      'Manutenção preventiva', 'Chefe dos Motoristas', 80, true, false, '', '', 'ativo'],
+        [gerarId(), now, 20, '22:00', 'Silêncio',                                                     'Aquartelamento',        'Cmt Prontidão', 5,  true,  true,  '', '', 'ativo'],
+        [gerarId(), now, 21, '06:00', 'Alvorada',                                                     'Aquartelamento',        'Cmt Prontidão', 10, true,  true,  '', '', 'ativo'],
+        [gerarId(), now, 22, '06:20', 'Faxina Geral',                                                 'Manutenção do quartel', 'Cb Dia',         40, false, false, '', '', 'ativo'],
+        [gerarId(), now, 23, '07:00', 'Café da Manhã',                                                'Refeição',              'Aux Rancho',     30, true,  false, '', '', 'ativo'],
+        [gerarId(), now, 24, '07:30', 'Revista Matinal (encerramento)',                               'Passagem de serviço',   'Cmt Prontidão', 10, true,  true, '', '', 'ativo']
       ]
     },
     {
@@ -576,6 +578,7 @@ function getDefinicaoAbas() {
         { nome: 'postoPaiId',   largura: 160, tipo: 'texto',     descricao: 'ID do posto pai (GB não tem)' },
         { nome: 'responsavelId', largura: 160, tipo: 'texto',    descricao: 'Comandante do posto' },
         { nome: 'ordem',        largura: 80,  tipo: 'numero' },
+        { nome: 'logo',         largura: 240, tipo: 'texto',     descricao: 'URL ou dados Base64 do logo do posto' },
         { nome: 'ativo',        largura: 80,  tipo: 'booleano' },
         { nome: 'Status',       largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
       ],
@@ -719,6 +722,55 @@ function getDefinicaoAbas() {
         [gerarId(), now, 'Alarme',              'ALO', '#ab47bc', 'Alarme', 'ativo'],
         [gerarId(), now, 'Motocicleta',         'MOT', '#78909c', 'Motocicleta', 'ativo']
       ]
+    },
+
+    /* ── Rotina Personalizada por Posto ── */
+    {
+      nome: 'RotinaPersonalizada',
+      cor: '#0d652d',
+      descricao: 'Rotina personalizada por posto (sobrepõe a rotina padrão ao iniciar serviço)',
+      colunas: [
+        { nome: 'id',                 largura: 100, tipo: 'texto',     obrigatoria: true },
+        { nome: 'dataCadastro',       largura: 160, tipo: 'data' },
+        { nome: 'postoId',            largura: 160, tipo: 'texto',     obrigatoria: true },
+        { nome: 'postoNome',          largura: 200, tipo: 'texto' },
+        { nome: 'ordem',              largura: 70,  tipo: 'numero' },
+        { nome: 'horario',            largura: 100, tipo: 'texto' },
+        { nome: 'nome',               largura: 280, tipo: 'texto',     obrigatoria: true },
+        { nome: 'programa',           largura: 160, tipo: 'dropdown',  opcoes: PROGRAMAS },
+        { nome: 'responsavel_padrao', largura: 200, tipo: 'texto' },
+        { nome: 'duracaoMinutos',     largura: 110, tipo: 'numero' },
+        { nome: 'obrigatoria',        largura: 100, tipo: 'booleano' },
+        { nome: 'notificar',          largura: 80,  tipo: 'booleano' },
+        { nome: 'observacoes',        largura: 300, tipo: 'texto' },
+        { nome: 'ativo',              largura: 80,  tipo: 'booleano' },
+        { nome: 'Status',             largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
+      ],
+      dados: []
+    },
+
+    /* ── Naturezas de Ocorrência ── */
+    {
+      nome: 'Naturezas',
+      cor: '#ff6f00',
+      descricao: 'Naturezas/Tipos de ocorrência',
+      colunas: [
+        { nome: 'id',           largura: 100, tipo: 'texto',     obrigatoria: true },
+        { nome: 'dataCadastro', largura: 160, tipo: 'data' },
+        { nome: 'nome',         largura: 200, tipo: 'texto',     obrigatoria: true },
+        { nome: 'valor',        largura: 200, tipo: 'texto' },
+        { nome: 'Status',       largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
+      ],
+      dados: [
+        [gerarId(), now, 'Incêndio', 'incendio', 'ativo'],
+        [gerarId(), now, 'Resgate', 'resgate', 'ativo'],
+        [gerarId(), now, 'Salvamento', 'salvamento', 'ativo'],
+        [gerarId(), now, 'Prevenção', 'prevencao', 'ativo'],
+        [gerarId(), now, 'Emergência Médica', 'emergencia_medica', 'ativo'],
+        [gerarId(), now, 'Desabamento', 'desabamento', 'ativo'],
+        [gerarId(), now, 'Enchente', 'enchente', 'ativo'],
+        [gerarId(), now, 'Busca e Salvamento', 'busca_salvamento', 'ativo']
+      ]
     }
   ];
 }
@@ -776,7 +828,7 @@ const Utils = {
   },
 
   hashSenha(senha) {
-    var raw = Utilities.computeDigest(Utilities.Algorithm.SHA_256, senha, Utilities.Charset.UTF_8);
+    var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, senha, Utilities.Charset.UTF_8);
     var hash = '';
     for (var i = 0; i < raw.length; i++) {
       var byte = raw[i];
@@ -829,10 +881,28 @@ function findRows(sheetName, filterFn) {
   for (let i = 1; i < data.length; i++) {
     const row = {};
     headers.forEach((h, idx) => row[h] = data[i][idx]);
+    if (!row.id && row.id !== 0) continue;
+    if (typeof row.id === 'string' && row.id.length > 30) continue;
     if (filterFn(row)) results.push(row);
   }
   return results;
 }
+
+function updateRow(sheetName, id, updates) {
+  const found = findRowById(sheetName, id);
+  if (!found) return { success: false, error: 'Linha não encontrada' };
+  const sheet = getSheet(sheetName);
+  const headers = found.headers;
+  Object.keys(updates).forEach(key => {
+    const colIdx = headers.indexOf(key);
+    if (colIdx >= 0) {
+      sheet.getRange(found.row, colIdx + 1).setValue(updates[key]);
+    }
+  });
+  return { success: true };
+}
+
+
 
 function generateId() {
   return Utilities.getUuid().substring(0, 12);
@@ -1261,6 +1331,7 @@ function getPostosServico() {
     postoPaiId: p.postoPaiId || '',
     responsavelId: p.responsavelId || '',
     ordem: p.ordem || 0,
+    logo: p.logo || '',
     ativo: p.ativo
   }));
 }
@@ -1515,31 +1586,90 @@ function handleCreateComPermissao(data) {
   }
 
   const s = getSheet(sheet);
+  const headers = s.getDataRange().getValues()[0];
   const id = generateId();
-  const newRow = [id, new Date().toISOString()];
-  if (row) Object.values(row).forEach(v => newRow.push(v));
-  newRow.push('ativo');
+  const now = new Date().toISOString();
+  const newRow = headers.map(h => {
+    if (h === 'id') return id;
+    if (h === 'dataCadastro') return now;
+    if (h === 'Status') return 'ativo';
+    if (h === 'ativo') return true;
+    if (h === 'senhaHash') return row.senhaHash || '';
+    if (h === 'mustChangePassword') return true;
+    if (h === 'ultimoAcesso') return now;
+    return (row[h] !== undefined && row[h] !== null) ? row[h] : '';
+  });
   s.appendRow(newRow);
   logAuditoria('create', (_authUser && _authUser.nome) || 'sistema', `Criou registro em ${sheet}`);
 
   if (sheet === 'militares' || sheet === 'Militares') {
-    if (row && row.reCpf) {
-      const userSheet = getSheet('Usuarios');
-      const userRows = userSheet.getDataRange().getValues();
-      const userHeaders = userRows[0];
-      const reCol = userHeaders.indexOf('reCpf');
-      const exists = userRows.slice(1).some(r => String(r[reCol]) === String(row.reCpf));
-      if (!exists) {
-        const DEFAULT_PASSWORD = '123456';
-        const userId = generateId();
-        userSheet.appendRow([
-          userId, new Date().toISOString(), row.nome, row.reCpf, DEFAULT_PASSWORD,
-          _hashPassword(DEFAULT_PASSWORD), true, 'operador',
-          row.email || '', row.telefone || '', '', '', true, new Date().toISOString(), 'ativo'
-        ]);
-        logAuditoria('auto_criar_usuario', (_authUser && _authUser.nome) || 'sistema',
-          `Usuário automático criado para militar ${row.nome} (RE/CPF: ${row.reCpf})`);
+    try {
+      if (row && row.reCpf) {
+        const userSheet = getSheet('Usuarios');
+        const userRows = userSheet.getDataRange().getValues();
+        const userHeaders = userRows[0];
+        const reCol = userHeaders.indexOf('reCpf');
+        const exists = reCol !== -1 && userRows.slice(1).some(r => String(r[reCol]) === String(row.reCpf));
+        if (!exists) {
+          const DEFAULT_PASSWORD = '123456';
+          const userId = generateId();
+          const userNow = new Date().toISOString();
+          const userRow = userHeaders.map(h => {
+            if (h === 'id') return userId;
+            if (h === 'dataCadastro') return userNow;
+            if (h === 'nome') return row.nome || '';
+            if (h === 'reCpf') return row.reCpf || '';
+            if (h === 'senha') return DEFAULT_PASSWORD;
+            if (h === 'senhaHash') return _hashPassword(DEFAULT_PASSWORD);
+            if (h === 'mustChangePassword') return true;
+            if (h === 'perfil') return 'operador';
+            if (h === 'email') return row.email || '';
+            if (h === 'telefone') return row.telefone || '';
+            if (h === 'foto') return '';
+            if (h === 'nivelPermissao') return '';
+            if (h === 'postoDefaultId') return '';
+            if (h === 'ativo') return true;
+            if (h === 'ultimoAcesso') return userNow;
+            if (h === 'Status') return 'ativo';
+            return '';
+          });
+          userSheet.appendRow(userRow);
+          logAuditoria('auto_criar_usuario', (_authUser && _authUser.nome) || 'sistema',
+            `Usuário automático criado para militar ${row.nome} (RE/CPF: ${row.reCpf})`);
+        }
       }
+    } catch (e) {
+      console.error('Erro ao criar usuário automático:', e.message);
+    }
+  }
+
+  if (sheet === 'usuarios' || sheet === 'Usuarios') {
+    try {
+      if (row && row.reCpf) {
+        const milSheet = getSheet('Militares');
+        const milData = milSheet.getDataRange().getValues();
+        const milHeaders = milData[0];
+        const reCol = milHeaders.indexOf('reCpf');
+        const exists = reCol !== -1 && milData.slice(1).some(r => String(r[reCol]) === String(row.reCpf));
+        if (!exists) {
+          const milId = generateId();
+          const milNow = new Date().toISOString();
+          const milRow = milHeaders.map(h => {
+            if (h === 'id') return milId;
+            if (h === 'dataCadastro') return milNow;
+            if (h === 'nome') return row.nome || '';
+            if (h === 'reCpf') return row.reCpf || '';
+            if (h === 'ativo') return true;
+            if (h === 'Status') return 'ativo';
+            return '';
+          });
+          milSheet.appendRow(milRow);
+          logAuditoria('auto_criar_militar', (_authUser && _authUser.nome) || 'sistema',
+            `Militar automático criado para usuário ${row.nome} (RE/CPF: ${row.reCpf})`);
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao criar militar automático:', e.message);
     }
   }
 
@@ -1548,10 +1678,16 @@ function handleCreateComPermissao(data) {
 
 function getUsuariosEditaveis(data) {
   const { editorId } = data;
-  if (!editorId) return { error: 'editorId obrigatório' };
+  if (!editorId) return findRows('Usuarios', r => r.Status !== 'removido').filter(u => u.usuario !== SUPER_USER.usuario);
+
+  if (editorId === SUPER_USER.id) {
+    return findRows('Usuarios', r => r.Status !== 'removido').filter(u => u.usuario !== SUPER_USER.usuario);
+  }
 
   const editorNivel = getUsuarioNivel(editorId);
-  if (!editorNivel) return [];
+  if (!editorNivel) {
+    return findRows('Usuarios', r => r.Status !== 'removido').filter(u => u.usuario !== SUPER_USER.usuario);
+  }
 
   if (editorNivel === 'GB') {
     const todos = findRows('Usuarios', r => r.Status !== 'removido');
@@ -1711,15 +1847,16 @@ function retornarViatura(data) {
 }
 
 function criarOcorrencia(data) {
-  const { servicoId, titulo, natureza, descricao, viaturaIds, efetivo, prontidaoCor } = data;
+  const { servicoId, titulo, natureza, descricao, viaturaIds, efetivo, prontidaoCor, dataOcorrencia, horaOcorrencia } = data;
   if (!servicoId || !titulo) return { success: false, error: 'servicoId e titulo obrigatórios' };
   const existentes = findRows('ocorrencias', r => r.servicoId === servicoId && r.Status !== 'removido');
   const numero = String(existentes.length + 1).padStart(3, '0');
-  const now = Utils.formatTime(new Date());
+  const now = horaOcorrencia || Utils.formatTime(new Date());
   const id = gerarId();
+  const dataRef = dataOcorrencia || new Date().toISOString().split('T')[0];
   const s = getSheet('Ocorrencias');
   s.appendRow([id, new Date().toISOString(), numero, servicoId, titulo, natureza || '', descricao || '', JSON.stringify(viaturaIds || []), JSON.stringify(efetivo || []), now, '', prontidaoCor || '', 'em_atendimento', 'ativo']);
-  logAuditoria('ocorrencia', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} criada: ${titulo}`);
+  logAuditoria('ocorrencia', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} criada: ${titulo}${dataOcorrencia ? ' (ref: ' + dataOcorrencia + ' ' + now + ')' : ''}`);
   logNotificacao(servicoId, `Nova ocorrência #${numero}: ${titulo}`, 'urgente');
   return { success: true, id, numero };
 }
@@ -1772,6 +1909,10 @@ function doPost(e) {
       getConfig:                () => handleGetConfig(),
       iniciarServico:           () => iniciarServico(data),
       encerrarServico:          () => encerrarServico(data),
+      getRotinaPersonalizada:   () => getRotinaPersonalizada(data),
+      salvarRotinaPersonalizada:() => salvarRotinaPersonalizada(data),
+      resetarRotinaPersonalizada:() => resetarRotinaPersonalizada(data),
+      getRotinaParaServico:     () => getRotinaParaServico(data),
       getRotina:                () => getRotina(data),
       updateAtividade:          () => updateAtividade(data),
       criarAtividadeExtra:      () => criarAtividadeExtra(data),
@@ -1814,8 +1955,11 @@ function doPost(e) {
       criarCivis:               () => criarCivis(data),
       getPostosComServico:      () => getPostosComServico(data),
       getTiposViatura:          () => handleRead({ ...data, sheet: 'tipos_viatura' }),
+      getNaturezas:             () => handleRead({ ...data, sheet: 'naturezas' }),
       registrarLog:             () => registrarLogCustom(data),
-      updateConfig:             () => handleUpdateConfig(data)
+      updateConfig:             () => handleUpdateConfig(data),
+      importarAtividadesPadrao: () => importarAtividadesPadrao(data),
+      diagnosticar:             () => diagnosticar()
     };
 
     const handler = handlers[action];
@@ -1989,15 +2133,22 @@ function handleRead(data) {
 function handleCreate(data) {
   const { sheet, row } = data;
   const s = getSheet(sheet);
+  const headers = s.getDataRange().getValues()[0];
   const id = generateId();
+  const now = new Date().toISOString();
 
   if ((sheet === 'usuarios' || sheet === 'Usuarios') && row.senha) {
     row.senhaHash = _hashPassword(row.senha);
   }
 
-  const newRow = [id, new Date().toISOString()];
-  if (row) Object.values(row).forEach(v => newRow.push(v));
-  newRow.push('ativo');
+  const newRow = headers.map(h => {
+    if (h === 'id') return id;
+    if (h === 'dataCadastro') return now;
+    if (h === 'Status') return 'ativo';
+    if (h === 'ativo') return true;
+    if (h === 'senhaHash') return row.senhaHash || '';
+    return (row[h] !== undefined && row[h] !== null) ? row[h] : '';
+  });
 
   s.appendRow(newRow);
   logAuditoria('create', (_authUser && _authUser.nome) || 'sistema', `Criou registro em ${sheet}`);
@@ -2048,6 +2199,42 @@ function handleDelete(data) {
 
   logAuditoria('delete', (_authUser && _authUser.nome) || 'sistema', `Removeu ${id} de ${sheet}`);
   return { success: true };
+}
+
+
+function importarAtividadesPadrao(data) {
+  const { atividades } = data;
+  if (!Array.isArray(atividades) || atividades.length === 0) {
+    return { success: false, error: 'Nenhuma atividade para importar' };
+  }
+
+  const s = getSheet('AtividadesPadrao');
+  const headers = s.getDataRange().getValues()[0];
+  const existingRows = findRows('atividades_padrao', r => r.Status !== 'removido');
+  const existingNames = new Set(existingRows.map(r => r.nome));
+
+  let importadas = 0;
+  let ignoradas = 0;
+
+  atividades.forEach(a => {
+    if (existingNames.has(a.nome)) {
+      ignoradas++;
+      return;
+    }
+    const newRow = headers.map(h => {
+      if (h === 'id') return generateId();
+      if (h === 'dataCadastro') return new Date().toISOString();
+      if (h === 'Status') return 'ativo';
+      return (a[h] !== undefined && a[h] !== null) ? a[h] : '';
+    });
+    s.appendRow(newRow);
+    importadas++;
+  });
+
+  logAuditoria('importar_atividades_padrao', (_authUser && _authUser.nome) || 'sistema',
+    `Importadas ${importadas} atividades padrão (${ignoradas} ignoradas - duplicadas)`);
+
+  return { success: true, importadas, ignoradas };
 }
 
 
@@ -2204,7 +2391,7 @@ function iniciarServico(data) {
     logNotificacao(id, `${telNome} assumiu a telegrafia (designado no início do serviço)`, 'telegrafia');
   }
 
-  const padrao = findRows('atividades_padrao', (r) => r.Status !== 'removido');
+  const padrao = getRotinaParaServico({ postoId }).itens;
   const rotinaSheet = getSheet('Rotina');
   padrao.forEach(a => {
     rotinaSheet.appendRow([
@@ -2257,6 +2444,92 @@ function encerrarServico(data) {
   logNotificacao(found.data[found.headers.indexOf('id')], 'Serviço encerrado', 'info');
 
   return { success: true };
+}
+
+/* ═══════ ROTINA PERSONALIZADA POR POSTO ═══════ */
+
+function getRotinaPersonalizada(data) {
+  const { postoId } = data;
+  if (!postoId) return { success: true, itens: [] };
+  const rows = findRows('rotinaPersonalizada', (r) => r.postoId === postoId && r.Status !== 'removido');
+  rows.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+  return { success: true, itens: rows };
+}
+
+function salvarRotinaPersonalizada(data) {
+  const { postoId, postoNome, itens } = data;
+  if (!postoId) return { success: false, error: 'Posto é obrigatório' };
+  if (!Array.isArray(itens)) return { success: false, error: 'Itens inválidos' };
+
+  const sheet = getSheet('RotinaPersonalizada');
+
+  const existing = findRows('rotinaPersonalizada', (r) => r.postoId === postoId && r.Status !== 'removido');
+  const existingIds = new Set(existing.map(r => r.id));
+
+  itens.forEach((item, idx) => {
+    if (item.id && existingIds.has(item.id)) {
+      updateRow('RotinaPersonalizada', item.id, {
+        ordem: item.ordem || idx + 1,
+        horario: item.horario,
+        nome: item.nome,
+        programa: item.programa || '',
+        responsavel_padrao: item.responsavel_padrao || '',
+        duracaoMinutos: item.duracaoMinutos || 0,
+        obrigatoria: item.obrigatoria || false,
+        notificar: item.notificar || false,
+        observacoes: item.observacoes || '',
+        ativo: item.ativo !== false,
+        Status: 'ativo'
+      });
+    } else {
+      const itemId = item.id || generateId();
+      sheet.appendRow([
+        itemId, new Date().toISOString(), postoId, postoNome || '',
+        item.ordem || idx + 1, item.horario || '', item.nome, item.programa || '',
+        item.responsavel_padrao || '', item.duracaoMinutos || 0,
+        item.obrigatoria || false, item.notificar || false, item.observacoes || '',
+        item.ativo !== false, 'ativo'
+      ]);
+    }
+  });
+
+  const newIds = new Set(itens.filter(i => i.id).map(i => i.id));
+  existing.forEach(row => {
+    if (!newIds.has(row.id)) {
+      updateRow('RotinaPersonalizada', row.id, { Status: 'removido' });
+    }
+  });
+
+  logAuditoria('salvar_rotina_personalizada', (_authUser && _authUser.nome) || 'sistema', `Rotina personalizada salva para posto: ${postoNome || postoId}`);
+  return { success: true };
+}
+
+function resetarRotinaPersonalizada(data) {
+  const { postoId } = data;
+  if (!postoId) return { success: false, error: 'Posto é obrigatório' };
+
+  const existing = findRows('rotinaPersonalizada', (r) => r.postoId === postoId && r.Status !== 'removido');
+  existing.forEach(row => {
+    updateRow('RotinaPersonalizada', row.id, { Status: 'removido' });
+  });
+
+  logAuditoria('resetar_rotina_personalizada', (_authUser && _authUser.nome) || 'sistema', `Rotina personalizada resetada para posto: ${postoId}`);
+  return { success: true };
+}
+
+function getRotinaParaServico(data) {
+  const { postoId } = data;
+  if (!postoId) return { success: true, fonte: 'padrao', itens: [] };
+
+  const personalizada = findRows('rotinaPersonalizada', (r) => r.postoId === postoId && r.Status !== 'removido' && r.ativo !== false);
+  if (personalizada.length > 0) {
+    personalizada.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+    return { success: true, fonte: 'personalizada', itens: personalizada };
+  }
+
+  const padrao = findRows('atividades_padrao', (r) => r.Status !== 'removido' && (!r.postoId || r.postoId === postoId));
+  padrao.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+  return { success: true, fonte: 'padrao', itens: padrao };
 }
 
 function adicionarEquipe(data) {
@@ -2518,7 +2791,22 @@ function registrarTelegrafia(data) {
    ═══════════════════════════════════════════════════════════════════ */
 
 function registrarEntradaOficial(data) {
-  const { oficialId } = data;
+  const { oficialId, anunciado, nome, observacao } = data;
+
+  if (nome && !oficialId) {
+    const sheet = getSheet('OficiaisEntrada');
+    const today = new Date().toISOString().split('T')[0];
+    const servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+    const servicoId = servicos.length > 0 ? servicos[0].id : 'sem_servico';
+    const now = Utils.formatTime(new Date());
+    sheet.appendRow([
+      generateId(), new Date().toISOString(), servicoId,
+      'avulso_' + Date.now(), nome, '', 'entrada', now, (anunciado ? 'anunciado' : '') + (observacao ? ' ' + observacao : ''), 'ativo'
+    ]);
+    logAuditoria('entrada_oficial', (_authUser && _authUser.nome) || 'sistema', `${nome} (avulso) entrou no quartel`);
+    return { success: true };
+  }
+
   const oficiais = findRows('oficiais', (r) => r.id === oficialId);
   if (oficiais.length === 0) return { success: false, error: 'Oficial não encontrado' };
 
@@ -2529,16 +2817,20 @@ function registrarEntradaOficial(data) {
   const servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
   const servicoId = servicos.length > 0 ? servicos[0].id : 'sem_servico';
 
+  const obs = (anunciado ? 'anunciado' : '') + (observacao ? ' ' + observacao : '');
+
   const sheet = getSheet('OficiaisEntrada');
   sheet.appendRow([
     generateId(), new Date().toISOString(), servicoId,
-    oficialId, oficial.nome, oficial.posto || '', 'entrada', now, '', 'ativo'
+    oficialId, oficial.nome, oficial.posto || '', 'entrada', now, obs, 'ativo'
   ]);
 
   logAuditoria('entrada_oficial', (_authUser && _authUser.nome) || 'sistema', `${oficial.nome} entrou no quartel`);
   logNotificacao(servicoId, `Oficial ${oficial.nome} (${oficial.posto}) entrou no quartel`, 'oficial');
 
-  return { success: true };
+  const jaAnunciado = findRows('oficiais_entrada', r => r.oficialId === oficialId && r.servicoId === servicoId && r.observacao && r.observacao.includes('anunciado'));
+
+  return { success: true, jaAnunciado: jaAnunciado.length > 0, ultimoAnuncio: jaAnunciado.length > 0 ? jaAnunciado[jaAnunciado.length - 1] : null };
 }
 
 function registrarSaidaOficial(data) {
@@ -2625,19 +2917,38 @@ function getRelatorio(data) {
     return { servico: null, itens: [] };
   }
 
+  const servicoId = historico.servico.id;
   const base = {
     servico: {
+      id: servicoId,
       data: historico.servico.data,
       prontidao: historico.servico.prontidao,
-      comandante: historico.servico.comandanteNome
+      comandante: historico.servico.comandanteNome,
+      postoId: historico.servico.postoId,
+      horarioInicio: historico.servico.horarioInicio,
+      horarioFim: historico.servico.horarioFim || '-'
     }
   };
 
   switch (tipo) {
-    case 'resumo':
+    case 'resumo': {
+      const rotina = historico.rotina || [];
+      const total = rotina.length;
+      const concluidas = rotina.filter(r => r.status === 'concluida').length;
+      const emAndamento = rotina.filter(r => r.status === 'em_andamento').length;
+      const naoIniciadas = rotina.filter(r => r.status === 'nao_iniciada').length;
+      const atrasadas = rotina.filter(r => r.status === 'atrasada').length;
+      const canceladas = rotina.filter(r => r.status === 'cancelada').length;
+      const extras = rotina.filter(r => r.origem === 'extra').length;
+      const ocorrencias = findRows('ocorrencias', (r) => r.servicoId === servicoId);
+      const sv = findRows('servico_viatura', (r) => r.servicoId === servicoId);
       return {
         ...base,
-        itens: historico.rotina.map(r => ({
+        stats: { total, concluidas, emAndamento, naoIniciadas, atrasadas, canceladas, extras,
+          totalOcorrencias: ocorrencias.length,
+          ocorrenciasFinalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+          viaturasDespachadas: sv.length },
+        itens: rotina.map(r => ({
           Horario: r.horario,
           Atividade: r.nome,
           Responsavel: r.responsavel,
@@ -2646,56 +2957,134 @@ function getRelatorio(data) {
           'Hora Conclusao': r.horaConclusao || '-'
         }))
       };
+    }
 
-    case 'telegrafia':
+    case 'prontidao': {
+      const rotina = historico.rotina || [];
+      const telegrafia = historico.telegrafia || [];
+      const entradas = historico.entradas || [];
+      const ocorrencias = findRows('ocorrencias', (r) => r.servicoId === servicoId);
+      const sv = findRows('servico_viatura', (r) => r.servicoId === servicoId);
+      const militares = findRows('militares', (r) => r.Status !== 'removido');
+
+      let equipe = [];
+      try { equipe = JSON.parse(historico.servico.equipe || '[]'); } catch(e) { equipe = []; }
+
       return {
         ...base,
-        itens: (historico.telegrafia || []).map(t => ({
+        efetivo: {
+          totalEquipe: equipe.length,
+          totalMilitares: militares.length,
+          telegrafia: telegrafia.length > 0 ? telegrafia[telegrafia.length - 1]?.operador : 'Sem operador'
+        },
+        viaturas: {
+          totalDespachadas: sv.length,
+          detalhes: sv.map(v => ({ nome: v.viaturaNome, tipo: v.viaturaTipo, placa: v.viaturaPlaca, tripulantes: v.tripulantes || '-' }))
+        },
+        rotina: {
+          total: rotina.length,
+          concluidas: rotina.filter(r => r.status === 'concluida').length,
+          percentual: rotina.length > 0 ? Math.round((rotina.filter(r => r.status === 'concluida').length / rotina.length) * 100) : 0
+        },
+        ocorrencias: {
+          total: ocorrencias.length,
+          finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+          emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length
+        },
+        oficiais: {
+          presentes: entradas.filter(e => e.tipo === 'entrada').length,
+          historico: entradas.map(e => ({ nome: e.nome, tipo: e.tipo, horario: e.horario }))
+        }
+      };
+    }
+
+    case 'telegrafia': {
+      const hist = findRows('telegrafia_historico', (r) => r.servicoId === servicoId);
+      const ativa = historico.telegrafia || [];
+      const totalTrocas = hist.length;
+      const operadores = [...new Set(hist.map(t => t.operador))];
+      const porOperador = operadores.map(op => {
+        const trocas = hist.filter(t => t.operador === op);
+        let totalMinutos = 0;
+        trocas.forEach(t => {
+          if (t.inicio && t.fim) {
+            const ini = new Date('2000-01-01T' + t.inicio);
+            const fim = new Date('2000-01-01T' + t.fim);
+            totalMinutos += Math.round((fim - ini) / 60000);
+          }
+        });
+        return { operador: op, trocas: trocas.length, totalMinutos, horas: Math.floor(totalMinutos / 60), mins: totalMinutos % 60 };
+      });
+      return {
+        ...base,
+        stats: { totalTrocas, totalOperadores: operadores.length },
+        porOperador,
+        itens: hist.map(t => ({
           Operador: t.operador,
-          Assumiu: t.horario,
-          Saiu: t.horarioSaida || '-',
-          Duracao: t.duracao || '-'
+          Assumiu: t.inicio || t.horario,
+          Saiu: t.fim || t.horarioSaida || '-'
         }))
       };
+    }
 
     case 'oficiais': {
-      const oficiais = findRows('oficiais', (r) => r.Status !== 'removido');
-      const entradas = (historico.entradas || []).filter(e => e.tipo === 'entrada');
-      const saidas = (historico.entradas || []).filter(e => e.tipo === 'saida');
+      const oficiaisList = findRows('oficiais', (r) => r.Status !== 'removido');
+      const entradas = (historico.entradas || []);
+      const entradasOk = entradas.filter(e => e.tipo === 'entrada');
+      const saidasOk = entradas.filter(e => e.tipo === 'saida');
       return {
         ...base,
-        itens: oficiais.map(o => {
-          const entrada = entradas.filter(e => e.oficialId === o.id).pop();
-          const saida = saidas.filter(s => s.oficialId === o.id).pop();
+        stats: { total: oficiaisList.length, presentes: entradasOk.length - saidasOk.length },
+        itens: oficiaisList.map(o => {
+          const entrada = entradasOk.filter(e => e.oficialId === o.id || e.nome === o.nome).pop();
+          const saida = saidasOk.filter(s => s.oficialId === o.id || s.nome === o.nome).pop();
           return {
             Nome: o.nome,
             Posto: o.posto,
             Antiguidade: o.antiguidade,
             Entrada: entrada ? entrada.horario : '-',
-            Saida: saida ? saida.horario : '-'
+            Saida: saida ? saida.horario : '-',
+            Anunciado: (entrada && entrada.observacao && entrada.observacao.includes('anunciado')) ? 'Sim' : 'Não'
           };
         })
       };
     }
 
     case 'historico':
-    case 'timeline':
+    case 'timeline': {
+      const rotina = historico.rotina || [];
+      const eventos = [];
+      rotina.forEach(r => {
+        eventos.push({ horario: r.horario, tipo: 'rotina', nome: r.nome, status: r.status, detalhe: r.concluidoPor || '' });
+      });
+      const telegrafia = findRows('telegrafia_historico', (r) => r.servicoId === servicoId);
+      telegrafia.forEach(t => {
+        eventos.push({ horario: t.inicio || t.horario || '', tipo: 'telegrafia', nome: t.operador, status: 'troca', detalhe: 'Assumiu a telegrafia' });
+      });
+      (historico.entradas || []).forEach(e => {
+        eventos.push({ horario: e.horario || '', tipo: 'oficial', nome: e.nome, status: e.tipo, detalhe: (e.observacao && e.observacao.includes('anunciado')) ? 'anunciado' : '' });
+      });
+      eventos.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
       return {
         ...base,
-        itens: historico.rotina.map(r => ({
-          Horario: r.horario,
-          Atividade: r.nome,
-          Status: r.status,
-          'Concluido por': r.concluidoPor || '-',
-          'Hora Conclusao': r.horaConclusao || '-'
+        itens: eventos.map(e => ({
+          Horario: e.horario,
+          Tipo: e.tipo.charAt(0).toUpperCase() + e.tipo.slice(1),
+          Evento: e.nome,
+          Status: e.status,
+          Detalhe: e.detalhe
         }))
       };
+    }
 
     case 'auditoria': {
       const logs = findRows('auditoria', (r) => true);
       logs.sort((a, b) => (b.dataHora || '').localeCompare(a.dataHora || ''));
+      const dateFilter = logs.filter(l => l.dataHora && l.dataHora.startsWith(date));
+      const alvo = dateFilter.length > 0 ? dateFilter : logs;
       return {
-        itens: logs.slice(0, 200).map(l => ({
+        ...base,
+        itens: alvo.slice(0, 200).map(l => ({
           Data: l.dataHora,
           Acao: l.acao,
           Usuario: l.usuarioNome,
@@ -2705,19 +3094,29 @@ function getRelatorio(data) {
     }
 
     case 'ocorrencias': {
-      const servicoId = historico.servico ? historico.servico.id : null;
       const ocorrencias = servicoId ? findRows('ocorrencias', (r) => r.servicoId === servicoId) : [];
       const servicoViaturas = servicoId ? findRows('servico_viatura', (r) => r.servicoId === servicoId) : [];
+      const stats = {
+        total: ocorrencias.length,
+        finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+        emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length,
+        canceladas: ocorrencias.filter(o => o.status === 'cancelada').length
+      };
+      const porNatureza = {};
+      ocorrencias.forEach(o => {
+        const n = o.natureza || 'Não informada';
+        porNatureza[n] = (porNatureza[n] || 0) + 1;
+      });
       return {
         ...base,
+        stats,
+        porNatureza: Object.entries(porNatureza).map(([nome, qtd]) => ({ nome, qtd })),
         ocorrencias: ocorrencias.map(o => ({
           numero: o.numero,
           titulo: o.titulo,
           descricao: o.descricao,
-          viaturaNomes: (JSON.parse(o.viaturaIds || '[]')).map(vid => {
-            const sv = servicoViaturas.find(x => x.viaturaId === vid);
-            return sv ? sv.viaturaNome : vid;
-          }).join(', '),
+          natureza: o.natureza || '-',
+          viaturaNomes: (() => { try { return JSON.parse(o.viaturaIds || '[]').map(vid => { const sv2 = servicoViaturas.find(x => x.viaturaId === vid); return sv2 ? sv2.viaturaNome : vid; }).join(', '); } catch(e) { return '-'; } })(),
           efetivo: o.efetivo,
           horaAcionamento: o.horaAcionamento,
           horaRetorno: o.horaRetorno,
@@ -2726,6 +3125,9 @@ function getRelatorio(data) {
         }))
       };
     }
+
+    case 'pdf':
+      return { ...base, url: null, message: 'PDF será gerado no cliente' };
 
     default:
       return base;
@@ -3043,4 +3445,56 @@ function registrarLogCustom(data) {
   const nome = (_authUser && _authUser.nome) || data.usuarioNome || 'sistema';
   logAuditoria(acao || 'acao_usuario', nome, detalhes || '', modulo || '');
   return { success: true };
+}
+
+function diagnosticar() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ssId = ss.getId();
+  const ssUrl = ss.getUrl();
+  const allSheets = ss.getSheets().map(s => ({
+    nome: s.getName(),
+    linhas: s.getLastRow(),
+    colunas: s.getLastColumn(),
+    headers: s.getLastRow() > 0 ? s.getRange(1, 1, 1, Math.min(s.getLastColumn(), 20)).getValues()[0] : []
+  }));
+
+  const testResult = { escrita: false, leitura: false, erro: null, dados: null };
+  try {
+    const testId = 'TEST_' + new Date().getTime();
+    const testSheet = getSheet('usuarios');
+    const testHeaders = testSheet.getDataRange().getValues()[0] || [];
+    const testRow = testHeaders.map(h => {
+      if (h === 'id') return testId;
+      if (h === 'nome') return 'TESTE_DIAGNOSTICO';
+      if (h === 'dataCadastro') return new Date().toISOString();
+      if (h === 'Status') return 'removido';
+      if (h === 'usuario') return 'test_diag_' + testId;
+      if (h === 'senhaHash') return 'test';
+      if (h === 'ativo') return false;
+      return '';
+    });
+    testSheet.appendRow(testRow);
+    testResult.escrita = true;
+
+    const readBack = findRowById('usuarios', testId);
+    testResult.leitura = !!readBack;
+    testResult.dados = readBack ? readBack.data : null;
+
+    if (readBack) {
+      const s = getSheet('usuarios');
+      s.deleteRow(readBack.row);
+      testResult.limpeza = true;
+    }
+  } catch (e) {
+    testResult.erro = e.message;
+  }
+
+  return {
+    success: true,
+    spreadsheet: { id: ssId, url: ssUrl },
+    totalAbas: allSheets.length,
+    abas: allSheets,
+    teste: testResult,
+    timestamp: new Date().toISOString()
+  };
 }

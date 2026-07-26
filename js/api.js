@@ -6,14 +6,15 @@ const API = {
   _tiposCache: [],
 
   getConfig() {
-    if (this._config) return this._config;
-    const saved = localStorage.getItem('sgpo_config');
-    this._config = saved ? JSON.parse(saved) : {};
-    if (!this._config.apiUrl && this.DEFAULT_URL) {
+    if (!this._config) {
+      const saved = localStorage.getItem('sgpo_config');
+      this._config = saved ? JSON.parse(saved) : {};
+    }
+    if (!this._config.apiUrl) {
       this._config.apiUrl = this.DEFAULT_URL;
       localStorage.setItem('sgpo_config', JSON.stringify(this._config));
     }
-    if (this._config.apiUrl) this.BASE_URL = this._config.apiUrl;
+    this.BASE_URL = this._config.apiUrl;
     return this._config;
   },
 
@@ -34,6 +35,13 @@ const API = {
     localStorage.setItem('sgpo_demo', 'true');
   },
 
+  disableDemo() {
+    this._demo = false;
+    localStorage.removeItem('sgpo_demo');
+    this._config = null;
+    this.getConfig();
+  },
+
   get isDemo() {
     return this._demo || localStorage.getItem('sgpo_demo') === 'true';
   },
@@ -47,6 +55,8 @@ const API = {
       'adicionarAtividadeFixa': 'Adicionando atividade...',
       'editarAtividadeRotina': 'Editando atividade...',
       'excluirAtividadeRotina': 'Excluindo atividade...',
+      'salvarRotinaPersonalizada': 'Salvando rotina personalizada...',
+      'resetarRotinaPersonalizada': 'Resetando rotina personalizada...',
       'registrarTelegrafia': 'Registrando telegrafia...',
       'registrarEntradaOficial': 'Registrando entrada...',
       'registrarSaidaOficial': 'Registrando saída...',
@@ -107,22 +117,14 @@ const API = {
       'editarAtividadeRotina', 'excluirAtividadeRotina', 'registrarTelegrafia',
       'registrarEntradaOficial', 'registrarSaidaOficial', 'despacharViatura',
       'retornarViatura', 'finalizarOcorrencia', 'editarServicoViatura',
+      'salvarRotinaPersonalizada', 'resetarRotinaPersonalizada',
       'updateConfig'].includes(action);
 
     if (isWrite) this._showProgress(action);
 
     const payload = { action, ...data };
     try {
-      const response = await fetch(this.BASE_URL, {
-        method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
-      const text = await response.text();
-      let result;
-      try { result = JSON.parse(text); } catch (e) { throw new Error('Resposta inválida do servidor'); }
-      if (result.error) throw new Error(result.error);
+      const result = await this._gasFetch(payload);
       if (isWrite) this._hideProgress(true);
       return result;
     } catch (err) {
@@ -130,6 +132,37 @@ const API = {
       if (err.message === 'Failed to fetch') throw new Error('Erro de conexão. Verifique a URL da API.');
       throw err;
     }
+  },
+
+  async _gasFetch(payload, _retrying) {
+    const response = await fetch(this.BASE_URL, {
+      method: 'POST',
+      mode: 'cors',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const text = await response.text();
+    let result;
+    try { result = JSON.parse(text); } catch (e) {
+      console.error('[SGPO] Resposta não-JSON recebida do GAS:', text.substring(0, 200));
+      throw new Error('Resposta inválida do servidor (HTML em vez de JSON). Verifique o deploy do GAS Web App.');
+    }
+
+    if (result.error) throw new Error(result.error);
+
+    if (result.status === 'SGPO API Online' && !result.success && !_retrying) {
+      console.warn('[SGPO] GAS retornou doGet em vez de doPost (redirect). Retry em 1s...');
+      await new Promise(r => setTimeout(r, 1000));
+      return this._gasFetch(payload, true);
+    }
+
+    if (result.status === 'SGPO API Online' && !result.success && _retrying) {
+      console.error('[SGPO] GAS Web App em modo redirect. Payload:', payload.action);
+      throw new Error('GAS Web App retornou status em vez de dados. Redeploy o Web App: Apps Script → Implantar → Nova implantação → "Executar como: Eu" → "Quem pode acessar: Qualquer pessoa"');
+    }
+
+    return result;
   },
 
   async get(sheetName, filters = {}) { return this.request('read', { sheet: sheetName, filters }); },
@@ -140,6 +173,10 @@ const API = {
   async getServicoAtual(usuarioId) { return this.request('getServicoAtual', usuarioId ? { usuarioId } : {}); },
   async iniciarServico(dados) { const r = await this.request('iniciarServico', dados); if (r.success) this._triggerSync(); return r; },
   async encerrarServico(servicoId) { const r = await this.request('encerrarServico', { servicoId }); if (r.success) this._triggerSync(); return r; },
+  async getRotinaPersonalizada(postoId) { return this.request('getRotinaPersonalizada', { postoId }); },
+  async salvarRotinaPersonalizada(postoId, postoNome, itens) { const r = await this.request('salvarRotinaPersonalizada', { postoId, postoNome, itens }); if (r.success) this._triggerSync(); return r; },
+  async resetarRotinaPersonalizada(postoId) { const r = await this.request('resetarRotinaPersonalizada', { postoId }); if (r.success) this._triggerSync(); return r; },
+  async getRotinaParaServico(postoId) { return this.request('getRotinaParaServico', { postoId }); },
   async getRotina(servicoId) { return this.request('getRotina', { servicoId }); },
   async updateAtividade(servicoId, atividadeId, dados) { const r = await this.request('updateAtividade', { servicoId, atividadeId, ...dados }); if (r.success) this._triggerSync(); return r; },
   async criarAtividadeExtra(servicoId, dados) { const r = await this.request('criarAtividadeExtra', { servicoId, ...dados }); if (r.success) this._triggerSync(); return r; },
@@ -191,10 +228,26 @@ const API = {
   async criarCivis(dados) { const r = await this.request('criarCivis', dados); if (r.success) this._triggerSync(); return r; },
   async getPostosComServico() { const r = await this.request('getPostosComServico', {}); return r; },
   async getTiposViatura() { const r = await this.request('getTiposViatura', {}); this._tiposCache = Array.isArray(r) ? r : []; return r; },
+  async getViaturas() { return this.request('getViaturas', {}); },
+  async getMilitares() { return this.request('read', { sheet: 'militares' }); },
   async getNaturezas() { return this.request('getNaturezas', {}); },
+  async importarAtividadesPadrao(atividades) { return this.request('importarAtividadesPadrao', { atividades }); },
   getTipoCor(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.cor : '#9e9e9e'; },
   getTipoNome(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.nome : sigla; },
-  async registrarLog(acao, detalhes, modulo) { return this.request('registrarLog', { acao, detalhes, modulo }); }
+  async registrarLog(acao, detalhes, modulo) { return this.request('registrarLog', { acao, detalhes, modulo }); },
+  async diagnosticar() { return this.request('diagnosticar', {}); }
+};
+
+window.SGPOdiagnosticar = async function() {
+  console.log('[SGPO] Iniciando diagnóstico...');
+  try {
+    const result = await API.diagnosticar();
+    console.log('[SGPO] Resultado do diagnóstico:', JSON.stringify(result, null, 2));
+    return result;
+  } catch (e) {
+    console.error('[SGPO] Erro no diagnóstico:', e.message);
+    return { error: e.message };
+  }
 };
 
 const DemoData = {
@@ -549,7 +602,27 @@ const DemoData = {
         }
         s.oficiaisPresentes = [];
         s.servico = { id: 'demo-' + Date.now(), data: new Date().toISOString().split('T')[0], inicio: new Date().toISOString(), prontidao: data.prontidao, comandanteId: data.comandanteId, comandanteNome: data.comandanteNome, postoId: data.postoId, equipe: data.equipe || [], horarioInicio: now(), observacoes: data.observacoes || '', telegrafistaId: data.telegrafistaId || '', Status: 'ativo' };
-        s.rotina.forEach(r => { r.status = 'nao_iniciada'; r.concluidoPor = ''; r.horaConclusao = ''; });
+
+        const rotinaFonte = (s.rotinaPersonalizada || []).filter(r => r.postoId === data.postoId && r.Status !== 'removido' && r.ativo !== false);
+        if (rotinaFonte.length > 0) {
+          rotinaFonte.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+          s.rotina = rotinaFonte.map(a => ({
+            id: 'rot-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            horario: a.horario, nome: a.nome, programa: a.programa || '',
+            responsavel: a.responsavel_padrao || '', responsavelId: '',
+            status: 'nao_iniciada', observacoes: a.observacoes || '', origem: 'personalizada'
+          }));
+        } else {
+          const padrao = (s.atividadesPadrao || []).filter(a => a.Status !== 'removido' && (!a.postoId || a.postoId === data.postoId));
+          padrao.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+          s.rotina = padrao.map(a => ({
+            id: 'rot-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            horario: a.horario, nome: a.nome, programa: a.programa || '',
+            responsavel: a.responsavel_padrao || '', responsavelId: '',
+            status: 'nao_iniciada', observacoes: a.observacoes || '', origem: 'padrao'
+          }));
+        }
+
         this.save();
         return { success: true, servicoId: s.servico.id };
       }
@@ -572,6 +645,67 @@ const DemoData = {
         s.oficiaisPresentes = [];
         this.save();
         return { success: true };
+      }
+
+      case 'getRotinaPersonalizada': {
+        const postoId = data.postoId;
+        if (!postoId) return { success: true, itens: [] };
+        const itens = (s.rotinaPersonalizada || []).filter(r => r.postoId === postoId && r.Status !== 'removido');
+        itens.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+        return { success: true, itens };
+      }
+
+      case 'salvarRotinaPersonalizada': {
+        const { postoId: pid, postoNome: pnome, itens: newItens } = data;
+        if (!pid) return { success: false, error: 'Posto é obrigatório' };
+        if (!Array.isArray(newItens)) return { success: false, error: 'Itens inválidos' };
+        if (!s.rotinaPersonalizada) s.rotinaPersonalizada = [];
+
+        s.rotinaPersonalizada = s.rotinaPersonalizada.filter(r => r.postoId !== pid);
+
+        newItens.forEach((item, idx) => {
+          s.rotinaPersonalizada.push({
+            id: item.id || 'rp-' + Date.now() + '-' + idx,
+            dataCadastro: new Date().toISOString(),
+            postoId: pid,
+            postoNome: pnome || '',
+            ordem: item.ordem || idx + 1,
+            horario: item.horario || '',
+            nome: item.nome,
+            programa: item.programa || '',
+            responsavel_padrao: item.responsavel_padrao || '',
+            duracaoMinutos: item.duracaoMinutos || 0,
+            obrigatoria: item.obrigatoria || false,
+            notificar: item.notificar || false,
+            observacoes: item.observacoes || '',
+            ativo: item.ativo !== false,
+            Status: 'ativo'
+          });
+        });
+        this.save();
+        return { success: true };
+      }
+
+      case 'resetarRotinaPersonalizada': {
+        const rpid = data.postoId;
+        if (!rpid) return { success: false, error: 'Posto é obrigatório' };
+        if (!s.rotinaPersonalizada) s.rotinaPersonalizada = [];
+        s.rotinaPersonalizada = s.rotinaPersonalizada.filter(r => r.postoId !== rpid);
+        this.save();
+        return { success: true };
+      }
+
+      case 'getRotinaParaServico': {
+        const rpId = data.postoId;
+        if (!rpId) return { success: true, fonte: 'padrao', itens: [] };
+        const personalizada = (s.rotinaPersonalizada || []).filter(r => r.postoId === rpId && r.Status !== 'removido' && r.ativo !== false);
+        if (personalizada.length > 0) {
+          personalizada.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+          return { success: true, fonte: 'personalizada', itens: personalizada };
+        }
+        const padrao = (s.atividadesPadrao || []).filter(a => a.Status !== 'removido' && (!a.postoId || a.postoId === rpId));
+        padrao.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+        return { success: true, fonte: 'padrao', itens: padrao };
       }
 
       case 'updateAtividade': {
@@ -781,17 +915,72 @@ const DemoData = {
 
       case 'getRelatorio': {
         const tipo = data.tipo || 'resumo';
-        const itens = s.rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Responsavel: r.responsavel || '-', Status: r.status, 'Concluído por': r.concluidoPor || '-', 'Hora Conclusão': r.horaConclusao || '-' }));
-        const ocorrencias = (s.ocorrencias || []).map(o => ({
-          numero: o.numero, titulo: o.titulo, descricao: o.descricao,
-          viaturaNomes: (o.viaturaIds || []).map(vid => {
-            const sv = (s.servicoViaturas || []).find(x => x.viaturaId === vid);
-            return sv?.viaturaNome || vid;
-          }).join(', '),
-          efetivo: o.efetivo, horaAcionamento: o.horaAcionamento, horaRetorno: o.horaRetorno,
-          prontidaoCor: o.prontidaoCor, status: o.status
-        }));
-        return { servico: { data: s.servico.data, prontidao: s.servico.prontidao, comandante: s.servico.comandanteNome }, itens, ocorrencias };
+        const base = { servico: s.servico ? { id: s.servico.id, data: s.servico.data, prontidao: s.servico.prontidao, comandante: s.servico.comandanteNome, postoId: s.servico.postoId, horarioInicio: s.servico.horarioInicio, horarioFim: s.servico.horarioFim || '-' } : null };
+        if (!base.servico) return { ...base, itens: [] };
+
+        const rotina = s.rotina || [];
+        const ocorrencias = (s.ocorrencias || []).filter(o => o.Status !== 'removido');
+        const historicoTel = s.telegrafiaHistorico || [];
+        const historicoOf = s.oficiaisHistorico || [];
+
+        if (tipo === 'resumo') {
+          const total = rotina.length;
+          const concluidas = rotina.filter(r => r.status === 'concluida').length;
+          return { ...base, stats: { total, concluidas, emAndamento: rotina.filter(r => r.status === 'em_andamento').length, naoIniciadas: rotina.filter(r => r.status === 'nao_iniciada').length, atrasadas: rotina.filter(r => r.status === 'atrasada').length, canceladas: rotina.filter(r => r.status === 'cancelada').length, extras: rotina.filter(r => r.origem === 'extra').length, totalOcorrencias: ocorrencias.length, ocorrenciasFinalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, viaturasDespachadas: (s.servicoViaturas || []).length },
+            itens: rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Responsavel: r.responsavel || '-', Status: r.status, 'Concluido por': r.concluidoPor || '-', 'Hora Conclusao': r.horaConclusao || '-' })) };
+        }
+
+        if (tipo === 'prontidao') {
+          return { ...base,
+            efetivo: { totalEquipe: (s.servico.equipe || []).length, totalMilitares: (s.militares || []).length, telegrafia: s.telegrafia?.operador || 'Sem operador' },
+            viaturas: { totalDespachadas: (s.servicoViaturas || []).length, detalhes: (s.servicoViaturas || []).map(v => ({ nome: v.viaturaNome, tipo: v.viaturaTipo, placa: v.viaturaPlaca })) },
+            rotina: { total: rotina.length, concluidas: rotina.filter(r => r.status === 'concluida').length, percentual: rotina.length > 0 ? Math.round((rotina.filter(r => r.status === 'concluida').length / rotina.length) * 100) : 0 },
+            ocorrencias: { total: ocorrencias.length, finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length },
+            oficiais: { presentes: (s.oficiaisPresentes || []).length, historico: historicoOf.map(o => ({ nome: o.nome, tipo: 'entrada', horario: o.horarioEntrada })) } };
+        }
+
+        if (tipo === 'telegrafia') {
+          const operadores = [...new Set(historicoTel.map(t => t.operador))];
+          const porOperador = operadores.map(op => {
+            const trocas = historicoTel.filter(t => t.operador === op);
+            let totalMinutos = 0;
+            trocas.forEach(t => { if (t.inicio && t.fim) { const ini = new Date('2000-01-01T' + t.inicio); const fim = new Date('2000-01-01T' + t.fim); totalMinutos += Math.round((fim - ini) / 60000); } });
+            return { operador: op, trocas: trocas.length, totalMinutos, horas: Math.floor(totalMinutos / 60), mins: totalMinutos % 60 };
+          });
+          return { ...base, stats: { totalTrocas: historicoTel.length, totalOperadores: operadores.length }, porOperador, itens: historicoTel.map(t => ({ Operador: t.operador, Assumiu: t.inicio || t.horario, Saiu: t.fim || t.horarioSaida || '-' })) };
+        }
+
+        if (tipo === 'oficiais') {
+          const oficiaisList = (s.oficiais || []);
+          return { ...base, stats: { total: oficiaisList.length, presentes: (s.oficiaisPresentes || []).length }, itens: oficiaisList.map(o => {
+            const hist = historicoOf.filter(h => h.oficialId === o.id);
+            const entrada = hist.find(h => h.horarioEntrada);
+            return { Nome: o.nome, Posto: o.posto, Antiguidade: o.antiguidade || '-', Entrada: entrada?.horarioEntrada || '-', Saida: entrada?.horarioSaida || '-', Anunciado: entrada?.anunciado ? 'Sim' : 'Não' };
+          }) };
+        }
+
+        if (tipo === 'historico' || tipo === 'timeline') {
+          const eventos = [];
+          rotina.forEach(r => { eventos.push({ horario: r.horario, tipo: 'Rotina', nome: r.nome, status: r.status, detalhe: r.concluidoPor || '' }); });
+          historicoTel.forEach(t => { eventos.push({ horario: t.inicio || t.horario || '', tipo: 'Telegrafia', nome: t.operador, status: 'troca', detalhe: 'Assumiu a telegrafia' }); });
+          historicoOf.forEach(o => { eventos.push({ horario: o.horarioEntrada || '', tipo: 'Oficial', nome: o.nome, status: o.horarioSaida ? 'saida' : 'entrada', detalhe: o.anunciado ? 'anunciado' : '' }); });
+          eventos.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+          return { ...base, itens: eventos.map(e => ({ Horario: e.horario, Tipo: e.tipo, Evento: e.nome, Status: e.status, Detalhe: e.detalhe })) };
+        }
+
+        if (tipo === 'ocorrencias') {
+          const stats = { total: ocorrencias.length, finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length, canceladas: ocorrencias.filter(o => o.status === 'cancelada').length };
+          const porNatureza = {};
+          ocorrencias.forEach(o => { const n = o.natureza || 'Não informada'; porNatureza[n] = (porNatureza[n] || 0) + 1; });
+          return { ...base, stats, porNatureza: Object.entries(porNatureza).map(([nome, qtd]) => ({ nome, qtd })),
+            ocorrencias: ocorrencias.map(o => ({ numero: o.numero, titulo: o.titulo, descricao: o.descricao, natureza: o.natureza || '-', viaturaNomes: (o.viaturaIds || []).map(vid => { const sv = (s.servicoViaturas || []).find(x => x.viaturaId === vid); return sv?.viaturaNome || vid; }).join(', '), efetivo: o.efetivo, horaAcionamento: o.horaAcionamento, horaRetorno: o.horaRetorno, prontidaoCor: o.prontidaoCor, status: o.status })) };
+        }
+
+        if (tipo === 'auditoria') {
+          return { ...base, itens: [] };
+        }
+
+        return { ...base, itens: rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Status: r.status })) };
       }
 
       case 'adicionarEquipe': {
@@ -901,10 +1090,10 @@ const DemoData = {
       }
 
       case 'getUsuariosEditaveis': {
-        if (!data.editorId) return [];
+        if (!data.editorId) return (s.usuarios || []).filter(u => u.id !== '_superuser_');
         if (data.editorId === '_superuser_') return (s.usuarios || []).filter(u => u.id !== '_superuser_');
         const nivel = this._getUsuarioNivel(data.editorId);
-        if (nivel === 'GB') return (s.usuarios || []).filter(u => u.id !== '_superuser_');
+        if (nivel === 'GB' || !nivel) return (s.usuarios || []).filter(u => u.id !== '_superuser_');
         const editorPostos = this._getPostosHierarquia(data.editorId);
         const editorPostoIds = editorPostos.map(p => p.id);
         return (s.usuarios || []).filter(u => {
@@ -1133,6 +1322,19 @@ const DemoData = {
           this.save();
         }
         return { success: true };
+      }
+
+      case 'importarAtividadesPadrao': {
+        const atvs = data.atividades || [];
+        const existentes = new Set((s.atividadesPadrao || []).map(a => a.nome));
+        let importadas = 0, ignoradas = 0;
+        atvs.forEach(a => {
+          if (existentes.has(a.nome)) { ignoradas++; return; }
+          s.atividadesPadrao.push({ id: 'd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4), ...a, Status: 'ativo' });
+          importadas++;
+        });
+        this.save();
+        return { success: true, importadas, ignoradas };
       }
 
       default: return { success: true };

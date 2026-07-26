@@ -40,7 +40,7 @@ const NAV = {
     const sidebar = document.createElement('nav');
     sidebar.className = 'sidebar';
     sidebar.innerHTML = `
-      <div class="sidebar-logo" id="sidebarLogo"><img src="assets/logos/bombeiros.svg" alt="SGPO" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'"></div>
+      <div class="sidebar-logo" id="sidebarLogo" style="cursor:pointer" onclick="NAV.openLogoLightbox()"><img src="assets/logos/bombeiros.svg" alt="SGPO" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'"></div>
       <div class="sidebar-nav">
         ${visiblePages.map(p => `
           <button class="sidebar-item ${p.id === this.currentPage ? 'active' : ''}" data-page="${p.id}" title="${p.title}">
@@ -93,12 +93,7 @@ const NAV = {
     topbar.innerHTML = `
       <div class="topbar-left">
         <button class="hamburger" id="menuToggle">☰</button>
-        <div class="topbar-search">
-          <span class="topbar-search-icon">🔍</span>
-          <input type="text" class="topbar-search-input" id="globalSearch" placeholder="Buscar atividades, viaturas, militares..." autocomplete="off">
-          <div class="topbar-search-results" id="globalSearchResults"></div>
-        </div>
-        <div class="prontidao-indicator" id="prontidaoIndicator" style="display:none">
+        <div class="prontidao-indicator" id="prontidaoIndicator" style="display:none;cursor:pointer" onclick="NAV.openProntidaoLogo()">
           <span class="prontidao-dot"></span>
           <span id="prontidaoText"></span>
         </div>
@@ -125,7 +120,6 @@ const NAV = {
       document.querySelector('.sidebar').classList.toggle('sidebar-open');
     });
 
-    this.setupGlobalSearch();
   },
 
   startClock() {
@@ -304,10 +298,27 @@ const NAV = {
       const postos = await API.getPostosServico();
       const posto = postos.find(p => p.id === data.servico.postoId);
       if (posto?.logo) {
+        this._currentLogoUrl = posto.logo;
         const logoEl = document.getElementById('sidebarLogo');
         if (logoEl) logoEl.innerHTML = `<img src="${Utils.escapeHtml(posto.logo)}" alt="${Utils.escapeHtml(posto.nome)}" style="max-height:40px;max-width:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'">`;
       }
     } catch (e) { /* ignore */ }
+  },
+
+  openLogoLightbox(url) {
+    const src = url || this._currentLogoUrl || 'assets/logos/bombeiros.svg';
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer';
+    overlay.onclick = () => overlay.remove();
+    overlay.innerHTML = `<img src="${Utils.escapeHtml(src)}" style="max-width:90vw;max-height:90vh;object-fit:contain;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">`;
+    document.body.appendChild(overlay);
+  },
+
+  openProntidaoLogo() {
+    const color = document.documentElement.style.getPropertyValue('--prontidao-color') || '#4caf50';
+    const colorName = {'#4caf50':'verde','#f59e0b':'amarela','#3b82f6':'azul','#f8fafc':'branca'}[color] || 'verde';
+    const logoUrl = `assets/logos/prontidao-${colorName}.svg`;
+    this.openLogoLightbox(logoUrl);
   },
 
   updateCampanhaButton(campanhaId) {

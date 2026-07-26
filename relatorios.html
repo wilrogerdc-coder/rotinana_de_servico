@@ -8,76 +8,94 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/layout.css">
   <style>
-    .report-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--spacing-md) }
+    .report-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:var(--spacing-md) }
     .report-card { background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:var(--spacing-xl);cursor:pointer;transition:all var(--transition-fast);text-align:center }
     .report-card:hover { border-color:var(--prontidao-color);transform:translateY(-2px);box-shadow:var(--shadow-md) }
-    .report-icon { font-size:2.5rem;margin-bottom:var(--spacing-md) }
-    .report-title { font-size:1rem;font-weight:600;margin-bottom:var(--spacing-xs) }
-    .report-desc { font-size:0.85rem;color:var(--text-secondary) }
+    .report-card.active { border-color:var(--prontidao-color);background:var(--prontidao-dim) }
+    .report-icon { font-size:2rem;margin-bottom:var(--spacing-sm);color:var(--prontidao-color) }
+    .report-title { font-size:0.95rem;font-weight:600;margin-bottom:var(--spacing-xs) }
+    .report-desc { font-size:0.8rem;color:var(--text-secondary) }
     .report-preview { background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:var(--spacing-xl);margin-top:var(--spacing-xl) }
     .report-date-selector { display:flex;gap:var(--spacing-md);align-items:center;margin-bottom:var(--spacing-xl);flex-wrap:wrap }
+    .stats-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:var(--spacing-md);margin-bottom:var(--spacing-lg) }
+    .stat-card { background:var(--bg-secondary);border-radius:var(--radius-md);padding:var(--spacing-md);text-align:center }
+    .stat-value { font-size:1.5rem;font-weight:700;color:var(--prontidao-color) }
+    .stat-label { font-size:0.75rem;color:var(--text-secondary);margin-top:4px }
+    .chart-bar { display:flex;align-items:center;gap:8px;margin-bottom:6px }
+    .chart-bar-track { flex:1;height:24px;background:var(--bg-secondary);border-radius:var(--radius-sm);overflow:hidden }
+    .chart-bar-fill { height:100%;border-radius:var(--radius-sm);transition:width 0.5s ease }
+    .chart-bar-label { font-size:0.8rem;min-width:100px }
+    .chart-bar-value { font-size:0.8rem;font-weight:600;min-width:40px;text-align:right }
+    .timeline-item { display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-light) }
+    .timeline-dot { width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0 }
+    .timeline-time { font-size:0.8rem;color:var(--text-muted);min-width:50px }
+    .timeline-content { flex:1 }
+    .print-only { display:none }
+    @media print { .print-only { display:block } .no-print { display:none!important } }
   </style>
 </head>
 <body>
   <main class="main-content" id="mainContent">
+    <div class="no-print">
       <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-xl)">Relatórios</h2>
-
       <div class="report-date-selector">
         <div class="input-group"><label class="input-label">Data</label><input class="input" type="date" id="reportDate"></div>
-        <button class="btn btn-primary btn-sm" id="loadBtn" style="margin-top:auto">Carregar</button>
+        <button class="btn btn-primary btn-sm" id="loadBtn" style="margin-top:auto">Carregar Dados</button>
+        <button class="btn btn-secondary btn-sm" id="printBtn" style="margin-top:auto;display:none" onclick="window.print()">Imprimir</button>
       </div>
-
-      <div class="report-grid">
+      <div class="report-grid" id="reportGrid">
         <div class="report-card" data-tipo="resumo">
-          <div class="report-icon">-</div>
+          <div class="report-icon">📊</div>
           <div class="report-title">Resumo do Dia</div>
-          <div class="report-desc">Visão geral do serviço</div>
+          <div class="report-desc">Visão geral com estatísticas</div>
         </div>
         <div class="report-card" data-tipo="prontidao">
-          <div class="report-icon">-</div>
+          <div class="report-icon">🎯</div>
           <div class="report-title">Resumo da Prontidão</div>
-          <div class="report-desc">Estatísticas da prontidão</div>
+          <div class="report-desc">Efetivo, viaturas e ocorrências</div>
         </div>
         <div class="report-card" data-tipo="historico">
-          <div class="report-icon">-</div>
+          <div class="report-icon">📋</div>
           <div class="report-title">Histórico</div>
-          <div class="report-desc">Todos os eventos do dia</div>
+          <div class="report-desc">Atividades detalhadas</div>
         </div>
         <div class="report-card" data-tipo="timeline">
-          <div class="report-icon">-</div>
+          <div class="report-icon">⏱️</div>
           <div class="report-title">Linha do Tempo</div>
           <div class="report-desc">Cronologia de eventos</div>
         </div>
         <div class="report-card" data-tipo="telegrafia">
-          <div class="report-icon">-</div>
+          <div class="report-icon">📡</div>
           <div class="report-title">Telegrafia</div>
-          <div class="report-desc">Controle de operadores</div>
+          <div class="report-desc">Distribuição de horas por operador</div>
         </div>
         <div class="report-card" data-tipo="oficiais">
-          <div class="report-icon">-</div>
+          <div class="report-icon">👮</div>
           <div class="report-title">Oficiais</div>
-          <div class="report-desc">Controle de entrada/saída</div>
+          <div class="report-desc">Entrada, saída e anúncios</div>
         </div>
         <div class="report-card" data-tipo="ocorrencias">
-          <div class="report-icon">-</div>
+          <div class="report-icon">🚨</div>
           <div class="report-title">Ocorrências</div>
-          <div class="report-desc">Registro de ocorrências atendidas</div>
+          <div class="report-desc">Registro e naturezas</div>
         </div>
         <div class="report-card" data-tipo="auditoria">
-          <div class="report-icon">-</div>
+          <div class="report-icon">🔍</div>
           <div class="report-title">Auditoria</div>
           <div class="report-desc">Log de todas as ações</div>
         </div>
-        <div class="report-card" data-tipo="pdf">
-          <div class="report-icon">-</div>
+        <div class="report-card" data-tipo="pdf" style="border-color:var(--prontidao-color)">
+          <div class="report-icon">📄</div>
           <div class="report-title">PDF Completo</div>
-          <div class="report-desc">Relatório em PDF para impressão</div>
+          <div class="report-desc">Relatório completo para impressão</div>
         </div>
       </div>
+    </div>
 
-      <div class="report-preview" id="reportPreview" style="display:none">
-        <div id="reportContent"></div>
-      </div>
+    <div class="report-preview" id="reportPreview" style="display:none">
+      <div class="print-only" id="printHeader"></div>
+      <div id="reportContent"></div>
+    </div>
   </main>
 
   <script src="js/utils.js"></script>
@@ -93,8 +111,10 @@
 
       const reportDate = document.getElementById('reportDate');
       const loadBtn = document.getElementById('loadBtn');
+      const printBtn = document.getElementById('printBtn');
       const preview = document.getElementById('reportPreview');
       const content = document.getElementById('reportContent');
+      const printHeader = document.getElementById('printHeader');
 
       reportDate.value = new Date().toISOString().split('T')[0];
 
@@ -104,9 +124,11 @@
 
       document.querySelectorAll('.report-card').forEach(card => {
         card.addEventListener('click', () => {
+          document.querySelectorAll('.report-card').forEach(c => c.classList.remove('active'));
+          card.classList.add('active');
           const tipo = card.dataset.tipo;
           if (tipo === 'pdf') {
-            downloadPDF();
+            generatePDF();
           } else {
             generate(tipo);
           }
@@ -114,113 +136,273 @@
       });
 
       async function generate(tipo) {
-        const date = reportDate.value;
         preview.style.display = 'block';
         content.innerHTML = '<div class="skeleton" style="height:200px"></div>';
 
         try {
-          const data = await API.getRelatorio(tipo, { data: date });
+          const data = await API.getRelatorio(tipo, { data: reportDate.value });
           content.innerHTML = renderReport(tipo, data);
+          printBtn.style.display = 'inline-block';
+          preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (e) {
-          content.innerHTML = '<div class="empty-state"><p>Erro ao gerar relatório</p></div>';
+          content.innerHTML = '<div class="empty-state"><p>Erro ao gerar relatório: ' + Utils.escapeHtml(e.message) + '</p></div>';
         }
       }
 
       function renderReport(tipo, data) {
         if (!data) return '<div class="empty-state"><p>Sem dados para esta data</p></div>';
+        if (!data.servico) return '<div class="empty-state"><p>Nenhum serviço registrado para ' + (reportDate.value || 'esta data') + '</p></div>';
 
         const titles = {
           resumo: 'Resumo do Dia', prontidao: 'Resumo da Prontidão', historico: 'Histórico Completo',
-          timeline: 'Linha do Tempo', telegrafia: 'Telegrafia', oficiais: 'Oficiais', ocorrencias: 'Ocorrências',
-          auditoria: 'Auditoria', pdf: 'Relatório PDF'
+          timeline: 'Linha do Tempo', telegrafia: 'Telegrafia', oficiais: 'Oficiais',
+          ocorrencias: 'Ocorrências', auditoria: 'Auditoria'
         };
 
-        let html = '<h3 style="margin-bottom:var(--spacing-md)">' + (titles[tipo] || tipo) + '</h3>';
+        const s = data.servico;
+        let html = '<h3 style="margin-bottom:var(--spacing-sm)">' + (titles[tipo] || tipo) + '</h3>';
+        html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);margin-bottom:var(--spacing-lg)">';
+        html += '<span>📅 ' + (s.data || '-') + '</span>';
+        html += '<span>🎯 Prontidão: ' + (s.prontidao || '-').toUpperCase() + '</span>';
+        html += '<span>👨‍✈️ ' + (s.comandante || '-') + '</span>';
+        if (s.horarioInicio) html += '<span>🕐 ' + s.horarioInicio + (s.horarioFim !== '-' ? ' às ' + s.horarioFim : '') + '</span>';
+        html += '</div>';
 
-        if (data.servico) {
-          html += '<p style="color:var(--text-secondary)">Data: ' + (data.servico.data || '-') + ' | Prontidão: ' + (data.servico.prontidao || '-') + ' | Comandante: ' + (data.servico.comandante || '-') + '</p>';
-        }
+        if (tipo === 'resumo' && data.stats) {
+          const st = data.stats;
+          html += '<div class="stats-grid">';
+          html += statCard(st.concluidas + '/' + st.total, 'Atividades Concluídas');
+          html += statCard(st.emAndamento, 'Em Andamento');
+          html += statCard(st.naoIniciadas, 'Não Iniciadas');
+          html += statCard(st.atrasadas, 'Atrasadas');
+          html += statCard(st.extras, 'Extras');
+          html += statCard(st.totalOcorrencias, 'Ocorrências');
+          html += statCard(st.viaturasDespachadas, 'Viaturas Despachadas');
+          html += '</div>';
 
-        if (tipo === 'ocorrencias' && data.ocorrencias && data.ocorrencias.length > 0) {
-          const statusCores = { em_andamento: '#ff9100', finalizada: '#00c853', cancelada: '#9e9e9e' };
-          const statusLabels = { em_andamento: 'Em andamento', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-          const corCores = { verde: '#00c853', amarela: '#ffd600', azul: '#2979ff', branca: '#ffffff' };
-          html += '<table style="width:100%;border-collapse:collapse;margin-top:var(--spacing-md)">';
-          html += '<thead><tr style="border-bottom:1px solid var(--border-color)">';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Nº</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Título</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Viatura(s)</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Efetivo</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Acionamento</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Retorno</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Status</th>';
-          html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">Prontidão</th>';
-          html += '</tr></thead><tbody>';
-          data.ocorrencias.forEach(o => {
-            const st = o.status || 'em_andamento';
-            html += '<tr style="border-bottom:1px solid var(--border-light)">';
-            html += '<td style="padding:8px;font-size:0.85rem">' + (o.numero || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.titulo || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.viaturaNomes || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem">' + Utils.escapeHtml(o.efetivo || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem">' + (o.horaAcionamento || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem">' + (o.horaRetorno || '-') + '</td>';
-            html += '<td style="padding:8px;font-size:0.85rem"><span style="padding:2px 8px;border-radius:20px;font-size:0.75rem;font-weight:600;background:' + (statusCores[st] || '#9e9e9e') + '22;color:' + (statusCores[st] || '#9e9e9e') + '">' + (statusLabels[st] || st) + '</span></td>';
-            html += '<td style="padding:8px;font-size:0.85rem"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:' + (corCores[o.prontidaoCor] || '#9e9e9e') + ';vertical-align:middle"></span></td>';
-            html += '</tr>';
-          });
-          html += '</tbody></table>';
-          const total = data.ocorrencias.length;
-          const finalizadas = data.ocorrencias.filter(o => o.status === 'finalizada').length;
-          const emAndamento = data.ocorrencias.filter(o => o.status === 'em_andamento').length;
-          html += '<p style="margin-top:12px;font-size:0.85rem;color:var(--text-secondary)">Total: ' + total + ' ocorrências | Finalizadas: ' + finalizadas + ' | Em andamento: ' + emAndamento + '</p>';
-        }
+          if (st.total > 0) {
+            html += '<h4 style="margin:var(--spacing-md) 0 var(--spacing-sm)">Progresso</h4>';
+            html += progressBar(st.concluidas, st.total, '#00c853');
+          }
 
-        if (tipo === 'timeline' && data.itens && data.itens.length > 0) {
-          const ocorrencias = data.ocorrencias || [];
-          if (ocorrencias.length > 0) {
-            html += '<div style="margin-top:var(--spacing-md);padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md)">';
-            html += '<h4 style="margin-bottom:8px;font-size:0.9rem;color:var(--prontidao-color)">Ocorrências do Dia</h4>';
-            ocorrencias.forEach(o => {
-              html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem">';
-              html += '<span style="color:var(--text-muted)">' + (o.horaAcionamento || '') + '</span>';
-              html += '<span style="font-weight:600">' + Utils.escapeHtml(o.titulo || '') + '</span>';
-              html += '<span style="color:var(--text-muted)">—</span>';
-              html += '<span>' + Utils.escapeHtml(o.efetivo || '') + '</span>';
-              html += '</div>';
-            });
-            html += '</div>';
+          if (data.itens && data.itens.length > 0) {
+            html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Atividades</h4>';
+            html += renderTable(data.itens);
           }
         }
 
-        if (data.itens && data.itens.length > 0) {
-          html += '<table style="width:100%;border-collapse:collapse;margin-top:var(--spacing-md)">';
-          html += '<thead><tr style="border-bottom:1px solid var(--border-color)">';
-          Object.keys(data.itens[0]).forEach(k => { html += '<th style="padding:8px;text-align:left;font-size:0.85rem;color:var(--text-secondary)">' + k + '</th>'; });
-          html += '</tr></thead><tbody>';
+        if (tipo === 'prontidao' && data.efetivo) {
+          html += '<h4 style="margin-bottom:var(--spacing-sm)">Efetivo</h4>';
+          html += '<div class="stats-grid">';
+          html += statCard(data.efetivo.totalEquipe, 'Equipe no Serviço');
+          html += statCard(data.efetivo.totalMilitares, 'Militares Cadastrados');
+          html += statCard(data.efetivo.telegrafia || 'N/A', 'Telegrafista');
+          html += '</div>';
+
+          html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Viaturas</h4>';
+          html += '<div class="stats-grid">';
+          html += statCard(data.viaturas.totalDespachadas, 'Viaturas Despachadas');
+          html += '</div>';
+          if (data.viaturas.detalhes && data.viaturas.detalhes.length > 0) {
+            data.viaturas.detalhes.forEach(v => {
+              html += '<div style="padding:8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:var(--radius-sm);font-size:0.85rem">';
+              html += '<strong>' + Utils.escapeHtml(v.nome || '-') + '</strong>';
+              if (v.tipo) html += ' — ' + Utils.escapeHtml(v.tipo);
+              if (v.placa) html += ' — ' + Utils.escapeHtml(v.placa);
+              html += '</div>';
+            });
+          }
+
+          html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Rotina</h4>';
+          if (data.rotina.total > 0) {
+            html += progressBar(data.rotina.concluidas, data.rotina.total, '#00c853');
+            html += '<p style="font-size:0.85rem;color:var(--text-secondary)">' + data.rotina.concluidas + ' de ' + data.rotina.total + ' atividades (' + data.rotina.percentual + '%)</p>';
+          }
+
+          html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Ocorrências</h4>';
+          html += '<div class="stats-grid">';
+          html += statCard(data.ocorrencias.total, 'Total');
+          html += statCard(data.ocorrencias.finalizadas, 'Finalizadas');
+          html += statCard(data.ocorrencias.emAndamento, 'Em Andamento');
+          html += '</div>';
+
+          html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Oficiais Presentes</h4>';
+          html += '<p style="font-size:0.85rem;color:var(--text-secondary)">' + data.oficiais.presentes + ' oficial(is) na data</p>';
+          if (data.oficiais.historico && data.oficiais.historico.length > 0) {
+            data.oficiais.historico.forEach(o => {
+              const tipoCor = o.tipo === 'entrada' ? '#00c853' : '#e53935';
+              html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem">';
+              html += '<span style="width:8px;height:8px;border-radius:50%;background:' + tipoCor + '"></span>';
+              html += '<span>' + Utils.escapeHtml(o.nome) + '</span>';
+              html += '<span style="color:var(--text-muted)">— ' + o.tipo + ' às ' + o.horario + '</span>';
+              html += '</div>';
+            });
+          }
+        }
+
+        if (tipo === 'telegrafia' && data.porOperador) {
+          if (data.stats) {
+            html += '<div class="stats-grid">';
+            html += statCard(data.stats.totalTrocas, 'Total de Trocas');
+            html += statCard(data.stats.totalOperadores, 'Operadores');
+            html += '</div>';
+          }
+
+          if (data.porOperador.length > 0) {
+            const maxMin = Math.max(...data.porOperador.map(p => p.totalMinutos), 1);
+            html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Distribuição de Horas por Operador</h4>';
+            data.porOperador.forEach(p => {
+              const pct = Math.round((p.totalMinutos / maxMin) * 100);
+              const cor = p.totalMinutos > 0 ? 'var(--prontidao-color)' : 'var(--text-muted)';
+              html += '<div class="chart-bar">';
+              html += '<span class="chart-bar-label">' + Utils.escapeHtml(p.operador) + '</span>';
+              html += '<div class="chart-bar-track"><div class="chart-bar-fill" style="width:' + pct + '%;background:' + cor + '"></div></div>';
+              html += '<span class="chart-bar-value">' + p.horas + 'h ' + p.mins + 'm</span>';
+              html += '</div>';
+            });
+          }
+
+          if (data.itens && data.itens.length > 0) {
+            html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Histórico de Trocas</h4>';
+            html += renderTable(data.itens);
+          }
+        }
+
+        if (tipo === 'oficiais' && data.itens && data.itens.length > 0) {
+          if (data.stats) {
+            html += '<div class="stats-grid">';
+            html += statCard(data.stats.total, 'Total de Oficiais');
+            html += statCard(data.stats.presentes, 'Presentes');
+            html += '</div>';
+          }
+          html += renderTable(data.itens);
+        }
+
+        if (tipo === 'ocorrencias' && data.ocorrencias) {
+          if (data.stats) {
+            html += '<div class="stats-grid">';
+            html += statCard(data.stats.total, 'Total');
+            html += statCard(data.stats.finalizadas, 'Finalizadas');
+            html += statCard(data.stats.emAndamento, 'Em Andamento');
+            html += statCard(data.stats.canceladas, 'Canceladas');
+            html += '</div>';
+          }
+
+          if (data.porNatureza && data.porNatureza.length > 0) {
+            const maxQtd = Math.max(...data.porNatureza.map(p => p.qtd), 1);
+            html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Por Natureza</h4>';
+            const cores = ['#e53935', '#ff9100', '#ffd600', '#2979ff', '#00c853', '#ab47bc', '#78909c'];
+            data.porNatureza.forEach((p, i) => {
+              const pct = Math.round((p.qtd / maxQtd) * 100);
+              html += '<div class="chart-bar">';
+              html += '<span class="chart-bar-label">' + Utils.escapeHtml(p.nome) + '</span>';
+              html += '<div class="chart-bar-track"><div class="chart-bar-fill" style="width:' + pct + '%;background:' + cores[i % cores.length] + '"></div></div>';
+              html += '<span class="chart-bar-value">' + p.qtd + '</span>';
+              html += '</div>';
+            });
+          }
+
+          if (data.ocorrencias.length > 0) {
+            html += '<h4 style="margin:var(--spacing-lg) 0 var(--spacing-sm)">Detalhamento</h4>';
+            const statusCores = { em_andamento: '#ff9100', finalizada: '#00c853', cancelada: '#9e9e9e' };
+            const statusLabels = { em_andamento: 'Em andamento', finalizada: 'Finalizada', cancelada: 'Cancelada' };
+            const corCores = { verde: '#00c853', amarela: '#ffd600', azul: '#2979ff', branca: '#ffffff' };
+            data.ocorrencias.forEach(o => {
+              const st = o.status || 'em_andamento';
+              html += '<div style="padding:12px;margin-bottom:8px;background:var(--bg-secondary);border-radius:var(--radius-md);border-left:3px solid ' + (statusCores[st] || '#9e9e9e') + '">';
+              html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+              html += '<div><strong>' + Utils.escapeHtml(o.titulo || '-') + '</strong>';
+              html += ' <span style="font-size:0.8rem;color:var(--text-muted)">(' + Utils.escapeHtml(o.natureza || '-') + ')</span></div>';
+              html += '<span style="padding:2px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;background:' + (statusCores[st] || '#9e9e9e') + '22;color:' + (statusCores[st] || '#9e9e9e') + '">' + (statusLabels[st] || st) + '</span>';
+              html += '</div>';
+              html += '<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px">';
+              if (o.viaturaNomes && o.viaturaNomes !== '-') html += '🚗 ' + Utils.escapeHtml(o.viaturaNomes) + ' | ';
+              html += '🕐 ' + (o.horaAcionamento || '-') + (o.horaRetorno && o.horaRetorno !== '-' ? ' → ' + o.horaRetorno : '');
+              if (o.efetivo) html += ' | 👥 ' + Utils.escapeHtml(o.efetivo);
+              html += '</div>';
+              html += '</div>';
+            });
+          }
+        }
+
+        if (tipo === 'timeline' && data.itens && data.itens.length > 0) {
+          const tipoCores = { Rotina: '#00c853', Telegrafia: '#2979ff', Oficial: '#ab47bc' };
+          const statusCores2 = { concluida: '#00c853', em_andamento: '#ff9100', nao_iniciada: '#9e9e9e', cancelada: '#e53935', entrada: '#00c853', saida: '#e53935', troca: '#2979ff' };
           data.itens.forEach(item => {
-            html += '<tr style="border-bottom:1px solid var(--border-light)">';
-            Object.values(item).forEach(v => { html += '<td style="padding:8px;font-size:0.85rem">' + (v || '-') + '</td>'; });
-            html += '</tr>';
+            const cor = tipoCores[item.Tipo] || '#9e9e9e';
+            const stCor = statusCores2[item.Status] || '#9e9e9e';
+            html += '<div class="timeline-item">';
+            html += '<span class="timeline-dot" style="background:' + cor + '"></span>';
+            html += '<span class="timeline-time">' + (item.Horario || '-') + '</span>';
+            html += '<div class="timeline-content">';
+            html += '<span style="font-weight:600">' + Utils.escapeHtml(item.Evento || '-') + '</span>';
+            html += ' <span style="font-size:0.75rem;padding:1px 8px;border-radius:20px;background:' + stCor + '22;color:' + stCor + '">' + Utils.escapeHtml(item.Status || '-') + '</span>';
+            if (item.Detalhe) html += ' <span style="font-size:0.8rem;color:var(--text-muted)">' + Utils.escapeHtml(item.Detalhe) + '</span>';
+            html += '<span style="font-size:0.7rem;padding:1px 6px;border-radius:10px;background:' + cor + '22;color:' + cor + ';margin-left:6px">' + item.Tipo + '</span>';
+            html += '</div></div>';
           });
-          html += '</tbody></table>';
+        }
+
+        if (tipo === 'historico' && data.itens && data.itens.length > 0) {
+          html += renderTable(data.itens);
+        }
+
+        if (tipo === 'auditoria' && data.itens && data.itens.length > 0) {
+          html += '<p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:var(--spacing-md)">' + data.itens.length + ' registro(s) encontrado(s)</p>';
+          html += renderTable(data.itens);
         }
 
         return html;
       }
 
-      async function downloadPDF() {
-        Utils.showToast('Gerando PDF...', 'info');
+      function statCard(value, label) {
+        return '<div class="stat-card"><div class="stat-value">' + value + '</div><div class="stat-label">' + label + '</div></div>';
+      }
+
+      function progressBar(done, total, color) {
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        return '<div style="width:100%;height:20px;background:var(--bg-secondary);border-radius:var(--radius-sm);overflow:hidden">' +
+          '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:var(--radius-sm);transition:width 0.5s"></div></div>';
+      }
+
+      function renderTable(items) {
+        if (!items || items.length === 0) return '';
+        const keys = Object.keys(items[0]);
+        let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;margin-top:var(--spacing-sm)">';
+        html += '<thead><tr style="border-bottom:2px solid var(--border-color)">';
+        keys.forEach(k => { html += '<th style="padding:8px;text-align:left;font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">' + k + '</th>'; });
+        html += '</tr></thead><tbody>';
+        items.forEach(item => {
+          html += '<tr style="border-bottom:1px solid var(--border-light)">';
+          keys.forEach(k => { html += '<td style="padding:6px 8px;font-size:0.85rem;white-space:nowrap">' + (item[k] || '-') + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        return html;
+      }
+
+      async function generatePDF() {
+        Utils.showToast('Gerando relatório completo...', 'info');
+        preview.style.display = 'block';
+        content.innerHTML = '<div class="skeleton" style="height:400px"></div>';
+
         try {
-          const date = reportDate.value;
-          const data = await API.getRelatorio('pdf', { data: date });
-          if (data && data.url) {
-            window.open(data.url, '_blank');
-          } else {
-            Utils.showToast('PDF não disponível', 'warning');
+          const tipos = ['resumo', 'prontidao', 'historico', 'timeline', 'telegrafia', 'oficiais', 'ocorrencias', 'auditoria'];
+          let fullHtml = '';
+          for (const tipo of tipos) {
+            const data = await API.getRelatorio(tipo, { data: reportDate.value });
+            if (data && data.servico) {
+              fullHtml += '<div style="page-break-before:always" class="report-section">';
+              fullHtml += renderReport(tipo, data);
+              fullHtml += '</div>';
+            }
           }
+          content.innerHTML = fullHtml || '<div class="empty-state"><p>Nenhum dado encontrado para esta data</p></div>';
+          document.getElementById('printHeader').innerHTML = '<h2 style="text-align:center;margin-bottom:8px">RELATÓRIO COMPLETO — ' + (reportDate.value || '-') + '</h2><p style="text-align:center;color:var(--text-secondary);margin-bottom:16px">SGPO — Sistema de Gestão da Prontidão Operacional</p>';
+
+          setTimeout(() => { window.print(); }, 500);
         } catch (e) {
-          Utils.showToast('Erro ao gerar PDF', 'error');
+          content.innerHTML = '<div class="empty-state"><p>Erro ao gerar relatório: ' + Utils.escapeHtml(e.message) + '</p></div>';
         }
       }
     });

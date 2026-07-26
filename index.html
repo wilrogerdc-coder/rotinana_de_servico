@@ -24,7 +24,7 @@
           </div>
           <div class="login-divider"></div>
           <div class="login-logo-prontidao">
-            <img src="assets/logos/prontidao-verde.png" alt="Prontidão" id="logoProntidao" onerror="this.style.display='none'">
+            <img src="assets/logos/prontidao-verde.svg" alt="Prontidão" id="logoProntidao" onerror="this.style.display='none'">
           </div>
         </div>
 
@@ -51,6 +51,12 @@
           <strong>Modo Demonstração:</strong><br>
           Todos os dados são simulados localmente.<br>
           <span style="font-size:0.75rem;opacity:0.8">Clique em "Modo Demo" para começar.</span>
+        </div>
+
+        <div id="exitDemoHint" style="margin-top:16px;padding:12px;background:var(--warning-dim);border-radius:8px;font-size:0.8rem;color:var(--warning);display:none">
+          <strong>Você está no Modo Demo.</strong><br>
+          Para usar o banco de dados real, saia do modo demo.<br>
+          <button class="btn btn-ghost btn-sm" onclick="exitDemo()" style="margin-top:8px;font-size:0.8rem;color:var(--warning);border:1px solid var(--warning)">Sair do Modo Demo</button>
         </div>
 
         <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
@@ -101,8 +107,6 @@
 
       const campanhaId = config.campanhaAuto !== false ? Utils.autoDetectCampanha() : (config.campanha || 'nenhuma');
       Utils.applyCampanha(campanhaId);
-
-      API.getConfig();
 
       if (Auth.isLoggedIn) {
         window.location.href = 'dashboard.html';
@@ -209,7 +213,20 @@
       }
     }
 
+    function exitDemo() {
+      API.disableDemo();
+      sessionStorage.clear();
+      document.getElementById('exitDemoHint').style.display = 'none';
+      document.getElementById('demoHint').style.display = 'block';
+      Utils.showToast('Modo demo desativado. Use a API real.', 'success');
+    }
+
+    API.getConfig();
+
     if (API.isDemo) {
+      document.getElementById('exitDemoHint').style.display = 'block';
+      document.getElementById('demoHint').style.display = 'none';
+    } else {
       document.getElementById('demoHint').style.display = 'block';
     }
 
