@@ -41,9 +41,9 @@
         </div>
       </div>
 
-      <div class="dash-card dash-atividade-atual" id="atividadeAtualCard">
+      <div class="dash-card dash-atividade-atual" data-block="atividade-atual" id="atividadeAtualCard">
         <div class="dash-card-header">
-          <span class="dash-card-title">Atividade Atual</span>
+          <div style="display:flex;align-items:center;gap:8px"><span class="drag-handle" title="Arrastar para reordenar">⠿</span><span class="dash-card-title">Atividade Atual</span></div>
           <span class="badge badge-yellow" id="atividadeStatus">-</span>
         </div>
         <div class="dash-atividade-nome" id="atividadeAtualNome">-</div>
@@ -51,33 +51,33 @@
         <div class="dash-atividade-responsavel" id="atividadeAtualResp">Responsável: -</div>
       </div>
 
-      <div class="dash-card dash-telegrafia-card" id="telegrafiaCard" onclick="Dashboard.mostrarSelecaoTelegrafia()" style="cursor:pointer">
-        <div class="dash-telegrafia-label">Telegrafia <span id="telegrafiaBadge" style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--prontidao-color);color:var(--surface-color);margin-left:4px;display:none">+</span></div>
+      <div class="dash-card dash-telegrafia-card" data-block="telegrafia" id="telegrafiaCard" onclick="Dashboard.mostrarSelecaoTelegrafia()" style="cursor:pointer">
+        <div class="dash-telegrafia-label"><span class="drag-handle" title="Arrastar para reordenar" onclick="event.stopPropagation()">⠿</span> Telegrafia <span id="telegrafiaBadge" style="font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--prontidao-color);color:var(--surface-color);margin-left:4px;display:none">+</span></div>
         <div class="avatar avatar-lg" id="telegrafiaAvatar">--</div>
         <div class="dash-telegrafia-nome" id="telegrafiaNome">-</div>
         <div class="dash-telegrafia-tempo" id="telegrafiaTempo">00:00:00</div>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Assumiu às <span id="telegrafiaInicio">--:--</span></div>
       </div>
 
-      <div class="dash-card dash-timeline">
-        <div class="dash-card-header"><span class="dash-card-title">Linha do Tempo</span></div>
+      <div class="dash-card dash-timeline" data-block="timeline">
+        <div class="dash-card-header"><div style="display:flex;align-items:center;gap:8px"><span class="drag-handle" title="Arrastar para reordenar">⠿</span><span class="dash-card-title">Linha do Tempo</span></div></div>
         <div class="timeline" id="timeline">
           <div class="empty-state"><p>Nenhum evento registrado</p></div>
         </div>
       </div>
 
-      <div class="dash-card dash-oficiais" onclick="location.href='oficiais.html'" style="cursor:pointer">
-        <div class="dash-card-header"><span class="dash-card-title">Oficiais Presentes <span style="font-size:0.7rem;color:var(--text-muted)">→</span></span></div>
+      <div class="dash-card dash-oficiais" data-block="oficiais" onclick="location.href='oficiais.html'" style="cursor:pointer">
+        <div class="dash-card-header"><div style="display:flex;align-items:center;gap:8px"><span class="drag-handle" title="Arrastar para reordenar" onclick="event.stopPropagation()">⠿</span><span class="dash-card-title">Oficiais Presentes <span style="font-size:0.7rem;color:var(--text-muted)">→</span></span></div></div>
         <div id="oficiaisList"><div class="empty-state"><p>Nenhum oficial presente</p></div></div>
       </div>
 
-      <div class="dash-card" style="grid-column:span 2">
-        <div class="dash-card-header"><span class="dash-card-title">Viaturas em Serviço</span><span class="badge" id="viaturasBadge" style="display:none">0</span></div>
+      <div class="dash-card" data-block="viaturas" style="grid-column:span 2">
+        <div class="dash-card-header"><div style="display:flex;align-items:center;gap:8px"><span class="drag-handle" title="Arrastar para reordenar">⠿</span><span class="dash-card-title">Viaturas em Serviço</span></div><span class="badge" id="viaturasBadge" style="display:none">0</span></div>
         <div id="viaturasContainer"><div class="empty-state"><p>Nenhuma viatura em serviço</p></div></div>
       </div>
 
-      <div class="dash-card dash-notificacoes">
-        <div class="dash-card-header"><span class="dash-card-title">Notificações</span></div>
+      <div class="dash-card dash-notificacoes" data-block="notificacoes">
+        <div class="dash-card-header"><div style="display:flex;align-items:center;gap:8px"><span class="drag-handle" title="Arrastar para reordenar">⠿</span><span class="dash-card-title">Notificações</span></div></div>
         <div id="notificacoesList"><div class="empty-state"><p>Sem notificações</p></div></div>
       </div>
 

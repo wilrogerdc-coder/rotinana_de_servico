@@ -117,20 +117,9 @@ const Auth = {
 
   async login(usuario, senha) {
     try {
-      if (API.isDemo) {
-        const result = await API.login(usuario, senha);
-        if (result.success && result.user) {
-          this.user = result.user;
-          this._postLogin();
-          Utils.log('login', `${result.user.nome} fez login (${result.user.perfil})`, 'auth');
-          return { success: true, user: result.user };
-        }
-        return { success: false, error: result.error || 'Credenciais inválidas' };
-      }
-
       API.getConfig();
       if (!API.BASE_URL) {
-        return { success: false, error: 'API não configurada. Use "Modo Demo" ou configure a API.' };
+        return { success: false, error: 'API não configurada. Configure a API primeiro.' };
       }
       const result = await API.login(usuario, senha);
       if (result.success && result.user) {

@@ -167,7 +167,10 @@ function getDefinicaoAbas() {
         { nome: 'id',           largura: 100, tipo: 'texto',     obrigatoria: true },
         { nome: 'dataCadastro', largura: 160, tipo: 'data' },
         { nome: 'nome',         largura: 220, tipo: 'texto',     obrigatoria: true },
-        { nome: 'reCpf',        largura: 160, tipo: 'texto',     obrigatoria: true, descricao: 'RE ou CPF (login)' },
+        { nome: 'qra',          largura: 120, tipo: 'texto',     descricao: 'QRA do usuário' },
+        { nome: 'nomeUsuario',  largura: 160, tipo: 'texto',     descricao: 'Nome de usuário (exibição)' },
+        { nome: 'cpf',          largura: 140, tipo: 'texto',     obrigatoria: true, descricao: 'CPF (login)' },
+        { nome: 're',           largura: 120, tipo: 'texto',     descricao: 'Registro Estatístico' },
         { nome: 'senha',        largura: 140, tipo: 'texto',     obrigatoria: true },
         { nome: 'senhaHash',    largura: 140, tipo: 'texto',     descricao: 'SHA-256 da senha (preenchido automaticamente)' },
         { nome: 'mustChangePassword', largura: 80, tipo: 'booleano', descricao: 'Forçar troca de senha no próximo login' },
@@ -182,10 +185,10 @@ function getDefinicaoAbas() {
         { nome: 'Status',       largura: 100, tipo: 'dropdown',  opcoes: STATUS_GERAL }
       ],
       dados: [
-        [gerarId(), now, 'Administrador do Sistema', '0000000', 'admin', _hashPassword('admin'), false, 'admin', 'admin@sgpo.gov.br', '', '', '', true, now, 'ativo'],
-        [gerarId(), now, 'Comandante do Serviço', '1111111', '123', _hashPassword('123'), false, 'comandante', 'comandante@sgpo.gov.br', '', '', '', true, now, 'ativo'],
-        [gerarId(), now, 'Operador do Sistema', '2222222', '123', _hashPassword('123'), false, 'operador', 'operador@sgpo.gov.br', '', '', '', true, now, 'ativo'],
-        [gerarId(), now, 'Visualizador', '3333333', '123', _hashPassword('123'), false, 'visualizador', '', '', '', '', true, now, 'ativo']
+        [gerarId(), now, 'Administrador do Sistema', '', 'admin', '00000000000', '', 'admin', _hashPassword('admin'), false, 'admin', 'admin@sgpo.gov.br', '', '', '', '', true, now, 'ativo'],
+        [gerarId(), now, 'Comandante do Serviço', '', 'comandante', '11111111111', '', '123', _hashPassword('123'), false, 'comandante', 'comandante@sgpo.gov.br', '', '', '', '', true, now, 'ativo'],
+        [gerarId(), now, 'Operador do Sistema', '', 'operador', '22222222222', '', '123', _hashPassword('123'), false, 'operador', 'operador@sgpo.gov.br', '', '', '', '', true, now, 'ativo'],
+        [gerarId(), now, 'Visualizador', '', 'visualizador', '33333333333', '', '123', _hashPassword('123'), false, 'visualizador', '', '', '', '', '', true, now, 'ativo']
       ]
     },
     {
@@ -863,20 +866,59 @@ function getSheet(name) {
   return sheet;
 }
 
+function ensureSheetHeaders(sheetName) {
+  const sheet = getSheet(sheetName);
+  const data = sheet.getDataRange().getValues();
+  var headers = data.length > 0 ? data[0] : [];
+  if (headers && headers.length > 0 && headers[0]) return headers;
+
+  var fixDef = getDefinicaoAbas().find(function(d) {
+    return d.nome === sheetName || d.nome.toLowerCase() === String(sheetName).toLowerCase();
+  });
+  if (!fixDef) {
+    var mapped = SHEET_NAMES[sheetName];
+    if (mapped) {
+      fixDef = getDefinicaoAbas().find(function(d) { return d.nome === mapped; });
+    }
+  }
+  if (fixDef) {
+    _repararAba(SpreadsheetApp.getActiveSpreadsheet(), sheet, fixDef);
+    var newData = sheet.getDataRange().getValues();
+    headers = newData.length > 0 ? newData[0] : [];
+  }
+  return headers || [];
+}
+
 function findRowById(sheetName, id) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return null;
+  const headers = data[0];
+  if (!headers || headers.length === 0 || !headers[0]) return null;
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === id) return { row: i + 1, data: data[i], headers: data[0] };
   }
   return null;
 }
 
-function findRows(sheetName, filterFn) {
+function findRows(sheetName, filterFn, _repaired) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return [];
+  if (data.length < 2) {
+    if (!_repaired && (data.length === 0 || (data.length === 1 && (!data[0] || data[0].length === 0 || !data[0][0])))) {
+      ensureSheetHeaders(sheetName);
+      return findRows(sheetName, filterFn, true);
+    }
+    return [];
+  }
   const headers = data[0];
+  if (!headers || headers.length === 0 || !headers[0]) {
+    if (!_repaired) {
+      ensureSheetHeaders(sheetName);
+      return findRows(sheetName, filterFn, true);
+    }
+    return [];
+  }
   const results = [];
   for (let i = 1; i < data.length; i++) {
     const row = {};
@@ -985,12 +1027,43 @@ function setupCompletoSGPO() {
    SEÇÃO 6 — ATUALIZAÇÃO INCREMENTAL DE SCHEMA
    ═══════════════════════════════════════════════════════════════════ */
 
+function _sheetHasValidHeaders(existingHeaders, expectedHeaders) {
+  if (!existingHeaders || existingHeaders.length === 0) return false;
+  let matches = 0;
+  for (var i = 0; i < expectedHeaders.length; i++) {
+    if (existingHeaders.indexOf(expectedHeaders[i]) !== -1) matches++;
+  }
+  return matches >= Math.ceil(expectedHeaders.length * 0.5);
+}
+
+function _repararAba(ss, sheet, def) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow > 0 && lastCol > 0) {
+    sheet.clearContents();
+    sheet.clearFormats();
+    sheet.clearDataValidations();
+    if (lastRow > 1) {
+      sheet.deleteRows(2, lastRow - 1);
+    }
+    if (lastCol > 1) {
+      sheet.deleteColumns(2, lastCol - 1);
+    }
+    const firstColValues = sheet.getRange(1, 1, 1, 1).getValues()[0];
+    if (firstColValues[0]) {
+      sheet.getRange(1, 1).setValue('');
+    }
+  }
+  configurarAba(ss, sheet, def);
+}
+
 function atualizarSchema() {
   const startTime = new Date().getTime();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const abas = getDefinicaoAbas();
   let adicionadas = 0;
   let abasNovas = 0;
+  let reparadas = 0;
   let erros = [];
 
   abas.forEach((def) => {
@@ -1004,18 +1077,33 @@ function atualizarSchema() {
         return;
       }
 
-      const existingHeaders = sheet.getLastRow() > 0
+      var existingHeaders = sheet.getLastColumn() > 0
         ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
         : [];
 
-      const newHeaders = def.colunas.map(c => c.nome);
+      var expectedHeaders = def.colunas.map(function(c) { return c.nome; });
+      var needsRepair = false;
 
-      newHeaders.forEach((h, i) => {
-        if (!existingHeaders.includes(h)) {
-          const posicao = i + 1;
+      if (sheet.getLastColumn() === 0 && sheet.getLastRow() === 0) {
+        needsRepair = true;
+      } else if (!_sheetHasValidHeaders(existingHeaders, expectedHeaders)) {
+        needsRepair = true;
+      }
+
+      if (needsRepair) {
+        _repararAba(ss, sheet, def);
+        reparadas++;
+        return;
+      }
+
+      var newHeaders = def.colunas.map(function(c) { return c.nome; });
+
+      newHeaders.forEach(function(h, i) {
+        if (existingHeaders.indexOf(h) === -1) {
+          var posicao = i + 1;
           if (posicao <= sheet.getLastColumn() + 1) {
             sheet.insertColumnBefore(posicao);
-            const cell = sheet.getRange(1, posicao);
+            var cell = sheet.getRange(1, posicao);
             cell.setValue(h);
             cell.setFontWeight('bold');
             cell.setFontSize(10);
@@ -1027,7 +1115,7 @@ function atualizarSchema() {
             sheet.setColumnWidth(posicao, def.colunas[i].largura || 150);
 
             if (def.colunas[i].tipo === 'dropdown' && def.colunas[i].opcoes) {
-              const rule = SpreadsheetApp.newDataValidation()
+              var rule = SpreadsheetApp.newDataValidation()
                 .requireValueInList(def.colunas[i].opcoes, true)
                 .setAllowInvalid(false)
                 .build();
@@ -1039,12 +1127,12 @@ function atualizarSchema() {
         }
       });
 
-      const lastDataRow = sheet.getLastRow();
-      def.colunas.forEach((col, i) => {
+      var lastDataRow = sheet.getLastRow();
+      def.colunas.forEach(function(col, i) {
         if (col.tipo === 'dropdown' && col.opcoes) {
-          const existingRule = sheet.getRange(2, i + 1).getDataValidation();
+          var existingRule = sheet.getRange(2, i + 1).getDataValidation();
           if (!existingRule) {
-            const rule = SpreadsheetApp.newDataValidation()
+            var rule = SpreadsheetApp.newDataValidation()
               .requireValueInList(col.opcoes, true)
               .setAllowInvalid(false)
               .build();
@@ -1061,22 +1149,73 @@ function atualizarSchema() {
   try { criarMenuSGPO(); } catch (e) {}
 
   SpreadsheetApp.flush();
-  const elapsed = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+  var elapsed = ((new Date().getTime() - startTime) / 1000).toFixed(1);
 
-  const ui = SpreadsheetApp.getUi();
-  let msg = '⬆️ ATUALIZAÇÃO DE SCHEMA CONCLUÍDA!\n\n';
-  msg += '📊 Abas novas criadas: ' + abasNovas + '\n';
-  msg += '📋 Colunas novas adicionadas: ' + adicionadas + '\n';
-  msg += '⏱️ Tempo: ' + elapsed + 's\n';
-  msg += '🔧 Versão: ' + SGPO_VERSION + '\n\n';
+  var ui = SpreadsheetApp.getUi();
+  var msg = 'ATUALIZACAO DE SCHEMA CONCLUIDA!\n\n';
+  msg += 'Abas novas criadas: ' + abasNovas + '\n';
+  msg += 'Abas reparadas (headers corrigidos): ' + reparadas + '\n';
+  msg += 'Colunas novas adicionadas: ' + adicionadas + '\n';
+  msg += 'Tempo: ' + elapsed + 's\n';
+  msg += 'Versao: ' + SGPO_VERSION + '\n\n';
 
   if (erros.length > 0) {
-    msg += '⚠️ Erros:\n' + erros.join('\n') + '\n\n';
+    msg += 'ERROS:\n' + erros.join('\n') + '\n\n';
   }
 
-  msg += 'Dados existentes foram PRESERVADOS.';
+  msg += 'Dados existentes foram PRESERVADOS quando possivel.';
 
   ui.alert('SGPO - Atualizar Schema', msg, ui.ButtonSet.OK);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEÇÃO 6.25 — REPARO COMPLETO DE ABAS
+   ═══════════════════════════════════════════════════════════════════ */
+
+function repararAbas() {
+  var result = repararAbasSilencioso();
+  var ui = SpreadsheetApp.getUi();
+  var msg = 'REPARO COMPLETO CONCLUIDO!\n\n';
+  msg += 'Abas reparadas: ' + result.reparadas + '\n';
+  msg += 'Tempo: ' + result.elapsed + 's\n';
+  msg += 'Versao: ' + SGPO_VERSION + '\n\n';
+  msg += 'ATENCAO: Dados em abas com headers incorretos foram limpos.\n';
+  msg += 'Apenas os dados padroes foram inseridos.\n\n';
+  if (result.erros.length > 0) {
+    msg += 'ERROS:\n' + result.erros.join('\n') + '\n\n';
+  }
+  msg += 'PROXIMO PASSO:\n';
+  msg += 'Deploy -> Nova implantacao -> Web App\n';
+  msg += 'Executar como: "Eu" | Quem acessa: "Qualquer pessoa"';
+  ui.alert('SGPO - Reparar Abas', msg, ui.ButtonSet.OK);
+}
+
+function repararAbasSilencioso() {
+  var startTime = new Date().getTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var abas = getDefinicaoAbas();
+  var reparadas = 0;
+  var erros = [];
+
+  abas.forEach(function(def) {
+    try {
+      var sheet = ss.getSheetByName(def.nome);
+      if (!sheet) {
+        sheet = ss.insertSheet(def.nome);
+      }
+      _repararAba(ss, sheet, def);
+      reparadas++;
+    } catch (e) {
+      erros.push(def.nome + ': ' + e.message);
+    }
+  });
+
+  try { criarMenuSGPO(); } catch (e) {}
+
+  SpreadsheetApp.flush();
+  var elapsed = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+  return { reparadas: reparadas, elapsed: elapsed, erros: erros };
 }
 
 
@@ -1239,6 +1378,7 @@ function criarMenuSGPO() {
     .createMenu('🔥 SGPO')
     .addItem('🔄 Setup Completo', 'setupCompletoSGPO')
     .addItem('⬆️ Atualizar Schema', 'atualizarSchema')
+    .addItem('🔧 Reparar Abas (corrigir headers)', 'repararAbas')
     .addSeparator()
     .addItem('👤 Popular Dados de Exemplo', 'popularDadosExemplo')
     .addItem('🗑️ Limpar Dados Demo', 'limparDadosDemo')
@@ -1586,7 +1726,10 @@ function handleCreateComPermissao(data) {
   }
 
   const s = getSheet(sheet);
-  const headers = s.getDataRange().getValues()[0];
+  var headers = ensureSheetHeaders(sheet);
+  if (!headers || headers.length === 0 || !headers[0]) {
+    return { success: false, error: 'A aba "' + sheet + '" nao pôde ser reparada automaticamente.' };
+  }
   const id = generateId();
   const now = new Date().toISOString();
   const newRow = headers.map(h => {
@@ -1608,8 +1751,10 @@ function handleCreateComPermissao(data) {
         const userSheet = getSheet('Usuarios');
         const userRows = userSheet.getDataRange().getValues();
         const userHeaders = userRows[0];
-        const reCol = userHeaders.indexOf('reCpf');
-        const exists = reCol !== -1 && userRows.slice(1).some(r => String(r[reCol]) === String(row.reCpf));
+        const cpfCol = userHeaders.indexOf('cpf');
+        const reColLegacy = userHeaders.indexOf('reCpf');
+        const exists = (cpfCol !== -1 && userRows.slice(1).some(r => String(r[cpfCol]) === String(row.reCpf))) ||
+                       (reColLegacy !== -1 && userRows.slice(1).some(r => String(r[reColLegacy]) === String(row.reCpf)));
         if (!exists) {
           const DEFAULT_PASSWORD = '123456';
           const userId = generateId();
@@ -1618,7 +1763,7 @@ function handleCreateComPermissao(data) {
             if (h === 'id') return userId;
             if (h === 'dataCadastro') return userNow;
             if (h === 'nome') return row.nome || '';
-            if (h === 'reCpf') return row.reCpf || '';
+            if (h === 're') return row.reCpf || '';
             if (h === 'senha') return DEFAULT_PASSWORD;
             if (h === 'senhaHash') return _hashPassword(DEFAULT_PASSWORD);
             if (h === 'mustChangePassword') return true;
@@ -1635,7 +1780,7 @@ function handleCreateComPermissao(data) {
           });
           userSheet.appendRow(userRow);
           logAuditoria('auto_criar_usuario', (_authUser && _authUser.nome) || 'sistema',
-            `Usuário automático criado para militar ${row.nome} (RE/CPF: ${row.reCpf})`);
+            `Usuário automático criado para militar ${row.nome} (RE: ${row.reCpf})`);
         }
       }
     } catch (e) {
@@ -1645,12 +1790,12 @@ function handleCreateComPermissao(data) {
 
   if (sheet === 'usuarios' || sheet === 'Usuarios') {
     try {
-      if (row && row.reCpf) {
+      if (row && row.re) {
         const milSheet = getSheet('Militares');
         const milData = milSheet.getDataRange().getValues();
         const milHeaders = milData[0];
         const reCol = milHeaders.indexOf('reCpf');
-        const exists = reCol !== -1 && milData.slice(1).some(r => String(r[reCol]) === String(row.reCpf));
+        const exists = reCol !== -1 && milData.slice(1).some(r => String(r[reCol]) === String(row.re));
         if (!exists) {
           const milId = generateId();
           const milNow = new Date().toISOString();
@@ -1658,14 +1803,14 @@ function handleCreateComPermissao(data) {
             if (h === 'id') return milId;
             if (h === 'dataCadastro') return milNow;
             if (h === 'nome') return row.nome || '';
-            if (h === 'reCpf') return row.reCpf || '';
+            if (h === 'reCpf') return row.re || '';
             if (h === 'ativo') return true;
             if (h === 'Status') return 'ativo';
             return '';
           });
           milSheet.appendRow(milRow);
           logAuditoria('auto_criar_militar', (_authUser && _authUser.nome) || 'sistema',
-            `Militar automático criado para usuário ${row.nome} (RE/CPF: ${row.reCpf})`);
+            `Militar automático criado para usuário ${row.nome} (RE: ${row.re})`);
         }
       }
     } catch (e) {
@@ -1959,7 +2104,8 @@ function doPost(e) {
       registrarLog:             () => registrarLogCustom(data),
       updateConfig:             () => handleUpdateConfig(data),
       importarAtividadesPadrao: () => importarAtividadesPadrao(data),
-      diagnosticar:             () => diagnosticar()
+      diagnosticar:             () => diagnosticar(),
+      repararAbas:              () => { repararAbasSilencioso(); return { success: true, message: 'Abas reparadas' }; }
     };
 
     const handler = handlers[action];
@@ -2005,11 +2151,16 @@ function handleLogin(data) {
       user: {
         id: SUPER_USER.id,
         nome: SUPER_USER.nome,
+        qra: '',
+        nomeUsuario: SUPER_USER.usuario,
+        cpf: '00000000000',
+        re: '',
         usuario: SUPER_USER.usuario,
         perfil: SUPER_USER.perfil,
         nivelPermissao: 'GB',
         postos: postos,
-        permissoesTela: permissoesTela.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') }))
+        permissoesTela: permissoesTela.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })),
+        mustChangePassword: false
       }
     };
   }
@@ -2023,7 +2174,7 @@ function handleLogin(data) {
     const user = {};
     headers.forEach((h, idx) => user[h] = row[idx]);
 
-    const loginField = user.reCpf || user.usuario || '';
+    const loginField = user.cpf || user.reCpf || user.usuario || '';
     const senhaOk = user.senhaHash ? Utils.compararSenhas(senha, user.senhaHash) : (user.senha === senha);
     if (loginField === usuario && senhaOk && user.ativo !== false) {
       _authUser = user;
@@ -2056,6 +2207,10 @@ function handleLogin(data) {
         user: {
           id: user.id,
           nome: user.nome,
+          qra: user.qra || '',
+          nomeUsuario: user.nomeUsuario || user.nome || '',
+          cpf: user.cpf || loginField,
+          re: user.re || '',
           usuario: loginField,
           perfil: user.perfil || 'operador',
           nivelPermissao: nivel,
@@ -2068,7 +2223,7 @@ function handleLogin(data) {
     }
   }
 
-  return { success: false, error: 'RE/CPF ou senha inválidos' };
+  return { success: false, error: 'CPF ou senha inválidos' };
 }
 
 function logAuditoria(acao, usuario, detalhes) {
@@ -2133,7 +2288,10 @@ function handleRead(data) {
 function handleCreate(data) {
   const { sheet, row } = data;
   const s = getSheet(sheet);
-  const headers = s.getDataRange().getValues()[0];
+  var headers = ensureSheetHeaders(sheet);
+  if (!headers || headers.length === 0 || !headers[0]) {
+    return { success: false, error: 'A aba "' + sheet + '" nao pôde ser reparada automaticamente.' };
+  }
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -2209,7 +2367,10 @@ function importarAtividadesPadrao(data) {
   }
 
   const s = getSheet('AtividadesPadrao');
-  const headers = s.getDataRange().getValues()[0];
+  var headers = ensureSheetHeaders('AtividadesPadrao');
+  if (!headers || headers.length === 0 || !headers[0]) {
+    return { success: false, error: 'A aba AtividadesPadrao nao pôde ser reparada automaticamente.' };
+  }
   const existingRows = findRows('atividades_padrao', r => r.Status !== 'removido');
   const existingNames = new Set(existingRows.map(r => r.nome));
 
@@ -2266,7 +2427,7 @@ function getServicoAtual(data) {
     const userSheet = findRowById('Usuarios', usuarioId);
     if (userSheet) {
       const nome = userSheet.data[userSheet.headers.indexOf('nome')] || '';
-      const integrante = { id: usuarioId, nome: nome, posto: '', reCpf: '', avulso: false };
+      const integrante = { id: usuarioId, nome: nome, posto: '', re: '', cpf: '', avulso: false };
       servico.equipe.push(integrante);
       const s = getSheet('Servicos');
       const equipeCol = servico._headers ? servico._headers.indexOf('equipe') : servico.headers ? servico.headers.indexOf('equipe') : -1;
@@ -3189,8 +3350,11 @@ function handleUpdateConfig(data) {
     campanhaAuto: 'campanha_auto'
   };
   const sheet = getSheet('Configuracoes');
+  var headers = ensureSheetHeaders('Configuracoes');
+  if (!headers || headers.length === 0 || !headers[0]) {
+    return { success: false, error: 'A aba Configuracoes nao pôde ser reparada automaticamente.' };
+  }
   const rows = sheet.getDataRange().getValues();
-  const headers = rows[0];
   const chaveIdx = headers.indexOf('chave');
   const valorIdx = headers.indexOf('valor');
   let updated = 0, created = 0;
@@ -3265,7 +3429,8 @@ function getUsuariosAtivos(data) {
     const item = {
       id: u.id,
       nome: u.nome,
-      reCpf: u.reCpf || '',
+      cpf: u.cpf || u.reCpf || '',
+      re: u.re || '',
       perfil: u.perfil || '',
       ultimoAcesso: u.ultimoAcesso,
       acessoFormatado: Utils.formatDateTime(acesso),
@@ -3383,29 +3548,31 @@ function alterarMinhaSenha(data) {
 }
 
 function criarCivis(data) {
-  const { nome, reCpf, email, telefone, funcao } = data;
-  if (!nome || !reCpf) return { success: false, error: 'Nome e RE/CPF são obrigatórios' };
+  const { nome, cpf, re, email, telefone, funcao } = data;
+  if (!nome || !cpf) return { success: false, error: 'Nome e CPF são obrigatórios' };
 
   const DEFAULT_PASSWORD = '123456';
   const userSheet = getSheet('Usuarios');
   const userRows = userSheet.getDataRange().getValues();
   const userHeaders = userRows[0];
-  const reCol = userHeaders.indexOf('reCpf');
+  const cpfCol = userHeaders.indexOf('cpf');
+  const reColLegacy = userHeaders.indexOf('reCpf');
   for (let i = 1; i < userRows.length; i++) {
-    if (String(userRows[i][reCol]) === String(reCpf)) {
-      return { success: false, error: 'Já existe usuário com este RE/CPF' };
+    if ((cpfCol !== -1 && String(userRows[i][cpfCol]) === String(cpf)) ||
+        (reColLegacy !== -1 && String(userRows[i][reColLegacy]) === String(cpf))) {
+      return { success: false, error: 'Já existe usuário com este CPF' };
     }
   }
 
   const userId = generateId();
   userSheet.appendRow([
-    userId, new Date().toISOString(), nome, reCpf, DEFAULT_PASSWORD,
+    userId, new Date().toISOString(), nome, '', '', cpf, re || '', DEFAULT_PASSWORD,
     _hashPassword(DEFAULT_PASSWORD), true, 'operador',
-    email || '', telefone || '', '', '', true, new Date().toISOString(), 'ativo'
+    email || '', telefone || '', '', '', '', true, new Date().toISOString(), 'ativo'
   ]);
 
-  logAuditoria('criar_civil_usuario', (_authUser && _authUser.nome) || 'sistema', `Civil ${nome} criado com usuário (RE/CPF: ${reCpf})`);
-  return { success: true, userId, mustChangePassword: true, login: reCpf, senhaPadrao: DEFAULT_PASSWORD };
+  logAuditoria('criar_civil_usuario', (_authUser && _authUser.nome) || 'sistema', `Civil ${nome} criado com usuário (CPF: ${cpf})`);
+  return { success: true, userId, mustChangePassword: true, login: cpf, senhaPadrao: DEFAULT_PASSWORD };
 }
 
 function getPostosComServico(data) {

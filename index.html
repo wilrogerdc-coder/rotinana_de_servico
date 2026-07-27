@@ -33,8 +33,8 @@
 
         <form class="login-form" id="loginForm">
           <div class="input-group">
-            <label class="input-label" for="usuario">RE / CPF</label>
-            <input class="input" type="text" id="usuario" placeholder="Digite seu RE ou CPF" autocomplete="username" required inputmode="numeric">
+            <label class="input-label" for="usuario">CPF</label>
+            <input class="input" type="text" id="usuario" placeholder="Digite seu CPF" autocomplete="username" required inputmode="numeric">
           </div>
 
           <div class="input-group">
@@ -47,22 +47,7 @@
           <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Entrar</button>
         </form>
 
-        <div id="demoHint" style="margin-top:16px;padding:12px;background:var(--accent-green-dim);border-radius:8px;font-size:0.8rem;color:var(--accent-green);display:none">
-          <strong>Modo Demonstração:</strong><br>
-          Todos os dados são simulados localmente.<br>
-          <span style="font-size:0.75rem;opacity:0.8">Clique em "Modo Demo" para começar.</span>
-        </div>
 
-        <div id="exitDemoHint" style="margin-top:16px;padding:12px;background:var(--warning-dim);border-radius:8px;font-size:0.8rem;color:var(--warning);display:none">
-          <strong>Você está no Modo Demo.</strong><br>
-          Para usar o banco de dados real, saia do modo demo.<br>
-          <button class="btn btn-ghost btn-sm" onclick="exitDemo()" style="margin-top:8px;font-size:0.8rem;color:var(--warning);border:1px solid var(--warning)">Sair do Modo Demo</button>
-        </div>
-
-        <div style="margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="startDemo()" style="background:var(--accent-green);min-width:140px">Modo Demo</button>
-          <button class="btn btn-ghost btn-sm" onclick="showApiConfig()" style="font-size:0.8rem">Configurar API</button>
-        </div>
 
         <div class="login-footer">
           SGPO v1.0 - Corpo de Bombeiros PMESP
@@ -113,8 +98,9 @@
         return;
       }
 
-      if (!API.BASE_URL && !API.isDemo) {
-        document.getElementById('demoHint').style.display = 'block';
+      if (!API.BASE_URL) {
+        document.getElementById('loginError').textContent = 'API não configurada. Clique em "Configurar API".';
+        document.getElementById('loginError').classList.add('visible');
       }
 
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -130,8 +116,8 @@
           return;
         }
 
-        if (!API.BASE_URL && !API.isDemo) {
-          errorEl.textContent = 'Clique em "Modo Demo" ou configure a API';
+        if (!API.BASE_URL) {
+          errorEl.textContent = 'Configure a API antes de fazer login.';
           errorEl.classList.add('visible');
           btn.disabled = false;
           btn.textContent = 'Entrar';
@@ -200,35 +186,7 @@
       }
     }
 
-    async function startDemo() {
-      API.enableDemo();
-      const btn = document.querySelector('[onclick="startDemo()"]');
-      if (btn) { btn.disabled = true; btn.textContent = 'Carregando...'; }
-      const result = await Auth.login('0000000', 'admin');
-      if (result.success) {
-        window.location.href = 'dashboard.html';
-      } else {
-        Utils.showToast('Erro ao iniciar demo: ' + (result.error || ''), 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Modo Demo'; }
-      }
-    }
-
-    function exitDemo() {
-      API.disableDemo();
-      sessionStorage.clear();
-      document.getElementById('exitDemoHint').style.display = 'none';
-      document.getElementById('demoHint').style.display = 'block';
-      Utils.showToast('Modo demo desativado. Use a API real.', 'success');
-    }
-
     API.getConfig();
-
-    if (API.isDemo) {
-      document.getElementById('exitDemoHint').style.display = 'block';
-      document.getElementById('demoHint').style.display = 'none';
-    } else {
-      document.getElementById('demoHint').style.display = 'block';
-    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});

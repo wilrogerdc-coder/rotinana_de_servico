@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Ajuda</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/ajuda.css">
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="help-container" id="helpContainer">
+      <div class="help-header">
+        <h2 id="helpTitle">Manual de Utilização do SGPO</h2>
+        <button class="btn btn-ghost btn-sm" id="editHelpBtn" style="display:none" onclick="HELP.openEditor()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Editar
+        </button>
+      </div>
+
+      <nav class="help-toc" id="helpToc"></nav>
+
+      <div class="help-content" id="helpContent"></div>
+
+      <div class="help-footer" id="helpFooter"></div>
+    </div>
+
+    <div class="help-editor-modal" id="helpEditorModal" style="display:none">
+      <div class="help-editor-overlay" onclick="HELP.closeEditor()"></div>
+      <div class="help-editor-panel">
+        <div class="help-editor-header">
+          <h3>Editar Conteúdo da Ajuda</h3>
+          <button class="btn btn-ghost btn-sm" onclick="HELP.closeEditor()">&times;</button>
+        </div>
+        <div class="help-editor-body">
+          <div class="help-editor-tabs" id="editorTabs"></div>
+          <div class="help-editor-fields" id="editorFields"></div>
+        </div>
+        <div class="help-editor-footer">
+          <button class="btn btn-ghost" onclick="HELP.closeEditor()">Cancelar</button>
+          <button class="btn btn-primary" onclick="HELP.saveHelpContent()">Salvar Alterações</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/ajuda.js"></script>
+  <script>HELP.init();</script>
+</body>
+</html>

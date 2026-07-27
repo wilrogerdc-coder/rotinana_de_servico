@@ -57,6 +57,7 @@
         <h3 style="font-size:1rem;font-weight:600">Militares</h3>
         <button class="btn btn-primary btn-sm" onclick="Admin.showForm('militar')">+ Novo Militar</button>
       </div>
+      <div style="margin-bottom:var(--spacing-md)"><input class="input" type="text" id="searchMilitares" placeholder="Buscar militar por nome, RE, posto..." oninput="Admin.filterMilitares()" style="width:100%"></div>
       <div id="militaresList"></div>
     </div>
 
@@ -127,6 +128,7 @@
         <h3 style="font-size:1rem;font-weight:600">Viaturas</h3>
         <button class="btn btn-primary btn-sm" onclick="Admin.showForm('viatura')">+ Nova Viatura</button>
       </div>
+      <div style="margin-bottom:var(--spacing-md)"><input class="input" type="text" id="searchViaturas" placeholder="Buscar viatura por nome, placa, tipo..." oninput="Admin.filterViaturas()" style="width:100%"></div>
       <div id="viaturasList"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:var(--spacing-lg) 0 var(--spacing-md)">
         <h3 style="font-size:1rem;font-weight:600">Tipos de Viatura</h3>
@@ -331,9 +333,10 @@
         const users = (this.data.usuarios || []).filter(u => u && u.id && u.nome);
         el.innerHTML = users.map(u => {
           const canDelete = (editorNivel === 'GB') || (editorNivel === 'SGB' && u.nivelPermissao !== 'GB');
+          const qraBadge = u.qra ? `<span style="background:var(--prontidao-dim);color:var(--prontidao-color);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;margin-left:6px">${Utils.escapeHtml(u.qra)}</span>` : '';
           return `
           <div class="admin-list-item">
-            <div><div style="font-weight:500">${Utils.escapeHtml(u.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || u.usuario || '')} - ${u.perfil || 'operador'} - ${u.nivelPermissao || 'POSTO'}</div></div>
+            <div><div style="font-weight:500">${Utils.escapeHtml(u.nome)}${qraBadge}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.cpf || u.reCpf || '')} — ${u.perfil || 'operador'} — ${u.nivelPermissao || 'POSTO'}${u.mustChangePassword === true || u.mustChangePassword === 'true' ? ' — <span style="color:var(--accent-yellow,#ffc107)">troca pendente</span>' : ''}</div></div>
             <div class="admin-actions">
               <button class="btn btn-secondary btn-sm" onclick="Admin.editUsuario('${u.id}')">Editar</button>
               ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('usuarios','${u.id}','${Utils.escapeHtml(u.nome)}')">Excluir</button>` : ''}
@@ -342,11 +345,16 @@
         }).join('') || '<div class="empty-state"><p>Nenhum usuário cadastrado</p></div>';
       },
 
-      renderMilitares() {
+      renderMilitares(filter) {
         const el = document.getElementById('militaresList');
-        el.innerHTML = Utils.sortByName(this.data.militares).map(m => `
+        let items = Utils.sortByName(this.data.militares);
+        if (filter) {
+          const q = filter.toLowerCase();
+          items = items.filter(m => (m.nome || '').toLowerCase().includes(q) || (m.reCpf || '').toLowerCase().includes(q) || (m.posto || '').toLowerCase().includes(q) || (m.funcao || '').toLowerCase().includes(q));
+        }
+        el.innerHTML = items.map(m => `
           <div class="admin-list-item">
-            <div><div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.posto || '')}</div></div>
+            <div><div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.reCpf || '')} — ${Utils.escapeHtml(m.posto || '')}${m.funcao ? ' — ' + Utils.escapeHtml(m.funcao) : ''}</div></div>
             <div class="admin-actions">
               <button class="btn btn-secondary btn-sm" onclick="Admin.editMilitar('${m.id}')">Editar</button>
               <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('militares','${m.id}','${Utils.escapeHtml(m.nome)}')">Excluir</button>
@@ -355,9 +363,19 @@
         `).join('') || '<div class="empty-state"><p>Nenhum militar cadastrado</p></div>';
       },
 
-      renderViaturas() {
+      filterMilitares() {
+        const q = (document.getElementById('searchMilitares')?.value || '').trim();
+        this.renderMilitares(q);
+      },
+
+      renderViaturas(filter) {
         const el = document.getElementById('viaturasList');
-        el.innerHTML = this.data.viaturas.map(v => {
+        let items = this.data.viaturas;
+        if (filter) {
+          const q = filter.toLowerCase();
+          items = items.filter(v => (v.nome || '').toLowerCase().includes(q) || (v.placa || '').toLowerCase().includes(q) || (v.tipo || '').toLowerCase().includes(q));
+        }
+        el.innerHTML = items.map(v => {
           const tc = API.getTipoCor(v.tipo);
           return `
           <div class="admin-list-item">
@@ -372,6 +390,11 @@
           </div>
         `;
         }).join('') || '<div class="empty-state"><p>Nenhuma viatura cadastrada</p></div>';
+      },
+
+      filterViaturas() {
+        const q = (document.getElementById('searchViaturas')?.value || '').trim();
+        this.renderViaturas(q);
       },
 
       renderTiposViaturas() {
@@ -651,7 +674,12 @@
         const forms = {
           usuario: `<div class="admin-form">
             <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
-            <div class="input-group"><label class="input-label">RE / CPF</label><input class="input" id="formReCpf" placeholder="RE ou CPF (sem dígito verificador)" value="${isEdit ? Utils.escapeHtml(data.reCpf || data.usuario || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">QRA</label><input class="input" id="formQRA" placeholder="Qualificação de Registro de Atividade" value="${isEdit ? Utils.escapeHtml(data.qra || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">Nome de Usuário</label><input class="input" id="formNomeUsuario" placeholder="Nome de exibição" value="${isEdit ? Utils.escapeHtml(data.nomeUsuario || '') : ''}"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="input-group"><label class="input-label">CPF (login)</label><input class="input" id="formCPF" placeholder="000.000.000-00" value="${isEdit ? Utils.escapeHtml(data.cpf || data.reCpf || '') : ''}"></div>
+              <div class="input-group"><label class="input-label">RE</label><input class="input" id="formRE" placeholder="Registro Estatístico" value="${isEdit ? Utils.escapeHtml(data.re || '') : ''}"></div>
+            </div>
             <div class="input-group"><label class="input-label">Senha</label><input class="input" type="password" id="formSenha" placeholder="${isEdit ? 'Deixe vazio para manter' : ''}"></div>
             ${isEdit ? '<div style="margin-bottom:12px"><button class="btn btn-danger btn-sm" onclick="Admin.redefinirSenhaUsuario(\'' + data.id + '\')" style="font-size:0.8rem">Redefinir Senha (123456 + obrigatória troca)</button></div>' : ''}
             <div class="input-group"><label class="input-label">Perfil</label><select class="input select" id="formPerfil">${selectOpts(PERFIS, isEdit ? data.perfil : 'operador')}</select></div>
@@ -659,12 +687,13 @@
             <div class="input-group"><label class="input-label">Posto Padrão</label><select class="input select" id="formPostoDefault"><option value="">Nenhum</option></select></div>
             <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Telefone</label><input class="input" id="formTelefone" value="${isEdit ? Utils.escapeHtml(data.telefone || '') : ''}"></div>
+            ${isEdit ? '<div class="input-group" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="formMustChangePassword" ' + (data.mustChangePassword === true || data.mustChangePassword === 'true' ? 'checked' : '') + '><label for="formMustChangePassword" style="font-size:0.85rem;cursor:pointer">Forçar troca de senha no próximo login</label></div>' : ''}
             <button class="btn btn-primary btn-block" onclick="Admin.saveUsuario()">${isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
           </div>`,
           militar: `<div class="admin-form">
             <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
             <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPosto">${selectOpts(POSTOS_MILITAR, isEdit ? data.posto : '')}</select></div>
-            <div class="input-group"><label class="input-label">RE / CPF</label><input class="input" id="formReCpf" value="${isEdit ? Utils.escapeHtml(data.reCpf || '') : ''}"></div>
+            <div class="input-group"><label class="input-label">RE</label><input class="input" id="formReCpf" placeholder="Registro Estatístico" value="${isEdit ? Utils.escapeHtml(data.reCpf || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Função</label><input class="input" id="formFuncao" value="${isEdit ? Utils.escapeHtml(data.funcao || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Especialidade</label><input class="input" id="formEspecialidade" value="${isEdit ? Utils.escapeHtml(data.especialidade || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
@@ -814,7 +843,10 @@
       async saveUsuario() {
         const dados = {
           nome: document.getElementById('formNome').value,
-          reCpf: document.getElementById('formReCpf').value,
+          qra: document.getElementById('formQRA').value,
+          nomeUsuario: document.getElementById('formNomeUsuario').value,
+          cpf: document.getElementById('formCPF').value,
+          re: document.getElementById('formRE').value,
           perfil: document.getElementById('formPerfil').value,
           nivelPermissao: document.getElementById('formNivelPermissao').value,
           postoDefaultId: document.getElementById('formPostoDefault').value,
@@ -824,7 +856,15 @@
         };
         const senha = document.getElementById('formSenha').value;
         if (senha) dados.senha = senha;
-        if (!this._editingId && !senha) { Utils.showToast('Senha é obrigatória', 'warning'); return; }
+        if (!this._editingId) {
+          if (!senha) { Utils.showToast('Senha é obrigatória', 'warning'); return; }
+          if (!dados.cpf) { Utils.showToast('CPF é obrigatório', 'warning'); return; }
+        }
+
+        if (this._editingId) {
+          const mcp = document.getElementById('formMustChangePassword');
+          if (mcp) dados.mustChangePassword = mcp.checked;
+        }
 
         try {
           if (this._editingId) {
@@ -832,8 +872,9 @@
             Utils.showToast('Usuário atualizado', 'success');
           } else {
             dados.senha = senha;
+            dados.mustChangePassword = true;
             await API.create('usuarios', dados);
-            Utils.showToast('Usuário criado', 'success');
+            Utils.showToast('Usuário criado — senha padrão deve ser trocada no primeiro login', 'success');
           }
           this.closeModal(); await this.loadAll();
         } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
@@ -1207,7 +1248,7 @@
                   <span style="width:10px;height:10px;border-radius:50%;background:var(--accent-green);flex-shrink:0"></span>
                   <div>
                     <div style="font-weight:600">${Utils.escapeHtml(u.nome)}</div>
-                    <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.cpf || u.re || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
                   </div>
                 </div>
                 <span class="badge badge-green">Online</span>
@@ -1224,7 +1265,7 @@
                     <span style="width:10px;height:10px;border-radius:50%;background:var(--text-muted);flex-shrink:0"></span>
                     <div>
                       <div style="font-weight:500">${Utils.escapeHtml(u.nome)}</div>
-                      <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.reCpf || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
+                      <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.cpf || u.re || '')} — ${u.perfil || ''} — há ${u.minutosAtras} min</div>
                     </div>
                   </div>
                   <span class="badge badge-info">Recente</span>

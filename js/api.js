@@ -134,19 +134,33 @@ const API = {
     }
   },
 
-  async _gasFetch(payload, _retrying) {
-    const response = await fetch(this.BASE_URL, {
+  async _gasFetch(payload, _retrying, _echoUrl) {
+    const url = _echoUrl || this.BASE_URL;
+    const response = await fetch(url, {
       method: 'POST',
       mode: 'cors',
       redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload)
     });
+
+    if (response.status === 405) {
+      if (!_retrying) {
+        console.warn('[SGPO] POST retornou 405 (Method Not Allowed). Tentando extrair echo URL...');
+        const histUrl = response.url || url;
+        if (histUrl && histUrl.includes('echo') && histUrl !== this.BASE_URL) {
+          await new Promise(r => setTimeout(r, 500));
+          return this._gasFetch(payload, true, histUrl);
+        }
+      }
+      throw new Error('GAS Web App retornou 405. Redeploy o Web App: Apps Script > Implantar > Nova implantacao > "Executar como: Eu" > "Quem pode acessar: Qualquer pessoa"');
+    }
+
     const text = await response.text();
     let result;
     try { result = JSON.parse(text); } catch (e) {
-      console.error('[SGPO] Resposta não-JSON recebida do GAS:', text.substring(0, 200));
-      throw new Error('Resposta inválida do servidor (HTML em vez de JSON). Verifique o deploy do GAS Web App.');
+      console.error('[SGPO] Resposta nao-JSON recebida do GAS:', text.substring(0, 300));
+      throw new Error('Resposta invalida do servidor (HTML em vez de JSON). Verifique o deploy do GAS Web App.');
     }
 
     if (result.error) throw new Error(result.error);
@@ -154,12 +168,12 @@ const API = {
     if (result.status === 'SGPO API Online' && !result.success && !_retrying) {
       console.warn('[SGPO] GAS retornou doGet em vez de doPost (redirect). Retry em 1s...');
       await new Promise(r => setTimeout(r, 1000));
-      return this._gasFetch(payload, true);
+      return this._gasFetch(payload, true, _echoUrl);
     }
 
     if (result.status === 'SGPO API Online' && !result.success && _retrying) {
       console.error('[SGPO] GAS Web App em modo redirect. Payload:', payload.action);
-      throw new Error('GAS Web App retornou status em vez de dados. Redeploy o Web App: Apps Script → Implantar → Nova implantação → "Executar como: Eu" → "Quem pode acessar: Qualquer pessoa"');
+      throw new Error('GAS Web App retornou status em vez de dados. Redeploy o Web App: Apps Script > Implantar > Nova implantacao > "Executar como: Eu" > "Quem pode acessar: Qualquer pessoa"');
     }
 
     return result;
@@ -235,7 +249,8 @@ const API = {
   getTipoCor(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.cor : '#9e9e9e'; },
   getTipoNome(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.nome : sigla; },
   async registrarLog(acao, detalhes, modulo) { return this.request('registrarLog', { acao, detalhes, modulo }); },
-  async diagnosticar() { return this.request('diagnosticar', {}); }
+  async diagnosticar() { return this.request('diagnosticar', {}); },
+  async repararAbas() { return this.request('repararAbas', {}); }
 };
 
 window.SGPOdiagnosticar = async function() {
@@ -386,9 +401,9 @@ const DemoData = {
         { id: 'n-003', mensagem: 'Atividade "Passagem de Sentinela" concluída', tipo: 'info', horario: '07:50', lida: false },
       ],
       usuarios: [
-        { id: 'u-001', nome: 'Administrador', reCpf: '0000000', senha: 'admin', perfil: 'admin', nivelPermissao: 'GB', postoDefaultId: '' },
-        { id: 'u-002', nome: 'Comandante', reCpf: '1111111', senha: '123', perfil: 'comandante', nivelPermissao: 'SGB', postoDefaultId: 'ps-002' },
-        { id: 'u-003', nome: 'Operador', reCpf: '2222222', senha: '123', perfil: 'operador', nivelPermissao: 'POSTO', postoDefaultId: 'ps-003' },
+        { id: 'u-001', nome: 'Administrador', qra: '', nomeUsuario: 'admin', cpf: '00000000000', re: '', senha: 'admin', perfil: 'admin', nivelPermissao: 'GB', postoDefaultId: '', mustChangePassword: false },
+        { id: 'u-002', nome: 'Comandante', qra: '', nomeUsuario: 'comandante', cpf: '11111111111', re: '', senha: '123', perfil: 'comandante', nivelPermissao: 'SGB', postoDefaultId: 'ps-002', mustChangePassword: false },
+        { id: 'u-003', nome: 'Operador', qra: '', nomeUsuario: 'operador', cpf: '22222222222', re: '', senha: '123', perfil: 'operador', nivelPermissao: 'POSTO', postoDefaultId: 'ps-003', mustChangePassword: false },
       ],
       postosServico: [
         { id: 'ps-001', nome: '1º GB PMESP', tipo: 'GB', postoPaiId: '', responsavelId: '', ordem: 1 },
@@ -550,18 +565,18 @@ const DemoData = {
         if (data.usuario === 'cavalieri' && data.senha === 'tricolor') {
           const allPostos = s.postosServico || [];
           const adminPerms = (s.permissoesTela || []).filter(p => p.perfil === 'admin');
-          return { success: true, user: { id: '_superuser_', nome: 'Super Usuário', usuario: 'cavalieri', perfil: 'superadmin', nivelPermissao: 'GB', postos: allPostos, permissoesTela: adminPerms.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })) } };
+          return { success: true, user: { id: '_superuser_', nome: 'Super Usuário', qra: '', nomeUsuario: 'cavalieri', cpf: '00000000000', re: '', usuario: 'cavalieri', perfil: 'superadmin', nivelPermissao: 'GB', postos: allPostos, permissoesTela: adminPerms.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })), mustChangePassword: false } };
         }
-        const user = s.usuarios.find(u => (u.reCpf === data.usuario || u.usuario === data.usuario) && u.senha === data.senha);
+        const user = s.usuarios.find(u => (u.cpf === data.usuario || u.reCpf === data.usuario) && u.senha === data.senha);
         if (user) {
           const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === user.id).map(up => {
             const posto = (s.postosServico || []).find(p => p.id === up.postoId);
             return { id: up.postoId, nome: posto?.nome || '', tipo: posto?.tipo || 'POSTO', papel: up.papel || 'operador' };
           });
           const userPerms = (s.permissoesTela || []).filter(p => p.perfil === user.perfil).map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') }));
-          return { success: true, user: { id: user.id, nome: user.nome, usuario: user.reCpf || user.usuario, perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postos: userPostos, permissoesTela: userPerms } };
+          return { success: true, user: { id: user.id, nome: user.nome, qra: user.qra || '', nomeUsuario: user.nomeUsuario || '', cpf: user.cpf || '', re: user.re || '', usuario: user.cpf || user.reCpf || '', perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postos: userPostos, permissoesTela: userPerms, mustChangePassword: user.mustChangePassword === true } };
         }
-        return { success: false, error: 'RE/CPF ou senha inválidos' };
+        return { success: false, error: 'CPF ou senha inválidos' };
       }
 
       case 'getServicoAtual': {

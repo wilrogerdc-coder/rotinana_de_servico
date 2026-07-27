@@ -13,7 +13,89 @@ const Dashboard = {
     if (!Auth.requireAuth()) return;
     NAV.init('dashboard');
     this._naturezas = await API.getNaturezas() || [];
+    this._initDragAndDrop();
     await this.loadServico();
+  },
+
+  _DRAG_KEY: 'sgpo_dashboard_block_order',
+
+  _initDragAndDrop() {
+    const grid = document.querySelector('.dashboard-grid');
+    if (!grid) return;
+    this._restoreBlockOrder();
+    const cards = grid.querySelectorAll('.dash-card[data-block]');
+    cards.forEach(card => {
+      card.addEventListener('dragstart', (e) => {
+        if (!card._handleActive) { e.preventDefault(); return; }
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', card.dataset.block);
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        card._handleActive = false;
+        card.setAttribute('draggable', 'false');
+        grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const dragging = grid.querySelector('.dragging');
+        if (dragging && dragging !== card) {
+          card.classList.add('drag-over');
+        }
+      });
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drag-over');
+      });
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        card.classList.remove('drag-over');
+        const dragging = grid.querySelector('.dragging');
+        if (!dragging || dragging === card) return;
+        const allCards = [...grid.children];
+        const dragIdx = allCards.indexOf(dragging);
+        const dropIdx = allCards.indexOf(card);
+        if (dragIdx < dropIdx) {
+          grid.insertBefore(dragging, card.nextSibling);
+        } else {
+          grid.insertBefore(dragging, card);
+        }
+        this._saveBlockOrder();
+      });
+    });
+
+    grid.querySelectorAll('.drag-handle').forEach(handle => {
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const card = handle.closest('[data-block]');
+        if (card) {
+          card._handleActive = true;
+          card.setAttribute('draggable', 'true');
+        }
+      });
+    });
+  },
+
+  _saveBlockOrder() {
+    const grid = document.querySelector('.dashboard-grid');
+    if (!grid) return;
+    const order = [...grid.children].map(el => el.dataset.block || el.className.split(' ')[0]);
+    try { localStorage.setItem(this._DRAG_KEY, JSON.stringify(order)); } catch(e) {}
+  },
+
+  _restoreBlockOrder() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(this._DRAG_KEY));
+      if (!Array.isArray(saved) || saved.length < 3) return;
+      const grid = document.querySelector('.dashboard-grid');
+      if (!grid) return;
+      const children = [...grid.children];
+      saved.forEach(key => {
+        const el = children.find(c => (c.dataset.block || c.className.split(' ')[0]) === key);
+        if (el) grid.appendChild(el);
+      });
+    } catch(e) {}
   },
 
   _naturezaOptions(selected) {

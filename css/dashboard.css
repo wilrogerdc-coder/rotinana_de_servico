@@ -2,7 +2,42 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   grid-template-rows: auto auto auto;
+  grid-auto-flow: dense;
   gap: var(--spacing-md);
+}
+
+.drag-handle {
+  cursor: grab;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  user-select: none;
+  transition: color 0.15s;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.drag-handle:hover {
+  color: var(--prontidao-color);
+  background: var(--prontidao-dim);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.dash-card[draggable="true"] {
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.dash-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.dash-card.drag-over {
+  border-color: var(--prontidao-color);
+  box-shadow: 0 0 0 2px var(--prontidao-dim);
 }
 
 .dash-countdown {
@@ -155,19 +190,16 @@
 }
 
 .dash-timeline {
-  grid-column: 1 / 2;
   max-height: 300px;
   overflow-y: auto;
 }
 
 .dash-oficiais {
-  grid-column: 2 / 3;
   max-height: 300px;
   overflow-y: auto;
 }
 
 .dash-notificacoes {
-  grid-column: 3 / 4;
   max-height: 300px;
   overflow-y: auto;
 }
@@ -236,16 +268,10 @@
     grid-column: 1 / -1;
   }
 
-  .dash-timeline {
-    grid-column: 1 / -1;
-  }
-
-  .dash-oficiais {
-    grid-column: 1 / 2;
-  }
-
+  .dash-timeline,
+  .dash-oficiais,
   .dash-notificacoes {
-    grid-column: 2 / 3;
+    grid-column: span 1;
   }
 
   .dash-atividades {
@@ -307,6 +333,7 @@
   .dash-timeline,
   .dash-oficiais,
   .dash-notificacoes {
+    grid-column: 1 / -1;
     max-height: 250px;
   }
 
