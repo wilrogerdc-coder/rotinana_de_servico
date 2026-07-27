@@ -2409,9 +2409,22 @@ function getServicoAtual(data) {
 
   let servicos;
   if (usuarioId) {
-    const userPostos = findRows('UsuariosPostos', r => r.usuarioId === usuarioId && r.Status === 'ativo');
-    const userPostoIds = userPostos.map(up => up.postoId);
-    servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado' && userPostoIds.includes(r.postoId));
+    const userRow = findRowById('Usuarios', usuarioId);
+    const userNivel = userRow ? userRow.data[userRow.headers.indexOf('nivelPermissao')] : '';
+    const userProfile = userRow ? userRow.data[userRow.headers.indexOf('perfil')] : '';
+    const isAdmin = userNivel === 'GB' || userProfile === 'admin' || userProfile === 'superadmin' || usuarioId === '_superuser_';
+
+    if (isAdmin) {
+      servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+    } else {
+      const userPostos = findRows('UsuariosPostos', r => r.usuarioId === usuarioId && r.Status === 'ativo');
+      const userPostoIds = userPostos.map(up => up.postoId);
+      if (userPostoIds.length > 0) {
+        servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado' && userPostoIds.includes(r.postoId));
+      } else {
+        servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+      }
+    }
   } else {
     servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
   }

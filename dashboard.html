@@ -35,7 +35,7 @@
           <div class="dash-info-bar">
             <div class="dash-info-item" style="cursor:pointer" onclick="Dashboard.showEquipePanel()" title="Gerenciar equipe"><span>Equipe:</span> <span class="value" id="equipeCount">0</span></div>
             <div class="dash-info-item"><span>Oficiais:</span> <span class="value" id="oficiaisCount">0</span></div>
-            <div class="dash-info-item"><span>Atividades:</span> <span class="value" id="atividadesCount">0</span></div>
+            <div class="dash-info-item" style="cursor:pointer" onclick="Dashboard.showAtividadesModal()" title="Ver atividades iniciadas"><span>Atividades:</span> <span class="value" id="atividadesCount">0</span></div>
             <div class="dash-info-item"><span>Concluídas:</span> <span class="value" id="concluidasCount">0</span></div>
           </div>
         </div>
@@ -178,6 +178,19 @@
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary" onclick="Dashboard.closeEditarServico()">Cancelar</button>
         <button class="btn btn-primary" onclick="Dashboard.salvarEditarServico()">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="atividadesIniciadasModal" style="display:none">
+    <div class="modal atividades-modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="atividadesModalTitle">Atividades Iniciadas</h3>
+        <button class="btn btn-ghost btn-icon" onclick="Dashboard.closeAtividadesModal()">✕</button>
+      </div>
+      <div class="atividades-modal-body" id="atividadesModalBody">
+        <div class="atividades-list-panel" id="atividadesListPanel"></div>
+        <div class="atividades-detail-panel" id="atividadesDetailPanel" style="display:none"></div>
       </div>
     </div>
   </div>

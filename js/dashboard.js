@@ -154,7 +154,7 @@ const Dashboard = {
 
       this.countdownInterval = setInterval(() => this.updateCountdown(), 1000);
 
-      Sync.on('rotina_updated', (r) => { this.rotina = r; this.updateRotinaList(); this.updateAtividadeAtual(); this.updateTimeline(); });
+      Sync.on('rotina_updated', (r) => { this.rotina = r; this.updateRotinaList(); this.updateAtividadeAtual(); this.updateTimeline(); this._refreshAtividadesModalIfOpen(); });
       Sync.on('telegrafia_updated', (t, vazioDesde) => { this.telegrafia = t; this.telegrafiaVazioDesde = vazioDesde || null; this.updateTelegrafia(t); });
       Sync.on('telegrafiavazio_updated', (v) => { this.telegrafiaVazioDesde = v; if (!this.telegrafia?.operador) this.updateTelegrafia(null); });
       Sync.on('oficiais_updated', (o) => this.updateOficiais(o));
@@ -165,6 +165,11 @@ const Dashboard = {
       const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
       const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
       Sync.start(this.servico.id, syncInterval);
+
+      if (this.rotina.length > 0) {
+        setTimeout(() => this.showAtividadesModal(), 600);
+      }
+
       try {
         const bc = new BroadcastChannel('sgpo');
         bc.onmessage = (e) => { if (e.data?.type === 'service_started') window.location.reload(); };
@@ -1215,6 +1220,175 @@ const Dashboard = {
 
   closeModal() {
     document.getElementById('modalOverlay').style.display = 'none';
+  },
+
+  _getAtividadesIniciadas() {
+    const now = new Date();
+    const ct = now.getHours() * 60 + now.getMinutes();
+    const aktiv = [];
+
+    const emAndamento = this.rotina.filter(a => a.status === 'em_andamento');
+    const naoIniciadas = this.rotina.filter(a => a.status === 'nao_iniciada');
+    const pendentesAtrasadas = naoIniciadas.filter(a => {
+      if (!a.horario) return false;
+      const [h, m] = a.horario.split(':').map(Number);
+      return (h * 60 + m) <= ct;
+    });
+    const pendentesFuturas = naoIniciadas.filter(a => {
+      if (!a.horario) return true;
+      const [h, m] = a.horario.split(':').map(Number);
+      return (h * 60 + m) > ct;
+    });
+
+    return [...emAndamento, ...pendentesAtrasadas, ...pendentesFuturas];
+  },
+
+  showAtividadesModal() {
+    const modal = document.getElementById('atividadesIniciadasModal');
+    const listPanel = document.getElementById('atividadesListPanel');
+    const detailPanel = document.getElementById('atividadesDetailPanel');
+    const title = document.getElementById('atividadesModalTitle');
+
+    title.textContent = 'Atividades do Dia';
+    detailPanel.style.display = 'none';
+    listPanel.style.display = '';
+
+    const atividades = this._getAtividadesIniciadas();
+    this._renderAtividadesList(atividades);
+    modal.style.display = 'flex';
+
+    if (atividades.length > 0) {
+      this._autoShowAtividadeModal();
+    }
+  },
+
+  _autoShowAtividadeModal() {
+    const emAndamento = this.rotina.filter(a => a.status === 'em_andamento');
+    if (emAndamento.length > 0) {
+      const now = new Date();
+      const ct = now.getHours() * 60 + now.getMinutes();
+      let closest = emAndamento[0];
+      let closestDiff = Infinity;
+      emAndamento.forEach(a => {
+        if (!a.horario) return;
+        const [h, m] = a.horario.split(':').map(Number);
+        const diff = Math.abs((h * 60 + m) - ct);
+        if (diff < closestDiff) { closestDiff = diff; closest = a; }
+      });
+      setTimeout(() => this.showAtividadeDetail(closest.id), 100);
+    }
+  },
+
+  _renderAtividadesList(atividades) {
+    const listPanel = document.getElementById('atividadesListPanel');
+
+    if (atividades.length === 0) {
+      listPanel.innerHTML = '<div class="empty-state" style="padding:32px"><p>Nenhuma atividade registrada para este turno</p></div>';
+      listPanel.classList.add('empty');
+      return;
+    }
+
+    listPanel.classList.remove('empty');
+    const badge = (s) => {
+      const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Prejudicada</span>' };
+      return m[s] || m.nao_iniciada;
+    };
+
+    const sorted = [...atividades].sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+    listPanel.innerHTML = sorted.map(a => `
+      <div class="ativ-item" data-id="${a.id}" onclick="Dashboard.showAtividadeDetail('${a.id}')">
+        <div class="ativ-item-time">${a.horario || '--:--'}</div>
+        <div class="ativ-item-info">
+          <div class="ativ-item-name">${Utils.escapeHtml(a.nome)}</div>
+          <div class="ativ-item-resp">${Utils.escapeHtml(a.responsavel || 'Sem responsável')}</div>
+        </div>
+        <div class="ativ-item-badge">${badge(a.status)}</div>
+      </div>
+    `).join('');
+  },
+
+  showAtividadeDetail(id) {
+    const atividade = this.rotina.find(a => a.id === id);
+    if (!atividade) return;
+
+    const listPanel = document.getElementById('atividadesListPanel');
+    const detailPanel = document.getElementById('atividadesDetailPanel');
+    const title = document.getElementById('atividadesModalTitle');
+
+    title.textContent = atividade.nome;
+    listPanel.style.display = 'none';
+    detailPanel.style.display = '';
+
+    const badgeMap = { concluida: ['Concluída', 'badge-green'], em_andamento: ['Em Andamento', 'badge-yellow'], nao_iniciada: ['Pendente', 'badge-info'], cancelada: ['Cancelada', 'badge-danger'], nao_realizada: ['Prejudicada', 'badge-warning'] };
+    const b = badgeMap[atividade.status] || badgeMap.nao_iniciada;
+
+    detailPanel.innerHTML = `
+      <button class="ativ-detail-back" onclick="Dashboard.backToAtividadesList()">← Voltar à lista</button>
+      <div class="ativ-detail-header">
+        <div class="ativ-detail-title">${Utils.escapeHtml(atividade.nome)}</div>
+        <span class="badge ${b[1]}">${b[0]}</span>
+      </div>
+      <div class="ativ-detail-grid">
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Horário</span>
+          <span class="ativ-detail-value">${atividade.horario || '--:--'}</span>
+        </div>
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Programa</span>
+          <span class="ativ-detail-value">${Utils.escapeHtml(atividade.programa || '-')}</span>
+        </div>
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Responsável</span>
+          <span class="ativ-detail-value">${Utils.escapeHtml(atividade.responsavel || '-')}</span>
+        </div>
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Concluído Por</span>
+          <span class="ativ-detail-value">${Utils.escapeHtml(atividade.concluidoPor || '-')}</span>
+        </div>
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Hora Conclusão</span>
+          <span class="ativ-detail-value">${atividade.horaConclusao || '-'}</span>
+        </div>
+        <div class="ativ-detail-field">
+          <span class="ativ-detail-label">Origem</span>
+          <span class="ativ-detail-value">${Utils.escapeHtml(atividade.origem || 'padrao')}</span>
+        </div>
+        ${atividade.observacoes ? `<div class="ativ-detail-field ativ-detail-full"><span class="ativ-detail-label">Observações</span><div class="ativ-detail-obs">${Utils.escapeHtml(atividade.observacoes)}</div></div>` : ''}
+      </div>
+    `;
+
+    document.querySelectorAll('.ativ-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.id === id);
+    });
+  },
+
+  backToAtividadesList() {
+    const listPanel = document.getElementById('atividadesListPanel');
+    const detailPanel = document.getElementById('atividadesDetailPanel');
+    const title = document.getElementById('atividadesModalTitle');
+
+    title.textContent = 'Atividades do Dia';
+    detailPanel.style.display = 'none';
+    listPanel.style.display = '';
+  },
+
+  closeAtividadesModal() {
+    document.getElementById('atividadesIniciadasModal').style.display = 'none';
+  },
+
+  _refreshAtividadesModalIfOpen() {
+    const modal = document.getElementById('atividadesIniciadasModal');
+    if (!modal || modal.style.display === 'none') return;
+    const detailPanel = document.getElementById('atividadesDetailPanel');
+    const listPanel = document.getElementById('atividadesListPanel');
+    if (detailPanel.style.display !== 'none') {
+      const id = detailPanel.querySelector('[data-id]')?.dataset?.id;
+      const atividade = this.rotina.find(a => a.id === id);
+      if (atividade) this.showAtividadeDetail(id);
+      else this.backToAtividadesList();
+    } else {
+      this._renderAtividadesList(this._getAtividadesIniciadas());
+    }
   }
 };
 
