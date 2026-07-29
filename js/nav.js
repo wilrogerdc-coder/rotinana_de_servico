@@ -20,6 +20,7 @@ const NAV = {
     { id: 'postos', title: 'Postos', icon: '<path d="M3 21h18M3 7v1a3 3 0 006 0V7m0 1a3 3 0 006 0V7m0 1a3 3 0 006 0V7H3l2-4h14l2 4M5 21V10.87M19 21V10.87"/>' },
     { id: 'relatorios', title: 'Relatórios', icon: '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
     { id: 'historico', title: 'Histórico', icon: '<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>' },
+    { id: 'servicos', title: 'Serviços', icon: '<path d="M2 20h20M4 20V8l8-6 8 6v12M9 20v-6h6v6"/>' },
   ],
 
   bottomPages: [
@@ -102,6 +103,7 @@ const NAV = {
           <span id="serviceInfoPosto" style="font-weight:600;color:var(--text-primary)"></span>
           <span style="margin:0 4px;opacity:0.4">|</span>
           <span id="serviceInfoComandante"></span>
+          <span id="serviceSwitchedBadge" style="display:none;margin-left:6px;font-size:0.7rem;background:var(--accent-primary);color:#fff;padding:1px 6px;border-radius:8px;font-weight:600;cursor:pointer" onclick="NAV.clearActiveServico()" title="Clique para voltar ao seu serviço">✓ Serviço selecionado</span>
         </div>
       </div>
       <div class="topbar-right">
@@ -272,12 +274,26 @@ const NAV = {
     bar.style.display = '';
     const postoEl = document.getElementById('serviceInfoPosto');
     const cmdEl = document.getElementById('serviceInfoComandante');
+    const badge = document.getElementById('serviceSwitchedBadge');
     if (postoEl) {
       const posto = (postos || []).find(p => p.id === servico.postoId);
       postoEl.textContent = posto ? posto.nome : (servico.postoId || '');
     }
     if (cmdEl) {
       cmdEl.textContent = servico.comandanteNome ? 'Cmt: ' + servico.comandanteNome : '';
+    }
+    if (badge) {
+      const activeId = localStorage.getItem('sgpo_active_servico_id');
+      badge.style.display = activeId ? '' : 'none';
+    }
+  },
+
+  clearActiveServico() {
+    localStorage.removeItem('sgpo_active_servico_id');
+    if (typeof Dashboard !== 'undefined' && Dashboard.loadServico) {
+      Dashboard.loadServico();
+    } else {
+      window.location.reload();
     }
   },
 

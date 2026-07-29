@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Gerenciador de Serviços</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/servicos.css">
+</head>
+<body>
+  <main class="main-content" id="mainContent">
+    <div class="servicos-container">
+      <div class="servicos-header">
+        <div>
+          <h2>Gerenciador de Serviços</h2>
+          <p class="servicos-subtitle" id="servicosSubtitle">Serviços ativos de hoje</p>
+        </div>
+        <div class="servicos-header-actions">
+          <button class="btn btn-primary btn-sm" id="btnNovoServico" onclick="Servicos.showNovoServico()">+ Novo Serviço</button>
+        </div>
+      </div>
+
+      <div class="servicos-filters">
+        <div class="servicos-search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="servicosSearch" placeholder="Buscar por posto, comandante..." oninput="Servicos.filterList()">
+        </div>
+        <div class="servicos-filter-btns">
+          <button class="filter-btn active" data-filter="ativos" onclick="Servicos.setFilter('ativos', event)">Ativos</button>
+          <button class="filter-btn" data-filter="todos" onclick="Servicos.setFilter('todos', event)">Todos</button>
+        </div>
+      </div>
+
+      <div class="servicos-stats" id="servicosStats"></div>
+
+      <div class="servicos-list" id="servicosList">
+        <div class="empty-state"><p>Carregando serviços...</p></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="servicoDetailModal" style="display:none">
+      <div class="modal servico-detail-modal">
+        <div class="modal-header">
+          <h3 class="modal-title" id="detailModalTitle">Detalhes do Serviço</h3>
+          <button class="btn btn-ghost btn-icon" onclick="Servicos.closeDetail()">✕</button>
+        </div>
+        <div class="servico-detail-body" id="servicoDetailBody"></div>
+        <div class="servico-detail-footer" id="servicoDetailFooter"></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="confirmSwitchModal" style="display:none">
+      <div class="modal" style="max-width:420px;text-align:center">
+        <h3 style="margin-bottom:12px">Trocar de Serviço</h3>
+        <p style="color:var(--text-secondary);margin-bottom:20px;font-size:0.9rem" id="confirmSwitchText">Deseja entrar neste serviço?</p>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button class="btn btn-ghost" onclick="Servicos.closeConfirmSwitch()">Cancelar</button>
+          <button class="btn btn-primary" id="confirmSwitchBtn" onclick="Servicos.confirmSwitch()">Entrar</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/servicos.js"></script>
+  <script>Servicos.init();</script>
+</body>
+</html>

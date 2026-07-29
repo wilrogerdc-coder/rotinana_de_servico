@@ -615,15 +615,27 @@
         const el = document.getElementById('formPostoDefault');
         if (!el) return;
         const postos = this.data.postos || [];
-        const nivel = document.getElementById('formNivelPermissao')?.value || 'POSTO';
+        if (postos.length === 0) {
+          el.innerHTML = '<option value="">Nenhum posto cadastrado</option>';
+          return;
+        }
         const user = this.data.allUsuarios?.find(u => u.id === Auth.userId) || {};
-        const userNivel = user.nivelPermissao || 'POSTO';
-        const userPostoIds = (this.data.postos || []).filter(p => {
-          if (userNivel === 'GB') return true;
-          if (userNivel === 'SGB') return p.postoPaiId === user.postoDefaultId || p.id === user.postoDefaultId;
-          return p.id === user.postoDefaultId;
-        }).map(p => p.id);
-        const allowed = nivel === 'GB' ? postos : postos.filter(p => userPostoIds.includes(p.id));
+        const userNivel = user.nivelPermissao || Auth.nivelPermissao || 'POSTO';
+        const userPostoDefaultId = user.postoDefaultId || Auth.postoDefaultId || '';
+
+        let allowed;
+        if (userNivel === 'GB' || Auth.userRole === 'admin' || Auth.userRole === 'superadmin' || Auth.userId === '_superuser_') {
+          allowed = postos;
+        } else {
+          const userPostoIds = postos.filter(p => {
+            if (userNivel === 'SGB') return p.postoPaiId === userPostoDefaultId || p.id === userPostoDefaultId;
+            return p.id === userPostoDefaultId;
+          }).map(p => p.id);
+          allowed = postos.filter(p => userPostoIds.includes(p.id));
+        }
+
+        if (allowed.length === 0) allowed = postos;
+
         el.innerHTML = '<option value="">Nenhum</option>' +
           allowed.map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.tipo} — ${Utils.escapeHtml(p.nome)}</option>`).join('');
       },

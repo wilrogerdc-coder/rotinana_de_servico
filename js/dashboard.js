@@ -106,6 +106,28 @@ const Dashboard = {
     try {
       const data = await API.getServicoAtual(Auth.userId);
       if (!data || !data.servico) {
+        const storedId = localStorage.getItem('sgpo_active_servico_id');
+        if (storedId) {
+          localStorage.removeItem('sgpo_active_servico_id');
+          const retry = await API.getServicoAtual(Auth.userId);
+          if (retry && retry.servico) {
+            this.servicoData = retry.servico;
+            this.rotinaItens = retry.rotina || [];
+            this.militares = retry.militares || [];
+            this.telegrafiaData = retry.telegrafia;
+            this.oficiaisData = retry.oficiais || [];
+            this.oficiaisTodos = retry.oficiaisTodos || [];
+            this.notificacoes = retry.notificacoes || [];
+            this.extrasData = retry.extras || [];
+            this.inicioServicoTime = this.servicoData.inicioServico ? new Date(this.servicoData.inicioServico) : null;
+            this._servicoActive = true;
+            this.carregarPainel();
+            this.iniciarRelogio();
+            this.atualizarFotos();
+            document.getElementById('noServiceModal').style.display = 'none';
+            return;
+          }
+        }
         document.getElementById('noServiceModal').style.display = 'flex';
         return;
       }

@@ -75,6 +75,7 @@ const Auth = {
   get isGB() { return this.nivelPermissao === 'GB'; },
   get isSGB() { return this.nivelPermissao === 'SGB'; },
   get isPOSTO() { return this.nivelPermissao === 'POSTO'; },
+  get postoDefaultId() { return this.currentUser?.postoDefaultId || ''; },
   get mustChangePassword() { return this.currentUser?.mustChangePassword === true; },
 
   requireAuth() {

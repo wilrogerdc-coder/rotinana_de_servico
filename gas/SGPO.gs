@@ -793,6 +793,47 @@ function gerarId() {
 }
 
 const Utils = {
+  today() {
+    try {
+      const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+      return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    } catch(e) {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+  },
+
+  safeStr(v) {
+    if (typeof v === 'string') return v;
+    if (v instanceof Date) {
+      return `${String(v.getHours()).padStart(2,'0')}:${String(v.getMinutes()).padStart(2,'0')}`;
+    }
+    return String(v || '');
+  },
+
+  dateStr(v) {
+    if (v instanceof Date) {
+      return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+    }
+    return String(v || '');
+  },
+
+  isToday(v) { return this.dateStr(v) === this.today(); },
+
+  normalizeDates(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Date) return this.safeStr(obj);
+    if (Array.isArray(obj)) return obj.map(v => this.normalizeDates(v));
+    if (typeof obj === 'object') {
+      const result = {};
+      for (const [k, v] of Object.entries(obj)) {
+        result[k] = this.normalizeDates(v);
+      }
+      return result;
+    }
+    return obj;
+  },
+
   formatTime(date) {
     if (!(date instanceof Date)) date = new Date(date);
     const h = String(date.getHours()).padStart(2, '0');
@@ -1478,7 +1519,7 @@ function getPostosServico() {
 
 function getUsuariosPostos(data) {
   const { usuarioId, postoId } = data || {};
-  return findRows('UsuariosPostos', r => {
+  const vinculos = findRows('UsuariosPostos', r => {
     if (r.Status !== 'ativo') return false;
     if (usuarioId && r.usuarioId !== usuarioId) return false;
     if (postoId && r.postoId !== postoId) return false;
@@ -1490,6 +1531,61 @@ function getUsuariosPostos(data) {
     papel: up.papel || 'operador',
     dataVinculo: up.dataVinculo || ''
   }));
+  const enriched = vinculos.map(v => {
+    const user = findRowById('Usuarios', v.usuarioId);
+    return {
+      ...v,
+      nome: user ? user.data[user.headers.indexOf('nome')] || '' : '',
+      posto: user ? user.data[user.headers.indexOf('posto')] || '' : '',
+      reCpf: user ? user.data[user.headers.indexOf('reCpf')] || '' : ''
+    };
+  });
+  return enriched;
+}
+
+function vincularUsuarioPosto(data) {
+  const { usuarioId, postoId, papel } = data;
+  if (!usuarioId || !postoId) return { success: false, error: 'usuarioId e postoId são obrigatórios' };
+
+  const existing = findRows('UsuariosPostos', r =>
+    r.usuarioId === usuarioId && r.postoId === postoId && r.Status === 'ativo'
+  );
+  if (existing.length > 0) return { success: true, id: existing[0].id, message: 'Vínculo já existente' };
+
+  const id = gerarId();
+  const sheet = getSheet('UsuariosPostos');
+  sheet.appendRow([id, new Date().toISOString(), usuarioId, postoId, papel || 'operador', new Date().toISOString(), true, 'ativo']);
+
+  logAuditoria('vincular_posto', '', `Usuário ${usuarioId} vinculado ao posto ${postoId} como ${papel || 'operador'}`);
+  return { success: true, id };
+}
+
+function desvincularUsuarioPosto(data) {
+  const { usuarioId, postoId } = data;
+  if (!usuarioId || !postoId) return { success: false, error: 'usuarioId e postoId são obrigatórios' };
+
+  const rows = findRows('UsuariosPostos', r =>
+    r.usuarioId === usuarioId && r.postoId === postoId && r.Status === 'ativo'
+  );
+  if (rows.length === 0) return { success: false, error: 'Vínculo não encontrado' };
+
+  const sheet = getSheet('UsuariosPostos');
+  rows.forEach(r => {
+    const row = sheet.getRange(r.row, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const statusCol = r.headers.indexOf('Status');
+    if (statusCol !== -1) sheet.getRange(r.row, statusCol + 1).setValue('inativo');
+  });
+
+  logAuditoria('desvincular_posto', '', `Usuário ${usuarioId} desvinculado do posto ${postoId}`);
+  return { success: true };
+}
+
+function autoLinkUsuariosPosto(usuarioIds, postoId, papel) {
+  if (!usuarioIds || !postoId) return;
+  usuarioIds.forEach(uid => {
+    if (!uid) return;
+    vincularUsuarioPosto({ usuarioId: uid, postoId, papel: papel || 'operador' });
+  });
 }
 
 function checkAcessoServico(data) {
@@ -1701,6 +1797,11 @@ function handleUpdateComPermissao(data) {
   });
 
   logAuditoria('update', (_authUser && _authUser.nome) || 'sistema', `Atualizou ${id} em ${sheet}`);
+
+  if ((sheet === 'usuarios' || sheet === 'Usuarios') && row.postoDefaultId) {
+    autoLinkUsuariosPosto([id], row.postoDefaultId, 'operador');
+  }
+
   return { success: true };
 }
 
@@ -1744,6 +1845,10 @@ function handleCreateComPermissao(data) {
   });
   s.appendRow(newRow);
   logAuditoria('create', (_authUser && _authUser.nome) || 'sistema', `Criou registro em ${sheet}`);
+
+  if ((sheet === 'usuarios' || sheet === 'Usuarios') && row.postoDefaultId) {
+    autoLinkUsuariosPosto([id], row.postoDefaultId, 'operador');
+  }
 
   if (sheet === 'militares' || sheet === 'Militares') {
     try {
@@ -1853,9 +1958,66 @@ function getUsuariosEditaveis(data) {
 function getServicoPorPosto(data) {
   const { postoId } = data;
   if (!postoId) return { error: 'postoId obrigatório' };
-  const today = new Date().toISOString().split('T')[0];
-  const servicos = findRows('servicos', r => r.data === today && r.Status !== 'encerrado' && r.postoId === postoId);
+  const today = Utils.today();
+  const servicos = findRows('servicos', r => Utils.isToday(r.data) && r.Status !== 'encerrado' && r.postoId === postoId);
   return servicos.length > 0 ? servicos[0] : null;
+}
+
+function getServicosAtivos(data) {
+  const { usuarioId } = data || {};
+  const today = Utils.today();
+
+  let servicos;
+  if (usuarioId) {
+    const userRow = findRowById('Usuarios', usuarioId);
+    const userNivel = userRow ? userRow.data[userRow.headers.indexOf('nivelPermissao')] : '';
+    const userProfile = userRow ? userRow.data[userRow.headers.indexOf('perfil')] : '';
+    const isAdmin = userNivel === 'GB' || userProfile === 'admin' || userProfile === 'superadmin' || usuarioId === '_superuser_';
+
+    if (isAdmin) {
+      servicos = findRows('servicos', r => Utils.isToday(r.data) && r.Status !== 'encerrado');
+    } else {
+      const userPostos = findRows('UsuariosPostos', r => r.usuarioId === usuarioId && r.Status === 'ativo');
+      const userPostoIds = userPostos.map(up => up.postoId);
+      if (userPostoIds.length > 0) {
+        servicos = findRows('servicos', r => Utils.isToday(r.data) && r.Status !== 'encerrado' && userPostoIds.includes(r.postoId));
+      } else {
+        servicos = findRows('servicos', r => Utils.isToday(r.data) && r.Status !== 'encerrado');
+      }
+    }
+  } else {
+    servicos = findRows('servicos', r => Utils.isToday(r.data) && r.Status !== 'encerrado');
+  }
+
+  const postos = findRows('PostosServico', r => r.Status === 'ativo');
+  const postosMap = {};
+  postos.forEach(p => { postosMap[p.id] = p; });
+
+  return servicos.map(s => {
+    let equipe = [];
+    try { equipe = JSON.parse(s.equipe || '[]'); } catch(e) {}
+    const posto = postosMap[s.postoId];
+    const atividades = findRows('rotina', r => r.servicoId === s.id && r.Status !== 'removido');
+    const concluidas = atividades.filter(a => a.status === 'concluida').length;
+
+    return {
+      id: s.id,
+      data: s.data,
+      horarioInicio: s.horarioInicio || '',
+      horarioFim: s.horarioFim || '',
+      prontidao: s.prontidao || 'verde',
+      comandanteId: s.comandanteId || '',
+      comandanteNome: s.comandanteNome || '',
+      postoId: s.postoId,
+      postoNome: posto ? posto.nome : '',
+      postoTipo: posto ? posto.tipo : '',
+      equipe: equipe,
+      totalAtividades: atividades.length,
+      totalConcluidas: concluidas,
+      Status: s.Status || 'ativo',
+      observacoes: s.observacoes || ''
+    };
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1945,7 +2107,7 @@ function despacharViatura(data) {
         const stCol = tFound.headers.indexOf('Status');
         if (stCol !== -1) ts.getRange(tFound.row, stCol + 1).setValue('inativo');
         const inicio = t.horario || '00:00';
-        const duracao = Utils.formatDuration(Date.now() - (new Date().setHours(parseInt(inicio.split(':')[0]), parseInt(inicio.split(':')[1]), 0, 0)));
+        const duracao = Utils.formatDuration(Date.now() - (new Date().setHours(parseInt(Utils.safeStr(t.horario || '00:00').split(':')[0]), parseInt(Utils.safeStr(t.horario || '00:00').split(':')[1]), 0, 0)));
         const histSheet = getSheet('TelegrafiaHistorico');
         histSheet.appendRow([gerarId(), new Date().toISOString(), servicoId, t.militarId, t.operador || '', t.horario || '', now, duracao.display || '-', 'ativo']);
         logAuditoria('telegrafia_eject', (_authUser && _authUser.nome) || 'sistema', `${t.operador} removido da telegrafia por ocorrência`);
@@ -1998,7 +2160,7 @@ function criarOcorrencia(data) {
   const numero = String(existentes.length + 1).padStart(3, '0');
   const now = horaOcorrencia || Utils.formatTime(new Date());
   const id = gerarId();
-  const dataRef = dataOcorrencia || new Date().toISOString().split('T')[0];
+  const dataRef = dataOcorrencia || Utils.today();
   const s = getSheet('Ocorrencias');
   s.appendRow([id, new Date().toISOString(), numero, servicoId, titulo, natureza || '', descricao || '', JSON.stringify(viaturaIds || []), JSON.stringify(efetivo || []), now, '', prontidaoCor || '', 'em_atendimento', 'ativo']);
   logAuditoria('ocorrencia', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} criada: ${titulo}${dataOcorrencia ? ' (ref: ' + dataOcorrencia + ' ' + now + ')' : ''}`);
@@ -2082,8 +2244,11 @@ function doPost(e) {
       checkAcessoServico:       () => checkAcessoServico(data),
       getPostosServico:         () => getPostosServico(data),
       getUsuariosPostos:        () => getUsuariosPostos(data),
+      vincularUsuarioPosto:     () => vincularUsuarioPosto(data),
+      desvincularUsuarioPosto:  () => desvincularUsuarioPosto(data),
       getUsuariosEditaveis:     () => getUsuariosEditaveis(data),
       getServicoPorPosto:       () => getServicoPorPosto(data),
+      getServicosAtivos:        () => getServicosAtivos(data),
       getViaturas:              () => handleRead({ ...data, sheet: 'viaturas' }),
       getServicoViaturas:       () => getServicoViaturas(data),
       iniciarServicoViatura:    () => iniciarServicoViatura(data),
@@ -2174,7 +2339,7 @@ function handleLogin(data) {
     const user = {};
     headers.forEach((h, idx) => user[h] = row[idx]);
 
-    const loginField = user.cpf || user.reCpf || user.usuario || '';
+    const loginField = user.cpf || user.re || user.nomeUsuario || '';
     const senhaOk = user.senhaHash ? Utils.compararSenhas(senha, user.senhaHash) : (user.senha === senha);
     if (loginField === usuario && senhaOk && user.ativo !== false) {
       _authUser = user;
@@ -2192,10 +2357,11 @@ function handleLogin(data) {
       const userPostos = findRows('UsuariosPostos', r => r.usuarioId === user.id && r.Status === 'ativo');
       const postosCompletos = userPostos.map(up => {
         const posto = findRowById('PostosServico', up.postoId);
+        const ph = posto ? posto.headers : [];
         return {
           id: up.postoId,
-          nome: posto ? posto.data[headers.indexOf('nome') !== -1 ? 2 : 2] : '',
-          tipo: posto ? (posto.data[3] || 'POSTO') : 'POSTO',
+          nome: posto ? posto.data[ph.indexOf('nome')] : '',
+          tipo: posto ? posto.data[ph.indexOf('tipo')] || 'POSTO' : 'POSTO',
           papel: up.papel || 'operador'
         };
       });
@@ -2404,29 +2570,50 @@ function importarAtividadesPadrao(data) {
    ═══════════════════════════════════════════════════════════════════ */
 
 function getServicoAtual(data) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = Utils.today();
   const usuarioId = data ? data.usuarioId : null;
+  const servicoIdParam = data ? data.servicoId : null;
 
   let servicos;
-  if (usuarioId) {
+  if (servicoIdParam) {
+    servicos = findRows('servicos', r => r.id === servicoIdParam && r.Status !== 'encerrado');
+    if (servicos.length > 0 && usuarioId) {
+      const userRow = findRowById('Usuarios', usuarioId);
+      const userNivel = userRow ? userRow.data[userRow.headers.indexOf('nivelPermissao')] : '';
+      const userProfile = userRow ? userRow.data[userRow.headers.indexOf('perfil')] : '';
+      const isAdmin = userNivel === 'GB' || userProfile === 'admin' || userProfile === 'superadmin' || usuarioId === '_superuser_';
+      if (!isAdmin) {
+        const s = servicos[0];
+        let equipe = [];
+        try { equipe = JSON.parse(s.equipe || '[]'); } catch(e) {}
+        const isEquipe = equipe.some(e => e.id === usuarioId);
+        const userPostos = findRows('UsuariosPostos', r => r.usuarioId === usuarioId && r.Status === 'ativo');
+        const userPostoIds = userPostos.map(up => up.postoId);
+        const isPosto = userPostoIds.includes(s.postoId);
+        if (!isEquipe && !isPosto) {
+          servicos = [];
+        }
+      }
+    }
+  } else if (usuarioId) {
     const userRow = findRowById('Usuarios', usuarioId);
     const userNivel = userRow ? userRow.data[userRow.headers.indexOf('nivelPermissao')] : '';
     const userProfile = userRow ? userRow.data[userRow.headers.indexOf('perfil')] : '';
     const isAdmin = userNivel === 'GB' || userProfile === 'admin' || userProfile === 'superadmin' || usuarioId === '_superuser_';
 
     if (isAdmin) {
-      servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+      servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
     } else {
       const userPostos = findRows('UsuariosPostos', r => r.usuarioId === usuarioId && r.Status === 'ativo');
       const userPostoIds = userPostos.map(up => up.postoId);
       if (userPostoIds.length > 0) {
-        servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado' && userPostoIds.includes(r.postoId));
+        servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado' && userPostoIds.includes(r.postoId));
       } else {
-        servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+        servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
       }
     }
   } else {
-    servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+    servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
   }
 
   if (servicos.length === 0) {
@@ -2456,10 +2643,12 @@ function getServicoAtual(data) {
   }
 
   const rotina = findRows('rotina', (r) => r.servicoId === servico.id && r.Status !== 'removido');
-  rotina.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
 
   const militares = findRows('militares', (r) => r.Status !== 'removido');
   const telegrafia = findRows('telegrafia', (r) => r.servicoId === servico.id && r.Status === 'ativo');
+  telegrafia.forEach(t => t.horario = Utils.safeStr(t.horario));
   const telegrafiaAtual = telegrafia.length > 0 ? telegrafia[telegrafia.length - 1] : null;
 
   const entradas = findRows('oficiais_entrada', (r) => r.servicoId === servico.id && r.tipo === 'entrada');
@@ -2478,9 +2667,11 @@ function getServicoAtual(data) {
   });
 
   const notificacoes = findRows('notificacoes', (r) => r.servicoId === servico.id);
-  notificacoes.sort((a, b) => (b.horario || '').localeCompare(a.horario || ''));
+  notificacoes.sort((a, b) => Utils.safeStr(b.horario).localeCompare(Utils.safeStr(a.horario)));
+  notificacoes.forEach(n => n.horario = Utils.safeStr(n.horario));
 
   const extras = findRows('atividades_extras', (r) => r.servicoId === servico.id && r.Status !== 'removido');
+  extras.forEach(e => { if (e.horario) e.horario = Utils.safeStr(e.horario); });
 
   const servicoViaturas = findRows('servico_viatura', (r) => r.servicoId === servico.id && r.Status !== 'removido');
   servicoViaturas.forEach(sv => { try { sv.tripulantes = JSON.parse(sv.tripulantes || '[]'); } catch(e) { sv.tripulantes = []; } });
@@ -2541,10 +2732,10 @@ function getServicoAtual(data) {
 function iniciarServico(data) {
   const { prontidao, comandanteId, comandanteNome, equipe, postoId, observacoes, telegrafistaId } = data;
   if (!postoId) return { success: false, error: 'Posto de serviço é obrigatório' };
-  const today = new Date().toISOString().split('T')[0];
+  const today = Utils.today();
   const now = Utils.formatTime(new Date());
 
-  const existing = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado' && r.postoId === postoId);
+  const existing = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado' && r.postoId === postoId);
   if (existing.length > 0) {
     return { success: false, error: 'Já existe um serviço ativo para este posto hoje' };
   }
@@ -2579,6 +2770,10 @@ function iniciarServico(data) {
   logAuditoria('iniciar_servico', comandanteNome, `Serviço iniciado - Posto: ${postoId} - Prontidão ${prontidao}`);
   logNotificacao(id, `Serviço iniciado às ${now} - Prontidão ${prontidao.toUpperCase()}`, 'info');
 
+  const userIds = (equipe || []).map(e => e.id).filter(Boolean);
+  if (comandanteId) userIds.push(comandanteId);
+  autoLinkUsuariosPosto([...new Set(userIds)], postoId, 'operador');
+
   return { success: true, servicoId: id };
 }
 
@@ -2586,8 +2781,8 @@ function encerrarServico(data) {
   const { servicoId, postoId } = data;
   let found = servicoId ? findRowById('Servicos', servicoId) : null;
   if (!found && postoId) {
-    const today = new Date().toISOString().split('T')[0];
-    const rows = findRows('Servicos', r => r.data === today && r.Status === 'ativo' && r.postoId === postoId);
+    const today = Utils.today();
+    const rows = findRows('Servicos', r => Utils.isToday(r.data) && r.Status === 'ativo' && r.postoId === postoId);
     if (rows.length > 0) {
       const sheet = getSheet('Servicos');
       const dataRows = sheet.getDataRange().getValues();
@@ -2770,7 +2965,8 @@ function removerEquipe(data) {
 function getRotina(data) {
   const { servicoId } = data;
   const rotina = findRows('rotina', (r) => r.servicoId === servicoId && r.Status !== 'removido');
-  rotina.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
   return rotina;
 }
 
@@ -2933,7 +3129,7 @@ function registrarTelegrafia(data) {
       s.getRange(found.row, statusCol + 1).setValue('inativo');
     }
 
-    const inicioParts = (t.horario || '00:00').split(':');
+    const inicioParts = Utils.safeStr(t.horario || '00:00').split(':');
     const inicio = new Date();
     inicio.setHours(parseInt(inicioParts[0]), parseInt(inicioParts[1]), 0, 0);
     const duracao = Utils.formatDuration(Date.now() - inicio.getTime());
@@ -2969,8 +3165,8 @@ function registrarEntradaOficial(data) {
 
   if (nome && !oficialId) {
     const sheet = getSheet('OficiaisEntrada');
-    const today = new Date().toISOString().split('T')[0];
-    const servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+    const today = Utils.today();
+    const servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
     const servicoId = servicos.length > 0 ? servicos[0].id : 'sem_servico';
     const now = Utils.formatTime(new Date());
     sheet.appendRow([
@@ -2985,10 +3181,10 @@ function registrarEntradaOficial(data) {
   if (oficiais.length === 0) return { success: false, error: 'Oficial não encontrado' };
 
   const oficial = oficiais[0];
-  const today = new Date().toISOString().split('T')[0];
+  const today = Utils.today();
   const now = Utils.formatTime(new Date());
 
-  const servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+  const servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
   const servicoId = servicos.length > 0 ? servicos[0].id : 'sem_servico';
 
   const obs = (anunciado ? 'anunciado' : '') + (observacao ? ' ' + observacao : '');
@@ -3013,10 +3209,10 @@ function registrarSaidaOficial(data) {
   if (oficiais.length === 0) return { success: false, error: 'Oficial não encontrado' };
 
   const oficial = oficiais[0];
-  const today = new Date().toISOString().split('T')[0];
+  const today = Utils.today();
   const now = Utils.formatTime(new Date());
 
-  const servicos = findRows('servicos', (r) => r.data === today && r.Status !== 'encerrado');
+  const servicos = findRows('servicos', (r) => Utils.isToday(r.data) && r.Status !== 'encerrado');
   const servicoId = servicos.length > 0 ? servicos[0].id : 'sem_servico';
 
   const sheet = getSheet('OficiaisEntrada');
@@ -3039,7 +3235,7 @@ function registrarSaidaOficial(data) {
 function getNotificacoes(data) {
   const { servicoId } = data;
   const notifs = findRows('notificacoes', (r) => r.servicoId === servicoId);
-  notifs.sort((a, b) => (b.horario || '').localeCompare(a.horario || ''));
+  notifs.sort((a, b) => Utils.safeStr(b.horario).localeCompare(Utils.safeStr(a.horario)));
   return notifs;
 }
 
@@ -3071,7 +3267,8 @@ function getHistorico(data) {
 
   const servico = servicos[0];
   const rotina = findRows('rotina', (r) => r.servicoId === servico.id);
-  rotina.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
 
   const telegrafia = findRows('telegrafia_historico', (r) => r.servicoId === servico.id);
 
@@ -3238,7 +3435,7 @@ function getRelatorio(data) {
       (historico.entradas || []).forEach(e => {
         eventos.push({ horario: e.horario || '', tipo: 'oficial', nome: e.nome, status: e.tipo, detalhe: (e.observacao && e.observacao.includes('anunciado')) ? 'anunciado' : '' });
       });
-      eventos.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+      eventos.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
       return {
         ...base,
         itens: eventos.map(e => ({
@@ -3253,7 +3450,7 @@ function getRelatorio(data) {
 
     case 'auditoria': {
       const logs = findRows('auditoria', (r) => true);
-      logs.sort((a, b) => (b.dataHora || '').localeCompare(a.dataHora || ''));
+      logs.sort((a, b) => Utils.safeStr(b.dataHora).localeCompare(Utils.safeStr(a.dataHora)));
       const dateFilter = logs.filter(l => l.dataHora && l.dataHora.startsWith(date));
       const alvo = dateFilter.length > 0 ? dateFilter : logs;
       return {
@@ -3590,8 +3787,8 @@ function criarCivis(data) {
 
 function getPostosComServico(data) {
   const postos = findRows('PostosServico', r => r.Status === 'ativo');
-  const today = new Date().toISOString().split('T')[0];
-  const servicosAtivos = findRows('servicos', r => r.data === today && r.Status === 'ativo');
+  const today = Utils.today();
+  const servicosAtivos = findRows('servicos', r => Utils.isToday(r.data) && r.Status === 'ativo');
   const servicosMap = {};
   servicosAtivos.forEach(s => { servicosMap[s.postoId] = s; });
 

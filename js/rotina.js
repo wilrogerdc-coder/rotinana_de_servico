@@ -53,8 +53,22 @@ const Rotina = {
     });
   },
 
-  selectPostoServico(postoId) {
+  async selectPostoServico(postoId) {
     this.selectedPostoId = postoId;
+    if (!postoId) return;
+    try {
+      const vinculados = await API.getUsuariosPostos({ postoId });
+      const existingIds = new Set(this.equipeSelecionada.filter(e => !e.avulso).map(e => e.id));
+      vinculados.forEach(v => {
+        if (!existingIds.has(v.usuarioId) && v.nome) {
+          this.equipeSelecionada.push({ id: v.usuarioId, nome: v.nome, posto: v.posto || '', reCpf: v.reCpf || '', avulso: false });
+        }
+      });
+    } catch (e) { console.error('Erro ao carregar vinculados:', e); }
+    this.renderEquipeSelecionados();
+    this.updateComandanteSelect();
+    const search = document.getElementById('equipeSearch')?.value?.trim() || '';
+    this.renderMilitaresChecklist(search);
   },
 
   renderMilitaresChecklist(filter = '') {
@@ -388,8 +402,9 @@ const Rotina = {
         Utils.showToast('Serviço iniciado!', 'success');
         Utils.playSound('aviso');
         localStorage.setItem('sgpo_service_version', Date.now());
+        localStorage.setItem('sgpo_active_servico_id', servicoId);
         try { BroadcastChannel && new BroadcastChannel('sgpo').postMessage({ type: 'service_started' }); } catch (e) {}
-        window.location.reload();
+        window.location.href = 'dashboard.html';
       } else {
         Utils.showToast(result.error || 'Erro', 'error');
       }

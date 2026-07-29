@@ -104,6 +104,46 @@ const API = {
     }, success ? 400 : 1500);
   },
 
+  _readLabels: {
+    'getServicoAtual': 'Carregando dashboard...',
+    'getServicosAtivos': 'Carregando serviços...',
+    'getRotina': 'Carregando rotina...',
+    'getRotinaPersonalizada': 'Carregando rotina personalizada...',
+    'getRotinaParaServico': 'Carregando atividades...',
+    'getPostosServico': 'Carregando postos...',
+    'getUsuariosPostos': 'Carregando vínculos...',
+    'getServicoPorPosto': 'Verificando serviço...',
+    'login': 'Autenticando...',
+    'read': 'Carregando dados...',
+    'getNotificacoes': 'Carregando notificações...',
+    'getHistorico': 'Carregando histórico...',
+    'getRelatorio': 'Gerando relatório...',
+    'getServicoViaturas': 'Carregando viaturas...',
+    'getPermissoesServico': 'Carregando permissões...',
+    'checkAcessoServico': 'Verificando acesso...',
+    'getUsuariosEditaveis': 'Carregando usuários...'
+  },
+
+  _showStatusBar(action) {
+    const existing = document.querySelector('.status-bar');
+    if (existing) existing.remove();
+
+    const bar = document.createElement('div');
+    bar.className = 'status-bar';
+    const msg = this._readLabels[action] || (action ? `Executando ${action}...` : 'Carregando...');
+    bar.innerHTML = `<span class="status-bar-text">${msg}</span><span class="status-bar-spinner"></span>`;
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add('active'));
+  },
+
+  _hideStatusBar() {
+    const bar = document.querySelector('.status-bar');
+    if (bar) {
+      bar.classList.add('done');
+      setTimeout(() => bar.remove(), 400);
+    }
+  },
+
   async request(action, data = {}) {
     if (this.isDemo) return DemoData.handle(action, data);
 
@@ -123,12 +163,16 @@ const API = {
     if (isWrite) this._showProgress(action);
 
     const payload = { action, ...data };
+    const isRead = !isWrite && action !== 'ping';
+    if (isRead) this._showStatusBar(action);
     try {
       const result = await this._gasFetch(payload);
       if (isWrite) this._hideProgress(true);
+      if (isRead) this._hideStatusBar();
       return result;
     } catch (err) {
       if (isWrite) this._hideProgress(false);
+      if (isRead) this._hideStatusBar();
       if (err.message === 'Failed to fetch') throw new Error('Erro de conexão. Verifique a URL da API.');
       throw err;
     }
@@ -184,7 +228,7 @@ const API = {
   async update(sheetName, id, row) { return this.request('update', { sheet: sheetName, id, row }); },
   async delete(sheetName, id) { return this.request('delete', { sheet: sheetName, id }); },
   async login(usuario, senha) { return this.request('login', { usuario, senha }); },
-  async getServicoAtual(usuarioId) { return this.request('getServicoAtual', usuarioId ? { usuarioId } : {}); },
+  async getServicoAtual(usuarioId) { const servicoId = localStorage.getItem('sgpo_active_servico_id'); return this.request('getServicoAtual', { ...(usuarioId ? { usuarioId } : {}), ...(servicoId ? { servicoId } : {}) }); },
   async iniciarServico(dados) { const r = await this.request('iniciarServico', dados); if (r.success) this._triggerSync(); return r; },
   async encerrarServico(servicoId) { const r = await this.request('encerrarServico', { servicoId }); if (r.success) this._triggerSync(); return r; },
   async getRotinaPersonalizada(postoId) { return this.request('getRotinaPersonalizada', { postoId }); },
@@ -224,9 +268,12 @@ const API = {
   async checkAcessoServico(servicoId) { return this.request('checkAcessoServico', { servicoId, usuarioId: Auth.userId, nivelPermissao: Auth.nivelPermissao, postos: Auth.postos }); },
   async getPermissoesServico(servicoId) { return this.request('getPermissoesServico', { servicoId }); },
   async getPostosServico() { return this.request('getPostosServico'); },
-  async getUsuariosPostos(usuarioId) { return this.request('getUsuariosPostos', { usuarioId }); },
+  async getUsuariosPostos(filtros) { return this.request('getUsuariosPostos', filtros || {}); },
+  async vincularUsuarioPosto(usuarioId, postoId, papel) { return this.request('vincularUsuarioPosto', { usuarioId, postoId, papel }); },
+  async desvincularUsuarioPosto(usuarioId, postoId) { return this.request('desvincularUsuarioPosto', { usuarioId, postoId }); },
   async getUsuariosEditaveis(editorId) { return this.request('getUsuariosEditaveis', { editorId }); },
   async getServicoPorPosto(postoId) { return this.request('getServicoPorPosto', { postoId }); },
+  async getServicosAtivos() { return this.request('getServicosAtivos', { usuarioId: Auth.userId }); },
   async getServicoViaturas(servicoId) { return this.request('getServicoViaturas', { servicoId }); },
   async iniciarServicoViatura(dados) { const r = await this.request('iniciarServicoViatura', dados); if (r.success) this._triggerSync(); return r; },
   async editarServicoViatura(dados) { return this.request('editarServicoViatura', dados); },
@@ -267,7 +314,7 @@ window.SGPOdiagnosticar = async function() {
 
 const DemoData = {
   _state: null,
-  _version: 5,
+  _version: 6,
 
   _now() {
     const d = new Date();
@@ -290,9 +337,11 @@ const DemoData = {
   save() { localStorage.setItem('sgpo_demo_state', JSON.stringify(this._state)); },
 
   freshState() {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     return {
       servico: null,
+      servicos: [],
       militares: [
         { id: 'm-001', nome: 'Ten Cel Silva', posto: '1º Tenente', reCpf: '4444444' },
         { id: 'm-002', nome: 'Sgt Oliveira', posto: 'Sargento', reCpf: '5555555' },
@@ -567,14 +616,14 @@ const DemoData = {
           const adminPerms = (s.permissoesTela || []).filter(p => p.perfil === 'admin');
           return { success: true, user: { id: '_superuser_', nome: 'Super Usuário', qra: '', nomeUsuario: 'cavalieri', cpf: '00000000000', re: '', usuario: 'cavalieri', perfil: 'superadmin', nivelPermissao: 'GB', postos: allPostos, permissoesTela: adminPerms.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })), mustChangePassword: false } };
         }
-        const user = s.usuarios.find(u => (u.cpf === data.usuario || u.reCpf === data.usuario) && u.senha === data.senha);
+        const user = s.usuarios.find(u => (u.cpf === data.usuario || u.re === data.usuario || u.nomeUsuario === data.usuario) && u.senha === data.senha);
         if (user) {
           const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === user.id).map(up => {
             const posto = (s.postosServico || []).find(p => p.id === up.postoId);
             return { id: up.postoId, nome: posto?.nome || '', tipo: posto?.tipo || 'POSTO', papel: up.papel || 'operador' };
           });
           const userPerms = (s.permissoesTela || []).filter(p => p.perfil === user.perfil).map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') }));
-          return { success: true, user: { id: user.id, nome: user.nome, qra: user.qra || '', nomeUsuario: user.nomeUsuario || '', cpf: user.cpf || '', re: user.re || '', usuario: user.cpf || user.reCpf || '', perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postos: userPostos, permissoesTela: userPerms, mustChangePassword: user.mustChangePassword === true } };
+          return { success: true, user: { id: user.id, nome: user.nome, qra: user.qra || '', nomeUsuario: user.nomeUsuario || '', cpf: user.cpf || '', re: user.re || '', usuario: user.cpf || user.re || '', perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postos: userPostos, permissoesTela: userPerms, mustChangePassword: user.mustChangePassword === true } };
         }
         return { success: false, error: 'CPF ou senha inválidos' };
       }
@@ -585,8 +634,9 @@ const DemoData = {
         if (data && data.usuarioId && s.servico.postoId) {
           const user = (s.usuarios || []).find(u => u.id === data.usuarioId);
           const isAdmin = user && (user.perfil === 'admin' || user.perfil === 'superadmin');
-          if (!isAdmin) {
-            const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === data.usuarioId);
+          const isGB = user && user.nivelPermissao === 'GB';
+          if (!isAdmin && !isGB) {
+            const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === data.usuarioId && up.Status === 'ativo');
             const userPostoIds = userPostos.map(up => up.postoId);
             if (userPostoIds.length > 0 && !userPostoIds.includes(s.servico.postoId)) {
               return emptyRet;
@@ -595,7 +645,10 @@ const DemoData = {
           if (!s.servico.equipe.some(e => e.id === data.usuarioId)) {
             if (user) {
               s.servico.equipe.push({ id: user.id, nome: user.nome, posto: '', reCpf: user.reCpf || '', avulso: false });
-              this.save();
+        if (!s.servicos) s.servicos = [];
+        s.servicos.push(s.servico);
+
+        this.save();
             }
           }
         }
@@ -616,7 +669,8 @@ const DemoData = {
           s.servico.horarioFim = now();
         }
         s.oficiaisPresentes = [];
-        s.servico = { id: 'demo-' + Date.now(), data: new Date().toISOString().split('T')[0], inicio: new Date().toISOString(), prontidao: data.prontidao, comandanteId: data.comandanteId, comandanteNome: data.comandanteNome, postoId: data.postoId, equipe: data.equipe || [], horarioInicio: now(), observacoes: data.observacoes || '', telegrafistaId: data.telegrafistaId || '', Status: 'ativo' };
+        const dataStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+        s.servico = { id: 'demo-' + Date.now(), data: dataStr, inicio: new Date().toISOString(), prontidao: data.prontidao, comandanteId: data.comandanteId, comandanteNome: data.comandanteNome, postoId: data.postoId, equipe: data.equipe || [], horarioInicio: now(), observacoes: data.observacoes || '', telegrafistaId: data.telegrafistaId || '', Status: 'ativo' };
 
         const rotinaFonte = (s.rotinaPersonalizada || []).filter(r => r.postoId === data.postoId && r.Status !== 'removido' && r.ativo !== false);
         if (rotinaFonte.length > 0) {
@@ -639,6 +693,16 @@ const DemoData = {
         }
 
         this.save();
+
+        if (!s.usuariosPostos) s.usuariosPostos = [];
+        const teamIds = (data.equipe || []).map(e => e.id).filter(Boolean);
+        if (data.comandanteId) teamIds.push(data.comandanteId);
+        [...new Set(teamIds)].forEach(uid => {
+          if (!uid) return;
+          const exists = s.usuariosPostos.find(up => up.usuarioId === uid && up.postoId === data.postoId && up.Status === 'ativo');
+          if (!exists) s.usuariosPostos.push({ id: 'up-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4), usuarioId: uid, postoId: data.postoId, papel: 'operador', dataVinculo: new Date().toISOString(), Status: 'ativo' });
+        });
+
         return { success: true, servicoId: s.servico.id };
       }
 
@@ -654,6 +718,8 @@ const DemoData = {
           s.servico.oficiaisHistorico = s.oficiaisHistorico || [];
           s.servico.Status = 'encerrado';
           s.servico.horarioFim = agoraFim;
+          const active = (s.servicos || []).find(sv => sv.id === s.servico.id);
+          if (active) { active.Status = 'encerrado'; active.horarioFim = agoraFim; }
           s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Serviço encerrado', tipo: 'info', horario: agoraFim, lida: false });
         }
         s.servico = null;
@@ -1060,7 +1126,28 @@ const DemoData = {
         let ups = s.usuariosPostos || [];
         if (data.usuarioId) ups = ups.filter(up => up.usuarioId === data.usuarioId);
         if (data.postoId) ups = ups.filter(up => up.postoId === data.postoId);
-        return ups;
+        const users = s.usuarios || [];
+        return ups.map(up => {
+          const user = users.find(u => u.id === up.usuarioId);
+          return { ...up, nome: user?.nome || '', posto: user?.posto || '', reCpf: user?.reCpf || '' };
+        });
+      }
+
+      case 'vincularUsuarioPosto': {
+        if (!s.usuariosPostos) s.usuariosPostos = [];
+        const exists = s.usuariosPostos.find(up => up.usuarioId === data.usuarioId && up.postoId === data.postoId && up.Status === 'ativo');
+        if (exists) return { success: true, id: exists.id, message: 'Vínculo já existente' };
+        const upId = 'up-' + Date.now();
+        s.usuariosPostos.push({ id: upId, usuarioId: data.usuarioId, postoId: data.postoId, papel: data.papel || 'operador', dataVinculo: new Date().toISOString(), Status: 'ativo' });
+        return { success: true, id: upId };
+      }
+
+      case 'desvincularUsuarioPosto': {
+        if (s.usuariosPostos) {
+          const idx = s.usuariosPostos.findIndex(up => up.usuarioId === data.usuarioId && up.postoId === data.postoId && up.Status === 'ativo');
+          if (idx !== -1) s.usuariosPostos[idx].Status = 'inativo';
+        }
+        return { success: true };
       }
 
       case 'checkAcessoServico': {
@@ -1287,7 +1374,7 @@ const DemoData = {
 
       case 'getPostosComServico': {
         const postos = s.postosServico || [];
-        const hoje = new Date().toISOString().split('T')[0];
+        const hoje = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
         const servicosAtivos = (s.servicos || []).filter(sv => sv.data === hoje && sv.Status === 'ativo');
         const svMap = {};
         servicosAtivos.forEach(sv => { svMap[sv.postoId] = sv; });
@@ -1304,6 +1391,46 @@ const DemoData = {
             };
           })
         };
+      }
+
+      case 'getServicosAtivos': {
+        const user = (s.usuarios || []).find(u => u.id === data.usuarioId);
+        const isAdmin = user && (user.perfil === 'admin' || user.perfil === 'superadmin');
+        const isGB = user && user.nivelPermissao === 'GB';
+        const hoje = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+        let servicos = (s.servicos || []).filter(sv => sv.data === hoje && sv.Status !== 'encerrado');
+        if (s.servico && s.servico.Status === 'ativo') {
+          const exists = servicos.find(sv => sv.id === s.servico.id);
+          if (!exists) servicos.push(s.servico);
+        }
+        if (!isAdmin && !isGB && user) {
+          const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === user.id && up.Status === 'ativo');
+          const userPostoIds = userPostos.map(up => up.postoId);
+          if (userPostoIds.length > 0) {
+            servicos = servicos.filter(sv => userPostoIds.includes(sv.postoId));
+          }
+        }
+        const postosAll = s.postosServico || [];
+        const postosMap = {};
+        postosAll.forEach(p => { postosMap[p.id] = p; });
+        return servicos.map(sv => {
+          const posto = postosMap[sv.postoId];
+          const rotina = s.rotina || [];
+          const atividades = rotina.filter(a => a.servicoId === sv.id);
+          const concluidas = atividades.filter(a => a.status === 'concluida').length;
+          let equipe = [];
+          try { equipe = Array.isArray(sv.equipe) ? sv.equipe : JSON.parse(sv.equipe || '[]'); } catch(e) {}
+          return {
+            id: sv.id, data: sv.data, horarioInicio: sv.horarioInicio || sv.inicio || '',
+            horarioFim: sv.horarioFim || '', prontidao: sv.prontidao || 'verde',
+            comandanteId: sv.comandanteId || '', comandanteNome: sv.comandanteNome || '',
+            postoId: sv.postoId, postoNome: posto ? posto.nome : '',
+            postoTipo: posto ? posto.tipo : '', equipe: equipe,
+            totalAtividades: atividades.length || sv.totalAtividades || 0,
+            totalConcluidas: concluidas || sv.totalConcluidas || 0,
+            Status: sv.Status || 'ativo', observacoes: sv.observacoes || ''
+          };
+        });
       }
 
       case 'getTiposViatura': {
