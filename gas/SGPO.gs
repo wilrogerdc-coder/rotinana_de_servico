@@ -937,7 +937,7 @@ function findRowById(sheetName, id) {
   const headers = data[0];
   if (!headers || headers.length === 0 || !headers[0]) return null;
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === id) return { row: i + 1, data: data[i], headers: data[0] };
+    if (String(data[i][0]) === String(id)) return { row: i + 1, data: data[i], headers: data[0] };
   }
   return null;
 }
@@ -2024,6 +2024,22 @@ function getServicosAtivos(data) {
    SEÇÃO 8B — VIATURAS, SERVIÇO-VIATURA E OCORRÊNCIAS
    ═══════════════════════════════════════════════════════════════════ */
 
+function registrarEventoRotinaTimeline(servicoId, id, horario, nome, programa, responsavel) {
+  try {
+    if (!servicoId) return;
+    const s = getSheet('Rotina');
+    const nowTime = horario || Utils.formatTime(new Date());
+    s.appendRow([
+      id, new Date().toISOString(), servicoId,
+      99, nowTime, nome, programa || '',
+      '', responsavel || '-',
+      'concluida', 'Sistema', nowTime, '', false, 'ativo'
+    ]);
+  } catch (e) {
+    console.error('Erro ao registrar evento na rotina/timeline:', e);
+  }
+}
+
 function getServicoViaturas(data) {
   const { servicoId } = data;
   if (!servicoId) return [];
@@ -2040,14 +2056,16 @@ function iniciarServicoViatura(data) {
   const s = getSheet('ServicoViatura');
   s.appendRow([id, new Date().toISOString(), servicoId, viaturaId, viaturaNome || '', motorista || '', motoristaId || '', JSON.stringify(tripulantes || []), now, '', 'ativa', 'ativo']);
   logAuditoria('viatura', (_authUser && _authUser.nome) || 'sistema', `Viatura ${viaturaNome} vinculada ao serviço ${servicoId}`);
+  registrarEventoRotinaTimeline(servicoId, 'r-sva-' + Date.now(), now, '🚒 Viatura ativada: ' + (viaturaNome || 'Viatura'), 'Viaturas', motorista || '-');
   return { success: true, id };
 }
 
 function editarServicoViatura(data) {
-  const { id, motorista, motoristaId, tripulantes } = data;
+  const id = data.id || data.servicoViaturaId;
   if (!id) return { success: false, error: 'ID obrigatório' };
   const found = findRowById('servico_viatura', id);
   if (!found) return { success: false, error: 'Registro não encontrado' };
+  const { motorista, motoristaId, comandante, comandanteId, tripulantes } = data;
   const s = getSheet('ServicoViatura');
   if (motorista !== undefined) {
     const col = found.headers.indexOf('motorista');
@@ -2057,10 +2075,62 @@ function editarServicoViatura(data) {
     const col = found.headers.indexOf('motoristaId');
     if (col !== -1) s.getRange(found.row, col + 1).setValue(motoristaId);
   }
+  if (comandante !== undefined) {
+    const col = found.headers.indexOf('comandante');
+    if (col !== -1) s.getRange(found.row, col + 1).setValue(comandante);
+  }
+  if (comandanteId !== undefined) {
+    const col = found.headers.indexOf('comandanteId');
+    if (col !== -1) s.getRange(found.row, col + 1).setValue(comandanteId);
+  }
   if (tripulantes !== undefined) {
     const col = found.headers.indexOf('tripulantes');
     if (col !== -1) s.getRange(found.row, col + 1).setValue(JSON.stringify(tripulantes));
   }
+
+  // Regra de exclusividade: desvincula militares desta viatura de outras viaturas do mesmo serviço
+  try {
+    const servicoId = found.data[found.headers.indexOf('servicoId')];
+    if (servicoId) {
+      const meusIds = [
+        comandanteId !== undefined ? comandanteId : found.data[found.headers.indexOf('comandanteId')],
+        motoristaId !== undefined ? motoristaId : found.data[found.headers.indexOf('motoristaId')],
+        ...(tripulantes ? tripulantes.map(t => t.id) : [])
+      ].filter(Boolean);
+
+      const outras = findRows('servico_viatura', r => r.servicoId === servicoId && r.id !== id && r.Status !== 'encerrado' && r.Status !== 'removido');
+      outras.forEach(outra => {
+        const oRow = findRowById('servico_viatura', outra.id);
+        if (!oRow) return;
+        if (outra.comandanteId && meusIds.indexOf(outra.comandanteId) !== -1) {
+          const cCol = oRow.headers.indexOf('comandanteId');
+          const nCol = oRow.headers.indexOf('comandante');
+          if (cCol !== -1) s.getRange(oRow.row, cCol + 1).setValue('');
+          if (nCol !== -1) s.getRange(oRow.row, nCol + 1).setValue('');
+        }
+        if (outra.motoristaId && meusIds.indexOf(outra.motoristaId) !== -1) {
+          const mCol = oRow.headers.indexOf('motoristaId');
+          const nCol = oRow.headers.indexOf('motorista');
+          if (mCol !== -1) s.getRange(oRow.row, mCol + 1).setValue('');
+          if (nCol !== -1) s.getRange(oRow.row, nCol + 1).setValue('');
+        }
+        if (outra.tripulantes) {
+          let tArr = [];
+          try { tArr = JSON.parse(outra.tripulantes); } catch(e) {}
+          if (Array.isArray(tArr)) {
+            const filtrados = tArr.filter(t => meusIds.indexOf(t.id) === -1);
+            if (filtrados.length !== tArr.length) {
+              const trCol = oRow.headers.indexOf('tripulantes');
+              if (trCol !== -1) s.getRange(oRow.row, trCol + 1).setValue(JSON.stringify(filtrados));
+            }
+          }
+        }
+      });
+    }
+  } catch(e) {
+    console.warn('Erro ao atualizar exclusividade no Sheet:', e);
+  }
+
   return { success: true };
 }
 
@@ -2069,11 +2139,14 @@ function encerrarServicoViatura(data) {
   if (!servicoId) return { success: false, error: 'servicoId obrigatório' };
   const rows = findRows('servico_viatura', r => r.servicoId === servicoId && r.Status === 'ativo');
   const s = getSheet('ServicoViatura');
+  const now = Utils.formatTime(new Date());
   rows.forEach(r => {
     const found = findRowById('servico_viatura', r.id);
     if (found) {
       const statusCol = found.headers.indexOf('Status');
       if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue('encerrado');
+      const vNome = found.data[found.headers.indexOf('viaturaNome')] || 'Viatura';
+      registrarEventoRotinaTimeline(servicoId, 'r-svr-' + Date.now(), now, '🚒 Viatura colocada na Reserva: ' + vNome, 'Viaturas', '-');
     }
   });
   return { success: true };
@@ -2095,7 +2168,10 @@ function despacharViatura(data) {
   let tripulantes = [];
   try { tripulantes = JSON.parse(tripulantesRaw); } catch(e) {}
   const motoristaId = found.data[found.headers.indexOf('motoristaId')] || '';
-  const todosIds = [motoristaId, ...tripulantes.map(t => t.id)].filter(Boolean);
+  const motoristaNome = found.data[found.headers.indexOf('motorista')] || '-';
+  const cmdIdx = found.headers.indexOf('comandanteId');
+  const comandanteId = cmdIdx !== -1 ? (found.data[cmdIdx] || '') : '';
+  const todosIds = [comandanteId, motoristaId, ...tripulantes.map(t => t.id)].filter(Boolean);
 
   const servicoId = found.data[found.headers.indexOf('servicoId')];
   const telegrafiaRows = findRows('telegrafia', r => r.servicoId === servicoId && r.Status === 'ativo');
@@ -2112,6 +2188,7 @@ function despacharViatura(data) {
         histSheet.appendRow([gerarId(), new Date().toISOString(), servicoId, t.militarId, t.operador || '', t.horario || '', now, duracao.display || '-', 'ativo']);
         logAuditoria('telegrafia_eject', (_authUser && _authUser.nome) || 'sistema', `${t.operador} removido da telegrafia por ocorrência`);
         logNotificacao(servicoId, `${t.operador} removido da telegrafia (despacho de viatura)`, 'telegrafia');
+        registrarEventoRotinaTimeline(servicoId, 'r-tele-' + Date.now(), now, '📡 Telegrafia liberada (despacho de viatura)', 'Telegrafia', '-');
 
         const equipe = findRows('servicos', r => r.id === servicoId);
         if (equipe.length > 0) {
@@ -2125,6 +2202,7 @@ function despacharViatura(data) {
               const ns = getSheet('Telegrafia');
               ns.appendRow([gerarId(), new Date().toISOString(), servicoId, proximo.id, proximo.nome, now, 'ativo']);
               logNotificacao(servicoId, `${proximo.nome} assumiu a telegrafia (substituído automaticamente)`, 'telegrafia');
+              registrarEventoRotinaTimeline(servicoId, 'r-tele-' + Date.now(), now, '📡 ' + proximo.nome + ' assumiu a telegrafia', 'Telegrafia', proximo.nome);
             }
           } else {
             logNotificacao(servicoId, `Telegrafia ficou sem operador (todos despachados)`, 'telegrafia');
@@ -2134,22 +2212,29 @@ function despacharViatura(data) {
     }
   });
 
-  logAuditoria('viatura_despacho', (_authUser && _authUser.nome) || 'sistema', `Viatura ${found.data[found.headers.indexOf('viaturaNome')]} despachada`);
+  const vNome = found.data[found.headers.indexOf('viaturaNome')] || 'Viatura';
+  registrarEventoRotinaTimeline(servicoId, 'r-desp-' + Date.now(), now, '🚨 Despacho: ' + vNome, 'Ocorrência', motoristaNome);
+  logAuditoria('viatura_despacho', (_authUser && _authUser.nome) || 'sistema', `Viatura ${vNome} despachada`);
   return { success: true };
 }
 
 function retornarViatura(data) {
-  const { servicoViaturaId } = data;
+  const servicoViaturaId = data.servicoViaturaId || data.id;
   if (!servicoViaturaId) return { success: false, error: 'servicoViaturaId obrigatório' };
   const found = findRowById('servico_viatura', servicoViaturaId);
   if (!found) return { success: false, error: 'Viatura não encontrada' };
-  const now = Utils.formatTime(new Date());
+  const now = data.horarioRetorno || Utils.formatTime(new Date());
   const s = getSheet('ServicoViatura');
   const retCol = found.headers.indexOf('horarioRetorno');
   if (retCol !== -1) s.getRange(found.row, retCol + 1).setValue(now);
   const statusCol = found.headers.indexOf('status');
-  if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue('retornando');
-  logAuditoria('viatura_retorno', (_authUser && _authUser.nome) || 'sistema', `Viatura ${found.data[found.headers.indexOf('viaturaNome')]} retornou`);
+  const targetStatus = data.destinoStatus || data.status || 'retornando';
+  if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue(targetStatus);
+  const vNome = found.data[found.headers.indexOf('viaturaNome')] || 'Viatura';
+  const motoristaNome = found.data[found.headers.indexOf('motorista')] || '-';
+  const servicoId = found.data[found.headers.indexOf('servicoId')];
+  registrarEventoRotinaTimeline(servicoId, 'r-ret-' + Date.now(), now, '🏠 Retorno à base: ' + vNome, 'Ocorrências', motoristaNome);
+  logAuditoria('viatura_retorno', (_authUser && _authUser.nome) || 'sistema', `Viatura ${vNome} retornou (${targetStatus})`);
   return { success: true };
 }
 
@@ -2165,14 +2250,16 @@ function criarOcorrencia(data) {
   s.appendRow([id, new Date().toISOString(), numero, servicoId, titulo, natureza || '', descricao || '', JSON.stringify(viaturaIds || []), JSON.stringify(efetivo || []), now, '', prontidaoCor || '', 'em_atendimento', 'ativo']);
   logAuditoria('ocorrencia', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} criada: ${titulo}${dataOcorrencia ? ' (ref: ' + dataOcorrencia + ' ' + now + ')' : ''}`);
   logNotificacao(servicoId, `Nova ocorrência #${numero}: ${titulo}`, 'urgente');
+  registrarEventoRotinaTimeline(servicoId, 'r-oc-' + Date.now(), now, '🚨 Ocorrência #' + numero + ': ' + titulo, 'Ocorrências', efetivo && efetivo[0] ? efetivo[0] : '-');
   return { success: true, id, numero };
 }
 
 function editarOcorrencia(data) {
-  const { id, titulo, natureza, descricao, numero } = data;
+  const id = data.id || data.ocorrenciaId;
   if (!id) return { success: false, error: 'ID obrigatório' };
   const found = findRowById('ocorrencias', id);
   if (!found) return { success: false, error: 'Ocorrência não encontrada' };
+  const { titulo, natureza, descricao, numero } = data;
   const s = getSheet('Ocorrencias');
   if (titulo !== undefined) { const c = found.headers.indexOf('titulo'); if (c !== -1) s.getRange(found.row, c + 1).setValue(titulo); }
   if (natureza !== undefined) { const c = found.headers.indexOf('natureza'); if (c !== -1) s.getRange(found.row, c + 1).setValue(natureza); }
@@ -2182,17 +2269,28 @@ function editarOcorrencia(data) {
 }
 
 function finalizarOcorrencia(data) {
-  const { id } = data;
+  const id = data.id || data.ocorrenciaId;
   if (!id) return { success: false, error: 'ID obrigatório' };
   const found = findRowById('ocorrencias', id);
   if (!found) return { success: false, error: 'Ocorrência não encontrada' };
-  const now = Utils.formatTime(new Date());
+  const now = data.horaRetorno || Utils.formatTime(new Date());
   const s = getSheet('Ocorrencias');
   const retCol = found.headers.indexOf('horaRetorno');
   if (retCol !== -1) s.getRange(found.row, retCol + 1).setValue(now);
   const statusCol = found.headers.indexOf('status');
-  if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue('finalizada');
-  logAuditoria('ocorrencia_finalizar', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${found.data[found.headers.indexOf('numero')]} finalizada`);
+  const targetStatus = data.status || 'finalizada';
+  if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue(targetStatus);
+  if (data.desfecho) {
+    const desCol = found.headers.indexOf('descricao');
+    if (desCol !== -1) {
+      const cur = String(found.data[desCol] || '');
+      s.getRange(found.row, desCol + 1).setValue(cur ? cur + ' | Desfecho: ' + data.desfecho : data.desfecho);
+    }
+  }
+  const numero = found.data[found.headers.indexOf('numero')] || '';
+  const servicoId = found.data[found.headers.indexOf('servicoId')];
+  logAuditoria('ocorrencia_finalizar', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} finalizada [${targetStatus}]`);
+  registrarEventoRotinaTimeline(servicoId, 'r-ocf-' + Date.now(), now, '✅ Ocorrência #' + numero + ' finalizada' + (data.desfecho ? ' — ' + data.desfecho : ''), 'Ocorrências', '-');
   return { success: true };
 }
 
@@ -2205,6 +2303,42 @@ function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
+
+    // Autenticação Stateless Definitiva
+    if (data.auth && data.auth.id && data.auth.token) {
+      if (data.auth.id === SUPER_USER.id && data.auth.token === SUPER_USER.senhaHash) {
+        _authUser = SUPER_USER;
+      } else {
+        const uRow = findRowById('Usuarios', data.auth.id) || findRowById('usuarios', data.auth.id);
+        if (uRow) {
+          const uData = {};
+          uRow.headers.forEach((h, idx) => uData[h] = uRow.data[idx]);
+          if ((uData.senhaHash === data.auth.token || uData.senha === data.auth.token) && uData.ativo !== false) {
+            _authUser = uData;
+          }
+        }
+      }
+    }
+
+    // Proteção global de gravação: bloqueia todas as ações de mutação se não houver autenticação
+    const rotasProtegidas = [
+      'create', 'update', 'delete', 'iniciarServico', 'encerrarServico',
+      'salvarRotinaPersonalizada', 'resetarRotinaPersonalizada', 'updateAtividade',
+      'criarAtividadeExtra', 'adicionarAtividadeFixa', 'editarAtividadeRotina',
+      'excluirAtividadeRotina', 'registrarTelegrafia', 'registrarEntradaOficial',
+      'registrarSaidaOficial', 'marcarLida', 'adicionarEquipe', 'removerEquipe',
+      'solicitarAcesso', 'responderAcesso', 'vincularUsuarioPosto', 'desvincularUsuarioPosto',
+      'iniciarServicoViatura', 'editarServicoViatura', 'encerrarServicoViatura',
+      'despacharViatura', 'retornarViatura', 'criarOcorrencia', 'editarOcorrencia',
+      'finalizarOcorrencia', 'editarServico', 'redefinirSenha', 'alterarMinhaSenha',
+      'criarCivis', 'registrarLog', 'updateConfig', 'importarAtividadesPadrao', 'repararAbas'
+    ];
+    if (rotasProtegidas.includes(action) && !_authUser) {
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: false, 
+        error: 'Sessão expirada ou acesso não autorizado. Por favor, faça login novamente.' 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     const handlers = {
       login:                    () => handleLogin(data),
@@ -2325,7 +2459,8 @@ function handleLogin(data) {
         nivelPermissao: 'GB',
         postos: postos,
         permissoesTela: permissoesTela.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })),
-        mustChangePassword: false
+        mustChangePassword: false,
+        token: SUPER_USER.senhaHash
       }
     };
   }
@@ -2383,7 +2518,8 @@ function handleLogin(data) {
           postoDefaultId: postoDefaultId,
           postos: postosCompletos,
           permissoesTela: permissoesTela.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })),
-          mustChangePassword: user.mustChangePassword === true || user.mustChangePassword === 'true'
+          mustChangePassword: user.mustChangePassword === true || user.mustChangePassword === 'true',
+          token: user.senhaHash || user.senha
         }
       };
     }
@@ -2643,7 +2779,7 @@ function getServicoAtual(data) {
   }
 
   const rotina = findRows('rotina', (r) => r.servicoId === servico.id && r.Status !== 'removido');
-  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
   rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
 
   const militares = findRows('militares', (r) => r.Status !== 'removido');
@@ -2667,7 +2803,7 @@ function getServicoAtual(data) {
   });
 
   const notificacoes = findRows('notificacoes', (r) => r.servicoId === servico.id);
-  notificacoes.sort((a, b) => Utils.safeStr(b.horario).localeCompare(Utils.safeStr(a.horario)));
+  notificacoes.sort((a, b) => { const getMin = (t) => { if(!t) return -1; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(b.horario) - getMin(a.horario); });
   notificacoes.forEach(n => n.horario = Utils.safeStr(n.horario));
 
   const extras = findRows('atividades_extras', (r) => r.servicoId === servico.id && r.Status !== 'removido');
@@ -2965,39 +3101,47 @@ function removerEquipe(data) {
 function getRotina(data) {
   const { servicoId } = data;
   const rotina = findRows('rotina', (r) => r.servicoId === servicoId && r.Status !== 'removido');
-  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
   rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
   return rotina;
 }
 
 function updateAtividade(data) {
-  const { servicoId, atividadeId, status, concluidoPor, horaConclusao, observacoes } = data;
+  const { servicoId, atividadeId, status, concluidoPor, horaConclusao, horaInicio, horaAtualizacao, observacoes } = data;
   const found = findRowById('rotina', atividadeId);
 
   if (!found) {
     const extra = findRowById('atividades_extras', atividadeId);
     if (extra) {
       const s = getSheet('AtividadesExtras');
-      if (status) s.getRange(extra.row, extra.headers.indexOf('status') + 1).setValue(status);
-      if (concluidoPor) s.getRange(extra.row, extra.headers.indexOf('concluidoPor') + 1).setValue(concluidoPor);
-      if (horaConclusao) s.getRange(extra.row, extra.headers.indexOf('horaConclusao') + 1).setValue(horaConclusao);
-      if (observacoes) s.getRange(extra.row, extra.headers.indexOf('observacoes') + 1).setValue(observacoes);
+      if (status && extra.headers.indexOf('status') !== -1) s.getRange(extra.row, extra.headers.indexOf('status') + 1).setValue(status);
+      if (concluidoPor && extra.headers.indexOf('concluidoPor') !== -1) s.getRange(extra.row, extra.headers.indexOf('concluidoPor') + 1).setValue(concluidoPor);
+      if (horaConclusao && extra.headers.indexOf('horaConclusao') !== -1) s.getRange(extra.row, extra.headers.indexOf('horaConclusao') + 1).setValue(horaConclusao);
+      if (observacoes && extra.headers.indexOf('observacoes') !== -1) s.getRange(extra.row, extra.headers.indexOf('observacoes') + 1).setValue(observacoes);
       return { success: true };
     }
     return { success: false, error: 'Atividade não encontrada' };
   }
 
   const s = getSheet('Rotina');
-  if (status) s.getRange(found.row, found.headers.indexOf('status') + 1).setValue(status);
-  if (concluidoPor) s.getRange(found.row, found.headers.indexOf('concluidoPor') + 1).setValue(concluidoPor);
-  if (horaConclusao) s.getRange(found.row, found.headers.indexOf('horaConclusao') + 1).setValue(horaConclusao);
-  if (observacoes) s.getRange(found.row, found.headers.indexOf('observacoes') + 1).setValue(observacoes);
+  if (status && found.headers.indexOf('status') !== -1) s.getRange(found.row, found.headers.indexOf('status') + 1).setValue(status);
+  if (concluidoPor && found.headers.indexOf('concluidoPor') !== -1) s.getRange(found.row, found.headers.indexOf('concluidoPor') + 1).setValue(concluidoPor);
+  if (horaConclusao && found.headers.indexOf('horaConclusao') !== -1) s.getRange(found.row, found.headers.indexOf('horaConclusao') + 1).setValue(horaConclusao);
+  if (horaInicio && found.headers.indexOf('horaInicio') !== -1) s.getRange(found.row, found.headers.indexOf('horaInicio') + 1).setValue(horaInicio);
+  if (horaAtualizacao && found.headers.indexOf('horaAtualizacao') !== -1) s.getRange(found.row, found.headers.indexOf('horaAtualizacao') + 1).setValue(horaAtualizacao);
+  if (observacoes && found.headers.indexOf('observacoes') !== -1) s.getRange(found.row, found.headers.indexOf('observacoes') + 1).setValue(observacoes);
 
   const nome = found.data[found.headers.indexOf('nome')];
-  logAuditoria('update_atividade', concluidoPor || 'sistema', `${nome} - ${status}`);
+  logAuditoria('update_atividade', concluidoPor || 'sistema', `${nome} - ${status} (${horaConclusao || ''})`);
 
   if (status === 'concluida') {
-    logNotificacao(servicoId, `Atividade "${nome}" concluída por ${concluidoPor || '-'}`, 'info');
+    logNotificacao(servicoId, `Atividade "${nome}" concluída às ${horaConclusao || 'agora'} por ${concluidoPor || '-'}`, 'sucesso');
+  } else if (status === 'em_andamento') {
+    logNotificacao(servicoId, `Atividade "${nome}" iniciada`, 'info');
+  } else if (status === 'nao_realizada') {
+    logNotificacao(servicoId, `Atividade "${nome}" marcada como prejudicada`, 'warning');
+  } else if (status === 'cancelada') {
+    logNotificacao(servicoId, `Atividade "${nome}" cancelada`, 'danger');
   }
 
   return { success: true };
@@ -3087,6 +3231,9 @@ function editarAtividadeRotina(data) {
   }
 
   logAuditoria('editar_atividade_rotina', 'sistema', `Atividade editada: ${nome || atividadeId}`);
+  if (servicoId) {
+    registrarEventoRotinaTimeline(servicoId, 'r-act-' + Date.now(), Utils.formatTime(new Date()), `✏️ Atividade editada: ${nome || 'Atividade'}`, 'Rotina', '-');
+  }
 
   return { success: true };
 }
@@ -3101,8 +3248,12 @@ function excluirAtividadeRotina(data) {
   const statusCol = found.headers.indexOf('Status');
   if (statusCol !== -1) sheet.getRange(found.row, statusCol + 1).setValue('inativo');
 
-  logAuditoria('excluir_atividade_rotina', 'sistema', `Atividade removida: ${atividadeId}`);
+  const nome = (found.data && found.data[found.headers.indexOf('nome')]) || 'Atividade';
+  logAuditoria('excluir_atividade_rotina', 'sistema', `Atividade removida: ${nome}`);
   logNotificacao(servicoId, `Atividade removida da rotina`, 'warning');
+  if (servicoId) {
+    registrarEventoRotinaTimeline(servicoId, 'r-act-' + Date.now(), Utils.formatTime(new Date()), `🗑️ Atividade excluída: ${nome}`, 'Rotina', '-');
+  }
 
   return { success: true };
 }
@@ -3151,6 +3302,7 @@ function registrarTelegrafia(data) {
 
   logAuditoria('telegrafia', (_authUser && _authUser.nome) || 'sistema', `${militar.nome} assumiu telegrafia`);
   logNotificacao(servicoId, `${militar.nome} assumiu a telegrafia às ${now}`, 'telegrafia');
+  registrarEventoRotinaTimeline(servicoId, 'r-tele-' + Date.now(), now, `📡 ${militar.nome} assumiu a telegrafia`, 'Telegrafia', militar.nome);
 
   return { success: true };
 }
@@ -3174,6 +3326,7 @@ function registrarEntradaOficial(data) {
       'avulso_' + Date.now(), nome, '', 'entrada', now, (anunciado ? 'anunciado' : '') + (observacao ? ' ' + observacao : ''), 'ativo'
     ]);
     logAuditoria('entrada_oficial', (_authUser && _authUser.nome) || 'sistema', `${nome} (avulso) entrou no quartel`);
+    registrarEventoRotinaTimeline(servicoId, 'r-ofe-' + Date.now(), now, `${anunciado ? '📢' : '🚪'} ${nome}${anunciado ? ' anunciado' : ' entrou no quartel'}`, 'Oficiais', nome);
     return { success: true };
   }
 
@@ -3197,6 +3350,7 @@ function registrarEntradaOficial(data) {
 
   logAuditoria('entrada_oficial', (_authUser && _authUser.nome) || 'sistema', `${oficial.nome} entrou no quartel`);
   logNotificacao(servicoId, `Oficial ${oficial.nome} (${oficial.posto}) entrou no quartel`, 'oficial');
+  registrarEventoRotinaTimeline(servicoId, 'r-ofe-' + Date.now(), now, `${anunciado ? '📢' : '🚪'} ${oficial.nome}${anunciado ? ' anunciado' : ' entrou no quartel'}`, 'Oficiais', oficial.nome);
 
   const jaAnunciado = findRows('oficiais_entrada', r => r.oficialId === oficialId && r.servicoId === servicoId && r.observacao && r.observacao.includes('anunciado'));
 
@@ -3223,6 +3377,7 @@ function registrarSaidaOficial(data) {
 
   logAuditoria('saida_oficial', (_authUser && _authUser.nome) || 'sistema', `${oficial.nome} saiu do quartel`);
   logNotificacao(servicoId, `Oficial ${oficial.nome} saiu do quartel`, 'oficial');
+  registrarEventoRotinaTimeline(servicoId, 'r-ofs-' + Date.now(), now, `🚪 ${oficial.nome} saiu do quartel`, 'Oficiais', oficial.nome);
 
   return { success: true };
 }
@@ -3235,7 +3390,7 @@ function registrarSaidaOficial(data) {
 function getNotificacoes(data) {
   const { servicoId } = data;
   const notifs = findRows('notificacoes', (r) => r.servicoId === servicoId);
-  notifs.sort((a, b) => Utils.safeStr(b.horario).localeCompare(Utils.safeStr(a.horario)));
+  notifs.sort((a, b) => { const getMin = (t) => { if(!t) return -1; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(b.horario) - getMin(a.horario); });
   return notifs;
 }
 
@@ -3267,7 +3422,7 @@ function getHistorico(data) {
 
   const servico = servicos[0];
   const rotina = findRows('rotina', (r) => r.servicoId === servico.id);
-  rotina.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+  rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
   rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
 
   const telegrafia = findRows('telegrafia_historico', (r) => r.servicoId === servico.id);
@@ -3435,7 +3590,15 @@ function getRelatorio(data) {
       (historico.entradas || []).forEach(e => {
         eventos.push({ horario: e.horario || '', tipo: 'oficial', nome: e.nome, status: e.tipo, detalhe: (e.observacao && e.observacao.includes('anunciado')) ? 'anunciado' : '' });
       });
-      eventos.sort((a, b) => Utils.safeStr(a.horario).localeCompare(Utils.safeStr(b.horario)));
+      eventos.sort((a, b) => {
+        const getMin = (t) => {
+          if(!t) return 99999;
+          const p = String(t).split(':');
+          const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0);
+          return mins < 450 ? mins + 1440 : mins;
+        };
+        return getMin(a.horario) - getMin(b.horario);
+      });
       return {
         ...base,
         itens: eventos.map(e => ({

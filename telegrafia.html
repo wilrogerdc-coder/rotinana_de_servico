@@ -60,7 +60,12 @@
     </div>
 
     <div class="tele-current" id="currentOperador">
-      <div class="tele-current-label">Operador Atual</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:8px">
+        <div class="tele-current-label" style="margin:0">Operador Atual</div>
+        <button class="btn btn-sm btn-secondary" onclick="Telegrafia.deixarVazia()" style="font-size:0.75rem;color:#ff9100;border:1px solid #ff910055" title="Registrar telegrafia como vazia na linha do tempo">
+          ⚠️ Deixar Telegrafia Vazia
+        </button>
+      </div>
       <div class="tele-current-avatar" id="teleAvatar">--</div>
       <div class="tele-current-name" id="teleNome">Nenhum operador</div>
       <div style="color:var(--text-muted);font-size:0.85rem">Assumiu as <span id="teleInicio">--:--</span></div>
@@ -268,7 +273,6 @@
       async trocar(militarId) {
         const militar = this.militares.find(m => m.id === militarId);
         if (!militar) return;
-        if (!confirm(`Trocar telegrafia para ${militar.nome}?`)) return;
         try {
           const result = await API.registrarTelegrafia(this.servico.id, militarId);
           if (result.success) {
@@ -277,6 +281,16 @@
             await this.load();
           }
         } catch (e) { Utils.showToast('Erro ao registrar telegrafia', 'error'); }
+      },
+
+      async deixarVazia() {
+        try {
+          const result = await API.registrarTelegrafia(this.servico.id, '__VAZIA__');
+          if (result.success) {
+            Utils.showToast('Telegrafia registrada como vazia na linha do tempo', 'warning');
+            await this.load();
+          }
+        } catch (e) { Utils.showToast('Erro ao atualizar telegrafia', 'error'); }
       }
     };
 

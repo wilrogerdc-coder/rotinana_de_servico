@@ -102,12 +102,14 @@
           document.getElementById('histContent').style.display = 'block';
 
           NAV.updateProntidao(data.servico.prontidao);
+          const rotina = typeof TimelineStore !== 'undefined' ? TimelineStore.mergeInto(data.rotina || [], servicoId) : (data.rotina || []);
+          data.rotina = rotina;
           this.renderSummary(data);
           this.renderServico(data.servico);
           this.renderTelegrafia(data.telegrafia || []);
-          this.renderRotina(data.rotina || []);
+          this.renderRotina(rotina);
           this.renderOficiais(data.oficiais || [], data.entradas || []);
-          this.renderTimeline(data.rotina || []);
+          this.renderTimeline(rotina);
         } catch (e) {
           Utils.showToast('Erro ao carregar: ' + e.message, 'error');
         }
@@ -188,14 +190,29 @@
 
       renderTimeline(items) {
         const el = document.getElementById('histTimeline');
-        const done = items.filter(a => a.status === 'concluida');
+        const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
+        const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
+        const done = (items || []).filter(a => activeStatuses.includes(a.status) || opPrefixes.some(p => (a.id || '').startsWith(p))).sort((a, b) => {
+          const getMin = (t) => {
+            if (!t) return 99999;
+            const p = String(t).split(':');
+            const mins = (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0);
+            return mins < 450 ? mins + 1440 : mins;
+          };
+          const tA = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
+          const tB = b.horaConclusao || b.horaInicio || b.horaAtualizacao || b.horario;
+          return getMin(tA) - getMin(tB);
+        });
         if (done.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem eventos</p>'; return; }
-        el.innerHTML = `<div class="timeline">` + done.map(a => `
+        el.innerHTML = `<div class="timeline">` + done.map(a => {
+          const t = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
+          return `
           <div class="timeline-item">
-            <div class="timeline-time">${a.horaConclusao || a.horario}</div>
+            <div class="timeline-time">${t}</div>
             <div class="timeline-content">${Utils.escapeHtml(a.nome)}</div>
           </div>
-        `).join('') + '</div>';
+        `;
+        }).join('') + '</div>';
       }
     };
 

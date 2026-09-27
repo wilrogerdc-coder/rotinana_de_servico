@@ -23,22 +23,38 @@ const Rotina = {
     this.viaturasSelecionadas = [];
     this.viaturasDetalhes = {};
     try {
-      const [militares, postos, viaturas, tipos] = await Promise.all([
-        API.get('militares'),
+      const [milResult, postosResult, viatResult, tiposResult] = await Promise.allSettled([
+        API.getMilitares(),
         API.getPostosServico(),
-        API.get('viaturas'),
+        API.getViaturas(),
         API.getTiposViatura()
       ]);
-      this.militares = militares || [];
-      this.postos = postos || [];
-      this.viaturasDisponiveis = (viaturas || []).filter(v => v.ativo !== false && v.Status !== 'removido');
-      this.tiposViatura = (tipos || []).filter(t => t.Status !== 'removido');
+      this.militares = milResult.status === 'fulfilled' && Array.isArray(milResult.value) ? milResult.value : [];
+      this.postos = postosResult.status === 'fulfilled' && Array.isArray(postosResult.value) ? postosResult.value : [];
+      const viatList = viatResult.status === 'fulfilled' && Array.isArray(viatResult.value) ? viatResult.value : [];
+      const tiposList = tiposResult.status === 'fulfilled' && Array.isArray(tiposResult.value) ? tiposResult.value : [];
+      this.viaturasDisponiveis = viatList.filter(v => v && v.ativo !== false && v.Status !== 'removido');
+      this.tiposViatura = tiposList.filter(t => t && t.Status !== 'removido');
+
+      if (this.militares.length === 0 && typeof DemoData !== 'undefined') {
+        this.militares = DemoData.getState().militares || [];
+      }
+      if (this.postos.length === 0 && typeof DemoData !== 'undefined') {
+        this.postos = DemoData.getState().postosServico || [];
+      }
+      if (this.viaturasDisponiveis.length === 0 && typeof DemoData !== 'undefined') {
+        this.viaturasDisponiveis = (DemoData.getState().viaturas || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
+      }
+      if (this.tiposViatura.length === 0 && typeof DemoData !== 'undefined') {
+        this.tiposViatura = (DemoData.getState().tiposViatura || []).filter(t => t && t.Status !== 'removido');
+      }
+
       this.renderPostoSelect();
       this.renderMilitaresChecklist();
       this.renderEquipeSelecionados();
       this.updateComandanteSelect();
       this.renderViaturasChecklist();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.warn('showIniciarPanel warn:', e); }
   },
 
   renderPostoSelect() {
@@ -271,32 +287,91 @@ const Rotina = {
       </label>`;
     }).join('');
 
+    // Mapeamento de componentes alocados em cada viatura: militarId -> { viaturaId, viaturaNome, funcao }
+    const militarAlocadoEm = new Map();
+    this.viaturasSelecionadas.forEach(vSelectedId => {
+      const vObj = viaturas.find(x => x.id === vSelectedId);
+      const vNome = vObj ? vObj.nome : 'outra viatura';
+      const d = this.viaturasDetalhes[vSelectedId];
+      if (!d) return;
+      if (d.comandanteId) {
+        militarAlocadoEm.set(d.comandanteId, { viaturaId: vSelectedId, viaturaNome: vNome, funcao: 'Comandante' });
+      }
+      if (d.motoristaId) {
+        militarAlocadoEm.set(d.motoristaId, { viaturaId: vSelectedId, viaturaNome: vNome, funcao: 'Motorista' });
+      }
+      (d.tripulantesIds || []).forEach(tid => {
+        if (tid && tid !== d.comandanteId && tid !== d.motoristaId) {
+          militarAlocadoEm.set(tid, { viaturaId: vSelectedId, viaturaNome: vNome, funcao: 'Auxiliar' });
+        }
+      });
+    });
+
     detEl.innerHTML = this.viaturasSelecionadas.map(vid => {
       const v = viaturas.find(x => x.id === vid);
       if (!v) return '';
-      const det = this.viaturasDetalhes[vid] || { motoristaId: '', tripulantesIds: [] };
-      const tripCount = (det.tripulantesIds || []).length;
-      const motoristaLabel = det.motoristaId ? (this.equipeSelecionada.find(m => m.id === det.motoristaId)?.nome || '') : '';
+      const det = this.viaturasDetalhes[vid] || { comandanteId: '', motoristaId: '', tripulantesIds: [] };
       return `
-        <div class="card" style="padding:16px;border:1px solid var(--border-color)">
-          <div style="font-weight:600;font-size:0.9rem;margin-bottom:8px;color:var(--prontidao-color)">${Utils.escapeHtml(v.nome)} (${v.tipo})</div>
-          ${motoristaLabel ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px">Motorista: <strong style="color:var(--prontidao-color)">${Utils.escapeHtml(motoristaLabel)}</strong> <span style="font-size:0.7rem;color:var(--prontidao-color);font-weight:600">/dir</span> (1º tripulante)</div>` : ''}
-          <div class="input-group"><label class="input-label">Tripulantes (${tripCount})</label>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">${this.equipeSelecionada.map(m => {
-              const isMotorista = m.id === det.motoristaId;
-              const checked = det.tripulantesIds.includes(m.id);
-              const ocupado = ocupados.has(m.id) && !isMotorista && !checked;
-              if (isMotorista) return `
-              <label style="display:flex;align-items:center;gap:4px;font-size:0.82rem;padding:4px 8px;border:1px solid var(--prontidao-color);border-radius:6px;cursor:not-allowed;opacity:1;background:var(--prontidao-dim)">
-                <input type="checkbox" checked disabled style="width:14px;height:14px">
-                ${Utils.escapeHtml(m.nome)} <span style="font-size:0.7rem;color:var(--prontidao-color);font-weight:600">/dir</span>
-              </label>`;
-              return `
-              <label style="display:flex;align-items:center;gap:4px;font-size:0.82rem;padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;cursor:${ocupado ? 'not-allowed' : 'pointer'};opacity:${ocupado ? '0.4' : '1'};background:${checked ? 'var(--prontidao-dim)' : 'transparent'}">
-                <input type="checkbox" ${checked ? 'checked' : ''} ${ocupado ? 'disabled' : ''} onchange="Rotina.toggleViaturaTripulante('${vid}', '${m.id}', this.checked)" style="width:14px;height:14px">
-                ${Utils.escapeHtml(m.nome)}
-              </label>`;
-            }).join('')}</div>
+        <div class="card" style="padding:16px;border:1px solid var(--border-color);margin-bottom:12px">
+          <div style="font-weight:700;font-size:0.95rem;margin-bottom:12px;color:var(--prontidao-color)">🚒 ${Utils.escapeHtml(v.nome)} (${v.tipo})</div>
+          <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+            <div class="input-group" style="flex:1;min-width:200px;margin-bottom:0">
+              <label class="input-label" style="font-weight:700">Comandante da Viatura <span style="color:#e53935">* (Obrigatório)</span></label>
+              <select class="input select" onchange="Rotina.setViaturaComandante('${vid}', this.value)">
+                <option value="">Selecione o Comandante</option>
+                ${this.equipeSelecionada.map(m => {
+                  const alocado = militarAlocadoEm.get(m.id);
+                  const emOutra = alocado && alocado.viaturaId !== vid;
+                  const isMotDesta = m.id === det.motoristaId;
+                  const disabled = emOutra || isMotDesta;
+                  let info = '';
+                  if (emOutra) info = ` (em ${alocado.viaturaNome})`;
+                  else if (isMotDesta) info = ' (Motorista desta vtr)';
+                  return `<option value="${m.id}" ${det.comandanteId === m.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${Utils.escapeHtml(m.nome)} ${m.posto ? '— ' + m.posto : ''}${info}</option>`;
+                }).join('')}
+              </select>
+            </div>
+            <div class="input-group" style="flex:1;min-width:200px;margin-bottom:0">
+              <label class="input-label" style="font-weight:700">Motorista da Viatura <span style="color:#e53935">* (Obrigatório)</span></label>
+              <select class="input select" onchange="Rotina.setViaturaMotorista('${vid}', this.value)">
+                <option value="">Selecione o Motorista</option>
+                ${this.equipeSelecionada.map(m => {
+                  const alocado = militarAlocadoEm.get(m.id);
+                  const emOutra = alocado && alocado.viaturaId !== vid;
+                  const isComDesta = m.id === det.comandanteId;
+                  const disabled = emOutra || isComDesta;
+                  let info = '';
+                  if (emOutra) info = ` (em ${alocado.viaturaNome})`;
+                  else if (isComDesta) info = ' (Comandante desta vtr)';
+                  return `<option value="${m.id}" ${det.motoristaId === m.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${Utils.escapeHtml(m.nome)} ${m.posto ? '— ' + m.posto : ''}${info}</option>`;
+                }).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="input-group" style="margin-bottom:0">
+            <label class="input-label" style="font-weight:700">Auxiliares da Guarnição</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${this.equipeSelecionada.map(m => {
+                const isCom = m.id === det.comandanteId;
+                const isMot = m.id === det.motoristaId;
+                const alocado = militarAlocadoEm.get(m.id);
+                const emOutra = alocado && alocado.viaturaId !== vid;
+                const checked = (det.tripulantesIds || []).includes(m.id) && !isCom && !isMot;
+                const disabled = emOutra || isCom || isMot;
+
+                let tag = '';
+                if (isCom) tag = '<span style="color:#2979ff;font-size:0.7rem;font-weight:700">(Comandante)</span>';
+                else if (isMot) tag = '<span style="color:var(--prontidao-color);font-size:0.7rem;font-weight:700">(Motorista)</span>';
+                else if (emOutra) tag = `<span style="color:var(--text-muted);font-size:0.7rem">(em ${Utils.escapeHtml(alocado.viaturaNome)})</span>`;
+                else tag = '<span style="color:var(--text-muted);font-size:0.7rem">[Auxiliar]</span>';
+
+                return `
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;padding:4px 8px;border:1px solid ${isCom ? '#2979ff' : (isMot ? 'var(--prontidao-color)' : (emOutra ? 'var(--border-color,#333)' : 'var(--border-color)'))};border-radius:6px;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? '0.45' : '1'};background:${checked ? 'var(--prontidao-dim)' : 'transparent'}">
+                  <input type="checkbox" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="Rotina.toggleViaturaTripulante('${vid}', '${m.id}', this.checked)" style="width:14px;height:14px">
+                  ${Utils.escapeHtml(m.nome)} ${tag}
+                </label>`;
+              }).join('')}
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -306,7 +381,7 @@ const Rotina = {
     if (checked) {
       if (!this.viaturasSelecionadas.includes(viaturaId)) {
         this.viaturasSelecionadas.push(viaturaId);
-        this.viaturasDetalhes[viaturaId] = { motoristaId: '', tripulantesIds: [] };
+        this.viaturasDetalhes[viaturaId] = { comandanteId: '', motoristaId: '', tripulantesIds: [] };
       }
     } else {
       this.viaturasSelecionadas = this.viaturasSelecionadas.filter(id => id !== viaturaId);
@@ -315,20 +390,42 @@ const Rotina = {
     this.renderViaturasChecklist();
   },
 
-  setViaturaMotorista(viaturaId, motoristaId) {
-    if (!this.viaturasDetalhes[viaturaId]) this.viaturasDetalhes[viaturaId] = { motoristaId: '', tripulantesIds: [] };
+  setViaturaComandante(viaturaId, comandanteId) {
+    if (!this.viaturasDetalhes[viaturaId]) this.viaturasDetalhes[viaturaId] = { comandanteId: '', motoristaId: '', tripulantesIds: [] };
     const det = this.viaturasDetalhes[viaturaId];
-    const antigoMotorista = det.motoristaId;
-    det.motoristaId = motoristaId;
-    if (antigoMotorista && antigoMotorista !== motoristaId) {
-      det.tripulantesIds = (det.tripulantesIds || []).filter(id => id !== antigoMotorista);
+    det.comandanteId = comandanteId;
+    det.tripulantesIds = (det.tripulantesIds || []).filter(id => id !== comandanteId);
+    if (comandanteId && det.motoristaId === comandanteId) {
+      det.motoristaId = '';
     }
-    if (motoristaId) {
-      if (!det.tripulantesIds.includes(motoristaId)) det.tripulantesIds.push(motoristaId);
+    // Libera qualquer outra viatura que possa ter este militar
+    if (comandanteId) {
       Object.entries(this.viaturasDetalhes).forEach(([vid, d]) => {
         if (vid !== viaturaId) {
-          d.tripulantesIds = (d.tripulantesIds || []).filter(id => id !== motoristaId);
+          if (d.comandanteId === comandanteId) d.comandanteId = '';
+          if (d.motoristaId === comandanteId) d.motoristaId = '';
+          d.tripulantesIds = (d.tripulantesIds || []).filter(id => id !== comandanteId);
+        }
+      });
+    }
+    this.renderViaturasChecklist();
+  },
+
+  setViaturaMotorista(viaturaId, motoristaId) {
+    if (!this.viaturasDetalhes[viaturaId]) this.viaturasDetalhes[viaturaId] = { comandanteId: '', motoristaId: '', tripulantesIds: [] };
+    const det = this.viaturasDetalhes[viaturaId];
+    det.motoristaId = motoristaId;
+    det.tripulantesIds = (det.tripulantesIds || []).filter(id => id !== motoristaId);
+    if (motoristaId && det.comandanteId === motoristaId) {
+      det.comandanteId = '';
+    }
+    // Libera qualquer outra viatura que possa ter este militar
+    if (motoristaId) {
+      Object.entries(this.viaturasDetalhes).forEach(([vid, d]) => {
+        if (vid !== viaturaId) {
+          if (d.comandanteId === motoristaId) d.comandanteId = '';
           if (d.motoristaId === motoristaId) d.motoristaId = '';
+          d.tripulantesIds = (d.tripulantesIds || []).filter(id => id !== motoristaId);
         }
       });
     }
@@ -336,29 +433,20 @@ const Rotina = {
   },
 
   toggleViaturaTripulante(viaturaId, membroId, checked) {
-    if (!this.viaturasDetalhes[viaturaId]) this.viaturasDetalhes[viaturaId] = { motoristaId: '', tripulantesIds: [] };
+    if (!this.viaturasDetalhes[viaturaId]) this.viaturasDetalhes[viaturaId] = { comandanteId: '', motoristaId: '', tripulantesIds: [] };
     const det = this.viaturasDetalhes[viaturaId];
     if (checked) {
+      // Garante que não pertence a nenhuma outra viatura
       Object.entries(this.viaturasDetalhes).forEach(([vid, d]) => {
         if (vid !== viaturaId) {
-          d.tripulantesIds = (d.tripulantesIds || []).filter(id => id !== membroId);
+          if (d.comandanteId === membroId) d.comandanteId = '';
           if (d.motoristaId === membroId) d.motoristaId = '';
+          d.tripulantesIds = (d.tripulantesIds || []).filter(id => id !== membroId);
         }
       });
       if (!det.tripulantesIds.includes(membroId)) det.tripulantesIds.push(membroId);
-      if (!det.motoristaId && det.tripulantesIds.length > 0) {
-        det.motoristaId = det.tripulantesIds[0];
-      }
     } else {
-      if (membroId === det.motoristaId) {
-        det.motoristaId = '';
-        det.tripulantesIds = det.tripulantesIds.filter(id => id !== membroId);
-        if (det.tripulantesIds.length > 0) {
-          det.motoristaId = det.tripulantesIds[0];
-        }
-      } else {
-        det.tripulantesIds = det.tripulantesIds.filter(id => id !== membroId);
-      }
+      det.tripulantesIds = (det.tripulantesIds || []).filter(id => id !== membroId);
     }
     this.renderViaturasChecklist();
   },
@@ -370,6 +458,48 @@ const Rotina = {
     if (!comandanteId) { Utils.showToast('Selecione o comandante', 'warning'); return; }
     const comandante = this.equipeSelecionada.find(m => m.id === comandanteId);
     const telegrafistaId = document.getElementById('telegrafistaSelect')?.value || '';
+
+    // Validação obrigatória de Comandante e Motorista em cada viatura selecionada
+    for (const vid of this.viaturasSelecionadas) {
+      const v = (this.viaturasDisponiveis || []).find(x => x.id === vid);
+      const vNome = v?.nome || 'Viatura';
+      const det = this.viaturasDetalhes[vid] || {};
+      if (!det.comandanteId) {
+        Utils.showToast(`Defina o Comandante para a viatura ${vNome}`, 'warning');
+        return;
+      }
+      if (!det.motoristaId) {
+        Utils.showToast(`Defina o Motorista para a viatura ${vNome}`, 'warning');
+        return;
+      }
+      if (det.comandanteId === det.motoristaId) {
+        Utils.showToast(`O Comandante e o Motorista da viatura ${vNome} devem ser militares diferentes`, 'warning');
+        return;
+      }
+    }
+
+    // Validação estrita: nenhum militar pode fazer parte de mais de uma viatura
+    const militarAlocado = new Map();
+    for (const vid of this.viaturasSelecionadas) {
+      const v = (this.viaturasDisponiveis || []).find(x => x.id === vid);
+      const vNome = v?.nome || 'Viatura';
+      const det = this.viaturasDetalhes[vid] || {};
+      const componentes = [
+        det.comandanteId,
+        det.motoristaId,
+        ...(det.tripulantesIds || []).filter(id => id !== det.comandanteId && id !== det.motoristaId)
+      ].filter(Boolean);
+
+      for (const mId of componentes) {
+        if (militarAlocado.has(mId)) {
+          const mObj = this.equipeSelecionada.find(x => x.id === mId);
+          Utils.showToast(`O integrante ${mObj?.nome || 'selecionado'} não pode fazer parte de mais de uma viatura (${militarAlocado.get(mId)} e ${vNome}).`, 'warning');
+          return;
+        }
+        militarAlocado.set(mId, vNome);
+      }
+    }
+
     try {
       const result = await API.iniciarServico({
         prontidao: this.selectedProntidao,
@@ -384,15 +514,22 @@ const Rotina = {
         for (const vid of this.viaturasSelecionadas) {
           const v = (this.viaturasDisponiveis || []).find(x => x.id === vid);
           const det = this.viaturasDetalhes[vid] || {};
-          const motorista = this.equipeSelecionada.find(m => m.id === det.motoristaId);
-          let tripIds = [...new Set([det.motoristaId, ...(det.tripulantesIds || [])].filter(Boolean))];
-          const tripulantes = tripIds.map(tid => {
+          const cMilitar = this.equipeSelecionada.find(m => m.id === det.comandanteId);
+          const mMilitar = this.equipeSelecionada.find(m => m.id === det.motoristaId);
+          const auxs = (det.tripulantesIds || []).filter(id => id !== det.comandanteId && id !== det.motoristaId).map(tid => {
             const m = this.equipeSelecionada.find(x => x.id === tid);
-            return m ? { id: m.id, nome: m.nome } : null;
+            return m ? { id: m.id, nome: m.nome, funcao: 'Auxiliar' } : null;
           }).filter(Boolean);
+
+          const tripulantes = [
+            { id: det.comandanteId, nome: cMilitar?.nome || '', funcao: 'Comandante' },
+            ...auxs
+          ];
+
           await API.iniciarServicoViatura({
             servicoId, viaturaId: vid, viaturaNome: v?.nome || '',
-            motorista: motorista?.nome || '', motoristaId: det.motoristaId || '',
+            comandante: cMilitar?.nome || '', comandanteId: det.comandanteId || '',
+            motorista: mMilitar?.nome || '', motoristaId: det.motoristaId || '',
             tripulantes
           });
         }
@@ -462,110 +599,542 @@ const Rotina = {
     if (this.currentFilter === 'concluida') items = items.filter(a => a.status === 'concluida');
     if (this.currentFilter === 'prejudicada') items = items.filter(a => a.status === 'nao_realizada');
 
-    if (items.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhuma atividade</p></div>'; return; }
+    if (items.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhuma atividade encontrada</p></div>'; return; }
 
-    items.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
+    items.sort((a, b) => {
+      const getMin = (t) => {
+        if (!t) return 99999;
+        const p = String(t).split(':');
+        const mins = (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0);
+        return mins < 450 ? mins + 1440 : mins;
+      };
+      return getMin(a.horario) - getMin(b.horario);
+    });
 
-    const badge = (s) => {
-      const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Prejudicada</span>' };
-      return m[s] || m.nao_iniciada;
+    const badge = (a) => {
+      const s = a.status;
+      if (s === 'concluida') {
+        return `<span class="badge badge-green" title="Concluída às ${a.horaConclusao || a.horario}">Concluída${a.horaConclusao ? ' (' + a.horaConclusao + ')' : ''}</span>`;
+      }
+      if (s === 'em_andamento') return '<span class="badge badge-yellow">Andamento</span>';
+      if (s === 'nao_realizada') return '<span class="badge badge-warning">Prejudicada</span>';
+      if (s === 'cancelada') return '<span class="badge badge-danger">Cancelada</span>';
+      return '<span class="badge badge-info">Pendente</span>';
+    };
+
+    const statusRowClass = (s) => {
+      if (s === 'concluida') return 'done';
+      if (s === 'em_andamento') return 'andamento';
+      if (s === 'nao_realizada') return 'prejudicada';
+      if (s === 'cancelada') return 'cancelada';
+      return '';
     };
 
     el.innerHTML = items.map(a => `
-      <div class="atividade-row ${a.status === 'concluida' ? 'done' : ''}" onclick="Rotina.openAtividade('${a.id}')">
+      <div class="atividade-row ${statusRowClass(a.status)}" onclick="Rotina.openAtividade('${a.id}')" title="Clique para abrir ações e detalhes">
         <div class="atividade-h">${a.horario}</div>
-        <div><div style="font-weight:600">${Utils.escapeHtml(a.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(a.programa || '')}${a.origem === 'extra' ? ' <span style="color:var(--accent-yellow)">(Avulsa)</span>' : ''}</div></div>
+        <div>
+          <div style="font-weight:600;display:flex;align-items:center;gap:6px">
+            ${Utils.escapeHtml(a.nome)}
+            ${a.origem === 'extra' ? '<span style="font-size:0.7rem;color:var(--accent-yellow);font-weight:normal">(Avulsa)</span>' : ''}
+          </div>
+          <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(a.programa || 'Rotina')}</div>
+        </div>
         <div style="font-size:0.85rem;color:var(--text-secondary)">${Utils.escapeHtml(a.responsavel || '-')}</div>
-        <div>${badge(a.status)}</div>
+        <div>${badge(a)}</div>
+        <div class="ativ-quick-btns" onclick="event.stopPropagation()">
+          ${a.status !== 'concluida' ? `
+            <button class="btn btn-primary btn-sm" onclick="Rotina.openAtividade('${a.id}','concluir')" title="Concluir no Horário Previsto ou Atual">✓ Concluir</button>
+            ${a.status !== 'em_andamento' ? `
+              <button class="btn btn-secondary btn-sm" onclick="Rotina.iniciarAtividade('${a.id}')" title="Iniciar Atividade">▶ Iniciar</button>
+            ` : ''}
+          ` : `
+            <button class="btn btn-ghost btn-sm" onclick="Rotina.openAtividade('${a.id}','concluir')" style="font-size:0.8rem" title="Ajustar Horário de Conclusão">⏱️ Ajustar</button>
+          `}
+          <button class="btn btn-ghost btn-sm" onclick="Rotina.openAtividade('${a.id}')" title="Mais opções">⋮</button>
+        </div>
       </div>
     `).join('');
   },
 
-  openAtividade(id) {
+  openAtividade(id, modo) {
     const a = this.rotina.find(x => x.id === id);
     if (!a) return;
     document.getElementById('modalTitle').textContent = a.nome;
-    const badge = (s) => {
-      const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Prejudicada</span>' };
-      return m[s] || m.nao_iniciada;
+    const now = Utils.formatTime(new Date());
+
+    const badgeMap = {
+      concluida: '<span class="badge badge-green">Concluída</span>',
+      em_andamento: '<span class="badge badge-yellow">Em Andamento</span>',
+      nao_iniciada: '<span class="badge badge-info">Pendente</span>',
+      cancelada: '<span class="badge badge-danger">Cancelada</span>',
+      nao_realizada: '<span class="badge badge-warning">Prejudicada</span>'
     };
+
+    const isConcluida = a.status === 'concluida';
+    const horaDefault = a.horaConclusao || a.horario;
 
     document.getElementById('modalContent').innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          <div><span style="color:var(--text-muted);font-size:0.8rem">Horário</span><div style="font-family:var(--font-mono);font-size:1.2rem;font-weight:600;color:var(--prontidao-color)">${a.horario}</div></div>
-          <div><span style="color:var(--text-muted);font-size:0.8rem">Status</span><div>${badge(a.status)}</div></div>
-        </div>
-        <div><span style="color:var(--text-muted);font-size:0.8rem">Responsável</span><div style="font-weight:500">${Utils.escapeHtml(a.responsavel || '-')}</div></div>
-        <div><span style="color:var(--text-muted);font-size:0.8rem">Programa de Apoio</span><div>${Utils.escapeHtml(a.programa || '-')}</div></div>
-        ${a.concluidoPor ? `<div><span style="color:var(--text-muted);font-size:0.8rem">Concluído por</span><div>${Utils.escapeHtml(a.concluidoPor)}</div></div>` : ''}
-        ${a.horaConclusao ? `<div><span style="color:var(--text-muted);font-size:0.8rem">Hora conclusão</span><div style="font-family:var(--font-mono)">${a.horaConclusao}</div></div>` : ''}
-        ${a.observacoes ? `<div><span style="color:var(--text-muted);font-size:0.8rem">Observações</span><div>${Utils.escapeHtml(a.observacoes)}</div></div>` : ''}
-        <div class="divider"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${a.status !== 'concluida' && a.status !== 'cancelada' && a.status !== 'nao_realizada' ? `
-            <button class="btn btn-secondary" onclick="Rotina.updateStatus('${id}','em_andamento')">Iniciar</button>
-            <button class="btn btn-primary" onclick="Rotina.updateStatus('${id}','concluida')">Concluir</button>
-            <button class="btn btn-danger" onclick="Rotina.updateStatus('${id}','cancelada')">Cancelar</button>
-            <button class="btn btn-warning" onclick="Rotina.marcarPrejudicada('${id}')">Prejudicada</button>
+        <!-- Detalhes da Atividade -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--bg-tertiary);padding:12px;border-radius:10px">
+          <div>
+            <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Horário Previsto</span>
+            <div style="font-family:var(--font-mono);font-size:1.25rem;font-weight:700;color:var(--prontidao-color)">${a.horario}</div>
+          </div>
+          <div>
+            <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Status Atual</span>
+            <div style="margin-top:2px">${badgeMap[a.status] || badgeMap.nao_iniciada}</div>
+          </div>
+          <div>
+            <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Programa de Apoio</span>
+            <div style="font-weight:500;font-size:0.9rem">${Utils.escapeHtml(a.programa || 'Rotina')}</div>
+          </div>
+          <div>
+            <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Responsável</span>
+            <div style="font-weight:500;font-size:0.9rem">${Utils.escapeHtml(a.responsavel || '-')}</div>
+          </div>
+          ${a.concluidoPor ? `
+            <div>
+              <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Concluído Por</span>
+              <div style="font-weight:500;font-size:0.9rem">${Utils.escapeHtml(a.concluidoPor)}</div>
+            </div>
           ` : ''}
-          <button class="btn btn-secondary" onclick="Rotina.editarAtividade('${id}')">Editar</button>
-          ${a.origem !== 'padrao' ? `<button class="btn btn-danger" onclick="Rotina.excluirAtividade('${id}')">Excluir</button>` : ''}
+          ${a.horaConclusao ? `
+            <div>
+              <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Hora Registrada</span>
+              <div style="font-family:var(--font-mono);font-weight:600;font-size:1.05rem;color:var(--accent-green)">${a.horaConclusao}</div>
+            </div>
+          ` : ''}
+          ${a.horaInicio ? `
+            <div>
+              <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Hora Início</span>
+              <div style="font-family:var(--font-mono);font-size:0.9rem">${a.horaInicio}</div>
+            </div>
+          ` : ''}
+          ${a.observacoes ? `
+            <div style="grid-column:span 2">
+              <span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase">Observações</span>
+              <div style="font-size:0.85rem;white-space:pre-wrap;background:rgba(0,0,0,0.15);padding:6px 10px;border-radius:6px;margin-top:2px">${Utils.escapeHtml(a.observacoes)}</div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Bloco de Conclusão / Ajuste de Horário (Previsto ou Atual ou Personalizado) -->
+        <div class="card" style="padding:14px;background:rgba(0,200,83,0.06);border:1px solid rgba(0,200,83,0.25);border-radius:10px">
+          <div style="font-weight:600;font-size:0.95rem;color:var(--accent-green);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <span>✓</span> ${isConcluida ? 'Ajustar Horário de Conclusão (Retroativo)' : 'Marcar como Concluída'}
+          </div>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.3">
+            ${isConcluida
+              ? 'Se o quartel estava sem efetivo no momento ou o horário precisa ser corrigido para a escala, selecione o horário correto:'
+              : 'Caso não houvesse ninguém no quartel durante a rotina ou queira marcar retroativamente, escolha o horário previsto ou informe o real:'}
+          </p>
+
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;gap:14px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
+                <input type="radio" name="tipoHorarioConclusao" value="previsto" checked onchange="Rotina.onTipoHoraChange('${id}')">
+                <span>Horário Previsto (<strong>${a.horario}</strong>)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
+                <input type="radio" name="tipoHorarioConclusao" value="atual" onchange="Rotina.onTipoHoraChange('${id}')">
+                <span>Horário Atual (<strong>${now}</strong>)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem">
+                <input type="radio" name="tipoHorarioConclusao" value="custom" onchange="Rotina.onTipoHoraChange('${id}')">
+                <span>Outro Horário</span>
+              </label>
+            </div>
+
+            <div id="conclusaoCustomGroup" style="display:none;margin-top:2px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <label class="input-label" style="margin:0;font-size:0.85rem">Informe o Horário:</label>
+                <input class="input" type="time" id="conclusaoHoraCustom" value="${horaDefault}" style="max-width:140px;height:36px">
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label class="input-label" style="font-size:0.8rem;margin-bottom:4px">Concluído Por</label>
+                <input class="input" id="conclusaoPorInput" value="${(typeof Auth !== 'undefined' && Auth.userName) || a.responsavel || 'Operador'}" style="height:36px;font-size:0.85rem">
+              </div>
+              <div>
+                <label class="input-label" style="font-size:0.8rem;margin-bottom:4px">Observação (opcional)</label>
+                <input class="input" id="conclusaoObsInput" placeholder="Ex: Cumprido conforme escala" style="height:36px;font-size:0.85rem">
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+              <button class="btn btn-primary" onclick="Rotina.salvarConclusao('${id}')" style="flex:1;min-width:180px">
+                ✓ ${isConcluida ? 'Salvar Horário Ajustado' : 'Confirmar Conclusão'}
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="Rotina.concluirRapidoPrevisto('${id}')" title="Marcar concluída diretamente no horário previsto (${a.horario})">
+                ⚡ Horário Previsto (${a.horario})
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="Rotina.concluirRapidoAgora('${id}')" title="Marcar concluída diretamente no horário de agora (${now})">
+                ⏱️ Horário Atual (${now})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Botões de Ações Gerais -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="modalAcoesPadrao">
+          ${a.status !== 'em_andamento' ? `
+            <button class="btn btn-secondary" onclick="Rotina.iniciarAtividade('${id}')">▶ ${isConcluida ? 'Reabrir / Em Andamento' : 'Iniciar'}</button>
+          ` : `
+            <button class="btn btn-secondary" onclick="Rotina.iniciarAtividade('${id}')">🔄 Reiniciar</button>
+          `}
+          <button class="btn btn-warning" onclick="Rotina.mostrarFormPrejudicada('${id}')">⚠️ Prejudicada</button>
+          <button class="btn btn-danger" onclick="Rotina.mostrarConfirmCancelar('${id}')">✕ Cancelar</button>
+          <button class="btn btn-secondary" onclick="Rotina.editarAtividade('${id}')">✏️ Editar</button>
+          <button class="btn btn-danger" onclick="Rotina.mostrarConfirmExcluir('${id}')">🗑️ Excluir</button>
           <button class="btn btn-ghost" onclick="Rotina.closeModal()">Fechar</button>
         </div>
+
+        <!-- Painel Dinâmico para Formulários/Confirmações Inline (SEM confirm/prompt) -->
+        <div id="modalAcaoDinamica" style="display:none;padding:12px;border-radius:10px;background:var(--bg-tertiary);border:1px solid var(--border-color)"></div>
       </div>
     `;
     document.getElementById('atividadeModal').style.display = 'flex';
   },
 
-  closeModal() { document.getElementById('atividadeModal').style.display = 'none'; },
-
-  async updateStatus(id, status) {
-    const a = this.rotina.find(x => x.id === id);
-    if (!a) return;
-    const labels = { concluida: 'concluir', em_andamento: 'iniciar', cancelada: 'cancelar' };
-    const msg = `Deseja ${labels[status] || 'alterar'} a atividade "${a.nome}"?`;
-    if (!confirm(msg)) return;
-    try {
-      const now = Utils.formatTime(new Date());
-      const dados = { status, concluidoPor: status === 'concluida' ? Auth.userName : undefined, horaConclusao: status === 'concluida' ? now : undefined };
-      const result = await API.updateAtividade(this.servico.id, id, dados);
-      if (result.success) {
-        const a = this.rotina.find(x => x.id === id);
-        if (a) { a.status = status; if (status === 'concluida') { a.concluidoPor = Auth.userName; a.horaConclusao = now; } }
-        this.renderRotina();
-        this.closeModal();
-        Utils.showToast({ concluida: 'Atividade concluída', em_andamento: 'Atividade iniciada', cancelada: 'Cancelada' }[status] || 'Atualizado', 'success');
-        if (status === 'concluida') Utils.playSound('aviso');
-      }
-    } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+  closeModal() {
+    document.getElementById('atividadeModal').style.display = 'none';
   },
 
-  async marcarPrejudicada(id) {
+  onTipoHoraChange(id) {
+    const radios = document.querySelectorAll('input[name="tipoHorarioConclusao"]');
+    let sel = 'previsto';
+    radios.forEach(r => { if (r.checked) sel = r.value; });
+    const customGroup = document.getElementById('conclusaoCustomGroup');
+    if (customGroup) customGroup.style.display = sel === 'custom' ? 'block' : 'none';
+  },
+
+  async salvarConclusao(id) {
     const a = this.rotina.find(x => x.id === id);
     if (!a) return;
-    const obs = prompt(`Atividade "${a.nome}"\n\nMotivo da atividade prejudicada (obrigatório):`);
-    if (obs === null) return;
-    if (!obs.trim()) { Utils.showToast('Informe o motivo da prejudicação', 'warning'); return; }
+    const now = Utils.formatTime(new Date());
+
+    const radios = document.querySelectorAll('input[name="tipoHorarioConclusao"]');
+    let tipo = 'previsto';
+    radios.forEach(r => { if (r.checked) tipo = r.value; });
+
+    let horaFinal = a.horario;
+    if (tipo === 'atual') {
+      horaFinal = now;
+    } else if (tipo === 'custom') {
+      const customEl = document.getElementById('conclusaoHoraCustom');
+      horaFinal = customEl?.value ? customEl.value.trim() : a.horario;
+    }
+
+    const userName = document.getElementById('conclusaoPorInput')?.value?.trim() || (typeof Auth !== 'undefined' && Auth.userName) || 'Usuário';
+    const obsExtra = document.getElementById('conclusaoObsInput')?.value?.trim() || '';
+
+    let observacoes = a.observacoes || '';
+    if (obsExtra) {
+      observacoes = observacoes ? (observacoes + '\n' + obsExtra) : obsExtra;
+    }
+
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const dados = {
+      status: 'concluida',
+      concluidoPor: userName,
+      horaConclusao: horaFinal,
+      horaAtualizacao: now,
+      observacoes
+    };
+
     try {
-      const now = Utils.formatTime(new Date());
-      const dados = { status: 'nao_realizada', concluidoPor: Auth.userName, horaConclusao: now, observacoes: (a.observacoes ? a.observacoes + '\n' : '') + '[Prejudicada] ' + obs.trim() };
-      const result = await API.updateAtividade(this.servico.id, id, dados);
+      const result = await API.updateAtividade(servId, id, dados);
       if (result.success) {
         Object.assign(a, dados);
         this.renderRotina();
         this.closeModal();
-        Utils.showToast('Atividade marcada como prejudicada', 'warning');
+        Utils.showToast(`Rotina "${a.nome}" concluída às ${horaFinal}`, 'success');
+        Utils.playSound('aviso');
+      } else {
+        Utils.showToast(result.error || 'Erro ao concluir atividade', 'error');
       }
-    } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  async concluirRapidoPrevisto(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const now = Utils.formatTime(new Date());
+    const userName = (typeof Auth !== 'undefined' && Auth.userName) || a.responsavel || 'Usuário';
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const dados = {
+      status: 'concluida',
+      concluidoPor: userName,
+      horaConclusao: a.horario,
+      horaAtualizacao: now
+    };
+    try {
+      const result = await API.updateAtividade(servId, id, dados);
+      if (result.success) {
+        Object.assign(a, dados);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Concluída no horário previsto (${a.horario})`, 'success');
+        Utils.playSound('aviso');
+      } else {
+        Utils.showToast(result.error || 'Erro ao atualizar', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  async concluirRapidoAgora(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const now = Utils.formatTime(new Date());
+    const userName = (typeof Auth !== 'undefined' && Auth.userName) || a.responsavel || 'Usuário';
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const dados = {
+      status: 'concluida',
+      concluidoPor: userName,
+      horaConclusao: now,
+      horaAtualizacao: now
+    };
+    try {
+      const result = await API.updateAtividade(servId, id, dados);
+      if (result.success) {
+        Object.assign(a, dados);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Concluída às ${now}`, 'success');
+        Utils.playSound('aviso');
+      } else {
+        Utils.showToast(result.error || 'Erro ao atualizar', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  async iniciarAtividade(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const now = Utils.formatTime(new Date());
+    const userName = (typeof Auth !== 'undefined' && Auth.userName) || 'Usuário';
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const dados = {
+      status: 'em_andamento',
+      horaInicio: now,
+      horaAtualizacao: now,
+      concluidoPor: userName
+    };
+    try {
+      const result = await API.updateAtividade(servId, id, dados);
+      if (result.success) {
+        Object.assign(a, dados);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Atividade "${a.nome}" iniciada às ${now}`, 'success');
+      } else {
+        Utils.showToast(result.error || 'Erro ao iniciar atividade', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  fecharAcaoDinamica() {
+    const dyn = document.getElementById('modalAcaoDinamica');
+    if (dyn) {
+      dyn.style.display = 'none';
+      dyn.innerHTML = '';
+    }
+  },
+
+  mostrarFormPrejudicada(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const dyn = document.getElementById('modalAcaoDinamica');
+    if (!dyn) return;
+    dyn.style.display = 'block';
+    dyn.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-weight:600;color:var(--accent-yellow);display:flex;align-items:center;gap:6px">
+          <span>⚠️</span> Marcar Atividade como Prejudicada
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-secondary)">Selecione um motivo rápido ou digite a justificativa:</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="Rotina.setPrejudicadaMotivo('Viaturas empenhadas em ocorrência')">🚒 Em ocorrência</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="Rotina.setPrejudicadaMotivo('Atendimento emergencial externo')">🚨 Emergência externa</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="Rotina.setPrejudicadaMotivo('Quartel desguarnecido durante atendimento')">👨‍🚒 Quartel desguarnecido</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="Rotina.setPrejudicadaMotivo('Condições meteorológicas desfavoráveis')">🌧️ Meteorologia</button>
+        </div>
+        <textarea class="input" id="prejudicadaMotivoInput" rows="2" placeholder="Digite o motivo da prejudicação..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-warning" onclick="Rotina.salvarPrejudicada('${id}')">Confirmar Prejudicada</button>
+          <button class="btn btn-ghost" onclick="Rotina.fecharAcaoDinamica()">Voltar</button>
+        </div>
+      </div>
+    `;
+    const textarea = document.getElementById('prejudicadaMotivoInput');
+    if (textarea) textarea.focus();
+  },
+
+  setPrejudicadaMotivo(txt) {
+    const el = document.getElementById('prejudicadaMotivoInput');
+    if (el) el.value = txt;
+  },
+
+  async salvarPrejudicada(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const motivo = document.getElementById('prejudicadaMotivoInput')?.value?.trim();
+    if (!motivo) {
+      Utils.showToast('Informe o motivo da atividade prejudicada', 'warning');
+      return;
+    }
+    const now = Utils.formatTime(new Date());
+    const userName = (typeof Auth !== 'undefined' && Auth.userName) || 'Usuário';
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const novosObs = (a.observacoes ? a.observacoes + '\n' : '') + '[Prejudicada] ' + motivo;
+    const dados = {
+      status: 'nao_realizada',
+      concluidoPor: userName,
+      horaConclusao: now,
+      horaAtualizacao: now,
+      observacoes: novosObs
+    };
+    try {
+      const result = await API.updateAtividade(servId, id, dados);
+      if (result.success) {
+        Object.assign(a, dados);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Atividade "${a.nome}" marcada como prejudicada`, 'warning');
+      } else {
+        Utils.showToast(result.error || 'Erro ao registrar', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  mostrarConfirmCancelar(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const dyn = document.getElementById('modalAcaoDinamica');
+    if (!dyn) return;
+    dyn.style.display = 'block';
+    dyn.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-weight:600;color:var(--accent-red)">✕ Cancelar Atividade "${Utils.escapeHtml(a.nome)}"</div>
+        <p style="font-size:0.85rem;color:var(--text-secondary)">Deseja marcar esta atividade como cancelada para o serviço de hoje?</p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-danger" onclick="Rotina.salvarCancelamento('${id}')">Sim, Cancelar Atividade</button>
+          <button class="btn btn-ghost" onclick="Rotina.fecharAcaoDinamica()">Voltar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async salvarCancelamento(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const now = Utils.formatTime(new Date());
+    const userName = (typeof Auth !== 'undefined' && Auth.userName) || 'Usuário';
+    const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+    const dados = {
+      status: 'cancelada',
+      concluidoPor: userName,
+      horaConclusao: now,
+      horaAtualizacao: now
+    };
+    try {
+      const result = await API.updateAtividade(servId, id, dados);
+      if (result.success) {
+        Object.assign(a, dados);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Atividade "${a.nome}" cancelada`, 'success');
+      } else {
+        Utils.showToast(result.error || 'Erro ao cancelar', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  mostrarConfirmExcluir(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    const dyn = document.getElementById('modalAcaoDinamica');
+    if (!dyn) return;
+    dyn.style.display = 'block';
+    dyn.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-weight:600;color:var(--accent-red)">🗑️ Excluir Atividade "${Utils.escapeHtml(a.nome)}"</div>
+        <p style="font-size:0.85rem;color:var(--text-secondary)">Esta ação removerá a atividade permanentemente da rotina de hoje e registrará a exclusão na linha do tempo.</p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-danger" onclick="Rotina.salvarExclusao('${id}')">Sim, Excluir Atividade</button>
+          <button class="btn btn-ghost" onclick="Rotina.fecharAcaoDinamica()">Voltar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async salvarExclusao(id) {
+    const a = this.rotina.find(x => x.id === id);
+    if (!a) return;
+    try {
+      const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
+      const result = await API.excluirAtividadeRotina(servId, id);
+      if (result.success) {
+        this.rotina = this.rotina.filter(x => x.id !== id);
+        this.renderRotina();
+        this.closeModal();
+        Utils.showToast(`Atividade "${a.nome}" excluída`, 'success');
+      } else {
+        Utils.showToast(result.error || 'Erro ao excluir atividade', 'error');
+      }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
+  },
+
+  // Suporte a compatibilidade de chamadas legadas
+  async updateStatus(id, status) {
+    if (status === 'concluida') {
+      this.salvarConclusao(id);
+    } else if (status === 'em_andamento') {
+      this.iniciarAtividade(id);
+    } else if (status === 'cancelada') {
+      this.mostrarConfirmCancelar(id);
+    } else if (status === 'nao_realizada') {
+      this.mostrarFormPrejudicada(id);
+    }
+  },
+
+  async marcarPrejudicada(id) {
+    this.mostrarFormPrejudicada(id);
+  },
+
+  async excluirAtividade(id) {
+    this.mostrarConfirmExcluir(id);
   },
 
   toggleAddMenu() {
     const menu = document.getElementById('addMenu');
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
   },
 
-  hideAddMenu() { document.getElementById('addMenu').style.display = 'none'; },
+  hideAddMenu() {
+    const menu = document.getElementById('addMenu');
+    if (menu) menu.style.display = 'none';
+  },
 
   editarAtividade(id) {
     const a = this.rotina.find(x => x.id === id);
@@ -597,21 +1166,6 @@ const Rotina = {
     document.getElementById('extraModal').style.display = 'flex';
   },
 
-  async excluirAtividade(id) {
-    const a = this.rotina.find(x => x.id === id);
-    if (!a) return;
-    if (!confirm(`Deseja excluir "${a.nome}"?\n\nEsta ação não pode ser desfeita.`)) return;
-    try {
-      const result = await API.excluirAtividadeRotina(this.servico.id, id);
-      if (result.success) {
-        this.rotina = this.rotina.filter(x => x.id !== id);
-        this.renderRotina();
-        this.closeModal();
-        Utils.showToast('Atividade excluída', 'success');
-      }
-    } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
-  },
-
   showExtraModal() {
     document.getElementById('extraModalTitle').textContent = 'Atividade Avulsa';
     document.getElementById('extraEditId').value = '';
@@ -621,12 +1175,15 @@ const Rotina = {
     document.getElementById('extraModal').style.display = 'flex';
   },
 
-  closeExtraModal() { document.getElementById('extraModal').style.display = 'none'; document.getElementById('extraForm').reset(); document.getElementById('extraEditId').value = ''; },
+  closeExtraModal() {
+    document.getElementById('extraModal').style.display = 'none';
+    document.getElementById('extraForm').reset();
+    document.getElementById('extraEditId').value = '';
+  },
 
   async saveExtra(e) {
     e.preventDefault();
     const editId = document.getElementById('extraEditId').value;
-    if (editId && !confirm('Salvar alterações nesta atividade?')) return;
     const progSel = document.getElementById('extraPrograma');
     const programa = progSel.value === 'Outros' ? (document.getElementById('extraProgramaManual').value.trim() || 'Outros') : progSel.value;
     const respSel = document.getElementById('extraResp');
@@ -646,23 +1203,34 @@ const Rotina = {
       responsavel,
       observacoes: document.getElementById('extraObs').value.trim(),
       notificar: document.getElementById('extraNotificar').checked,
-      criadoPor: Auth.userName
+      criadoPor: (typeof Auth !== 'undefined' && Auth.userName) || 'Usuário'
     };
 
     try {
+      const servId = (this.servico && this.servico.id) || localStorage.getItem('sgpo_active_servico_id') || 'demo-servico';
       if (editId) {
-        const result = await API.editarAtividadeRotina(this.servico.id, editId, dados);
+        const result = await API.editarAtividadeRotina(servId, editId, dados);
         if (result.success) {
           const a = this.rotina.find(x => x.id === editId);
           if (a) { Object.assign(a, dados); this.renderRotina(); }
-          Utils.showToast('Atividade atualizada', 'success');
+          Utils.showToast('Atividade atualizada com sucesso', 'success');
+        } else {
+          Utils.showToast(result.error || 'Erro ao atualizar atividade', 'error');
         }
       } else {
-        const result = await API.criarAtividadeExtra(this.servico.id, dados);
-        if (result.success) { Utils.showToast('Atividade avulsa criada', 'success'); Utils.playSound('nova-atividade'); await this.loadRotina(); }
+        const result = await API.criarAtividadeExtra(servId, dados);
+        if (result.success) {
+          Utils.showToast('Atividade avulsa criada com sucesso', 'success');
+          Utils.playSound('nova-atividade');
+          await this.loadRotina();
+        } else {
+          Utils.showToast(result.error || 'Erro ao criar atividade', 'error');
+        }
       }
       this.closeExtraModal();
-    } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+    } catch (e) {
+      Utils.showToast('Erro: ' + e.message, 'error');
+    }
   }
 };
 

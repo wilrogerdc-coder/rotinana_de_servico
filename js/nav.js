@@ -9,6 +9,11 @@ const NAV = {
     this.setupLogout();
     this.applySavedCampanha();
     this.loadPostoLogo();
+    this.checkOcorrenciasAtivas();
+    if (typeof Sync !== 'undefined' && Sync.on) {
+      Sync.on('ocorrencias_updated', () => this.checkOcorrenciasAtivas());
+      Sync.on('viaturas_updated', () => this.checkOcorrenciasAtivas());
+    }
   },
 
   pages: [
@@ -76,14 +81,31 @@ const NAV = {
       layout.appendChild(sidebar);
     }
 
+    const prefetchPage = (url) => {
+      if (!url || document.querySelector(`link[rel="prefetch"][href="${url}"]`)) return;
+      const l = document.createElement('link');
+      l.rel = 'prefetch';
+      l.href = url;
+      document.head.appendChild(l);
+    };
+
     sidebar.querySelectorAll('.sidebar-item[data-page]').forEach(btn => {
+      const page = btn.dataset.page;
+      const targetUrl = page + '.html';
+      btn.addEventListener('pointerenter', () => prefetchPage(targetUrl), { once: true });
       btn.addEventListener('click', () => {
-        const page = btn.dataset.page;
         if (page !== this.currentPage) {
-          window.location.href = page + '.html';
+          window.location.href = targetUrl;
         }
       });
     });
+
+    // Prefetch principais páginas em background após carga para transição instantânea
+    setTimeout(() => {
+      ['dashboard.html', 'postos.html', 'rotina.html', 'telegrafia.html', 'servicos.html'].forEach(p => {
+        if (!window.location.pathname.endsWith(p)) prefetchPage(p);
+      });
+    }, 400);
   },
 
   renderTopbar() {
@@ -106,7 +128,11 @@ const NAV = {
           <span id="serviceSwitchedBadge" style="display:none;margin-left:6px;font-size:0.7rem;background:var(--accent-primary);color:#fff;padding:1px 6px;border-radius:8px;font-weight:600;cursor:pointer" onclick="NAV.clearActiveServico()" title="Clique para voltar ao seu serviço">✓ Serviço selecionado</span>
         </div>
       </div>
-      <div class="topbar-right">
+      <div class="topbar-right" style="display:flex;align-items:center;gap:10px">
+        <button id="navBtnEncerrarOcorrencia" class="btn btn-sm" style="display:none;font-size:0.75rem;padding:4px 10px;background:#00c853;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,200,83,0.3);align-items:center;gap:6px" onclick="NAV.abrirModalEncerrarDireto()" title="Encerrar ocorrência diretamente e liberar viaturas para Disponível">
+          <span>🏁 Encerrar Ocorrência</span>
+          <span id="navOcorrenciasBadge" style="background:#fff;color:#00c853;border-radius:10px;padding:1px 6px;font-size:0.7rem;font-weight:800">1</span>
+        </button>
         <span id="horaAtual" style="font-family:var(--font-mono);font-weight:600"></span>
         <span id="userNameTop" style="color:var(--text-secondary);font-size:0.85rem"></span>
       </div>
@@ -267,6 +293,229 @@ const NAV = {
     }
   },
 
+    _ocorrenciasAtivasCache: [],
+  _servicoViaturasCache: [],
+
+  async checkOcorrenciasAtivas() {
+    try {
+      if (typeof API === 'undefined' || !Auth.isLoggedIn) return;
+      let ocs = [];
+      let svs = [];
+
+      if (typeof Dashboard !== 'undefined' && Dashboard.ocorrencias && Dashboard.servicoViaturas) {
+        ocs = (Dashboard.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+        svs = Dashboard.servicoViaturas || [];
+      } else {
+        const data = await API.getServicoAtual(Auth.userId).catch(() => null);
+        if (data) {
+          ocs = (data.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+          svs = data.servicoViaturas || [];
+        }
+      }
+
+      const svsEmOcorr = svs.filter(v => v.status === 'em_ocorrencia');
+      this._ocorrenciasAtivasCache = ocs;
+      this._servicoViaturasCache = svs;
+
+      const btn = document.getElementById('navBtnEncerrarOcorrencia');
+      const badge = document.getElementById('navOcorrenciasBadge');
+      if (btn) {
+        if (ocs.length > 0 || svsEmOcorr.length > 0) {
+          btn.style.display = 'inline-flex';
+          if (badge) badge.textContent = ocs.length || svsEmOcorr.length;
+        } else {
+          btn.style.display = 'none';
+        }
+      }
+    } catch(e) {}
+  },
+
+  async encerrarOcorrenciaDireta(ocorrId, servicoViaturaId = null) {
+    this.fecharModalEncerrar();
+
+    if (typeof Dashboard !== 'undefined' && Dashboard.encerrarOcorrenciaRapida) {
+      await Dashboard.encerrarOcorrenciaRapida(ocorrId, servicoViaturaId);
+      this.fecharModalEncerrar();
+      await this.checkOcorrenciasAtivas();
+      return;
+    }
+
+    let oc = (this._ocorrenciasAtivasCache || []).find(x => String(x.id) === String(ocorrId));
+    let sv = servicoViaturaId ? (this._servicoViaturasCache || []).find(x => String(x.id) === String(servicoViaturaId)) : null;
+    if (!oc && sv) {
+      oc = (this._ocorrenciasAtivasCache || []).find(o => (o.viaturaIds || []).some(vid => String(vid) === String(sv.viaturaId)) && o.status !== 'finalizada' && o.status !== 'cancelada');
+    }
+    if (!oc && !sv && (!ocorrId || ocorrId === '')) {
+      const ativas = (this._ocorrenciasAtivasCache || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+      if (ativas.length === 1) oc = ativas[0];
+      const svsEmOcorr = (this._servicoViaturasCache || []).filter(v => v.status === 'em_ocorrencia');
+      if (!oc && svsEmOcorr.length === 1) sv = svsEmOcorr[0];
+    }
+
+    const ocNumero = oc ? `#${oc.numero}` : '';
+    const viatNome = sv ? sv.viaturaNome : (oc ? (this._servicoViaturasCache || []).filter(v => (oc.viaturaIds || []).some(vid => String(vid) === String(v.viaturaId))).map(v => v.viaturaNome).join(', ') : 'viatura');
+
+    try {
+      const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const desfechoPadrao = 'Ocorrência atendida e finalizada diretamente. Viatura retornou disponível à base.';
+
+      if (oc) {
+        if (servicoViaturaId && (oc.viaturaIds || []).length > 1) {
+          await API.finalizarOcorrencia({
+            id: oc.id,
+            ocorrenciaId: oc.id,
+            liberarApenasServicoViaturaId: servicoViaturaId,
+            horaRetorno: agora,
+            destinoStatus: 'ativa'
+          });
+          await API.retornarViatura({
+            id: servicoViaturaId,
+            servicoViaturaId,
+            status: 'ativa',
+            destinoStatus: 'ativa',
+            horarioRetorno: agora
+          });
+          Utils.log('desempenho_viatura', `Viatura ${viatNome} liberada da Ocorrência ${ocNumero} e retornou DISPONÍVEL`, 'nav');
+          Utils.showToast(`🏁 Viatura ${viatNome} liberada da ocorrência ${ocNumero} e está DISPONÍVEL!`, 'success');
+        } else {
+          await API.finalizarOcorrencia({
+            id: oc.id,
+            ocorrenciaId: oc.id,
+            horaRetorno: agora,
+            desfecho: desfechoPadrao,
+            status: 'finalizada',
+            destinoStatus: 'ativa'
+          });
+          const viats = (this._servicoViaturasCache || []).filter(v => (oc.viaturaIds || []).some(vid => String(vid) === String(v.viaturaId)));
+          for (const v of viats) {
+            await API.retornarViatura({
+              id: v.id,
+              servicoViaturaId: v.id,
+              status: 'ativa',
+              destinoStatus: 'ativa',
+              horarioRetorno: agora
+            });
+          }
+          Utils.log('finalizar_ocorrencia', `Ocorrência ${ocNumero} finalizada diretamente — Viatura(s) ${viatNome} retornada(s) para DISPONÍVEL`, 'nav');
+          Utils.showToast(`🏁 Ocorrência ${ocNumero} encerrada com sucesso! Viatura(s) DISPONÍVEL.`, 'success');
+        }
+      } else if (sv) {
+        await API.retornarViatura({
+          id: sv.id,
+          servicoViaturaId: sv.id,
+          status: 'ativa',
+          destinoStatus: 'ativa',
+          horarioRetorno: agora
+        });
+        Utils.showToast(`🏁 Viatura ${sv.viaturaNome} retornou ao status DISPONÍVEL na base!`, 'success');
+      }
+
+      this.fecharModalEncerrar();
+      await this.checkOcorrenciasAtivas();
+    } catch(e) {
+      Utils.showToast('Erro ao encerrar: ' + e.message, 'error');
+    }
+  },
+
+  async abrirModalEncerrarDireto() {
+    await this.checkOcorrenciasAtivas();
+    let ocs = (this._ocorrenciasAtivasCache || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+    let svs = this._servicoViaturasCache || [];
+    let svsEmOcorr = svs.filter(v => v.status === 'em_ocorrencia');
+
+    if (ocs.length === 0 && svsEmOcorr.length === 0) {
+      try {
+        const data = await API.getServicoAtual(Auth.userId, true);
+        if (data) {
+          ocs = (data.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+          svs = data.servicoViaturas || [];
+          svsEmOcorr = svs.filter(v => v.status === 'em_ocorrencia');
+          this._ocorrenciasAtivasCache = ocs;
+          this._servicoViaturasCache = svs;
+        }
+      } catch(e) {}
+    }
+
+    if (ocs.length === 0 && svsEmOcorr.length === 0) {
+      Utils.showToast('Nenhuma ocorrência em andamento no momento.', 'info');
+      await this.checkOcorrenciasAtivas();
+      return;
+    }
+
+    // Se houver apenas 1 ocorrência ativa e no máximo 1 viatura nela, encerra diretamente
+    if (ocs.length === 1 && svsEmOcorr.length <= 1) {
+      return this.encerrarOcorrenciaDireta(ocs[0].id);
+    }
+    // Se não há ocorrência no array mas há exatamente 1 viatura em ocorrência
+    if (ocs.length === 0 && svsEmOcorr.length === 1) {
+      return this.encerrarOcorrenciaDireta('', svsEmOcorr[0].id);
+    }
+
+    // Se houver múltiplas ocorrências ou múltiplas viaturas, abre um modal simples de seleção direta
+    let modal = document.getElementById('navModalEncerrar');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'navModalEncerrar';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div style="background:var(--bg-card, #1e293b);border:1px solid var(--border-color, #334155);border-radius:12px;padding:20px;max-width:500px;width:100%;box-shadow:0 10px 25px rgba(0,0,0,0.5)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;display:flex;align-items:center;gap:8px">
+            <span>🏁</span> Encerrar Ocorrência Diretamente
+          </h3>
+          <button onclick="NAV.fecharModalEncerrar()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer">&times;</button>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:14px">
+          Selecione a ocorrência para encerrar diretamente e retornar as viaturas ao status DISPONÍVEL:
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto">
+          ${ocs.map(oc => {
+            const viats = (this._servicoViaturasCache || []).filter(v => (oc.viaturaIds || []).some(vid => String(vid) === String(v.viaturaId)));
+            const viatNomes = viats.map(v => v.viaturaNome).join(', ') || 'N/I';
+            return `
+              <div style="background:var(--bg-surface, rgba(255,255,255,0.04));border:1px solid var(--border-light, rgba(255,255,255,0.1));border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <div>
+                  <div style="font-weight:700;font-size:0.9rem;color:var(--text-primary)">
+                    #${oc.numero} — ${Utils.escapeHtml(oc.titulo || 'Ocorrência')}
+                  </div>
+                  <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">
+                    🚒 Viaturas: <strong style="color:var(--text-primary)">${Utils.escapeHtml(viatNomes)}</strong>
+                  </div>
+                </div>
+                <button class="btn btn-sm" style="background:#00c853;color:#fff;border:none;border-radius:6px;font-weight:700;padding:6px 12px;cursor:pointer;flex-shrink:0" onclick="NAV.encerrarOcorrenciaDireta('${oc.id}')">
+                  🏁 Encerrar
+                </button>
+              </div>
+            `;
+          }).join('')}
+          ${ocs.length === 0 && svsEmOcorr.length > 0 ? svsEmOcorr.map(sv => `
+            <div style="background:var(--bg-surface, rgba(255,255,255,0.04));border:1px solid var(--border-light, rgba(255,255,255,0.1));border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div>
+                <div style="font-weight:700;font-size:0.9rem;color:var(--text-primary)">🚒 ${Utils.escapeHtml(sv.viaturaNome)}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">Status: Em ocorrência</div>
+              </div>
+              <button class="btn btn-sm" style="background:#00c853;color:#fff;border:none;border-radius:6px;font-weight:700;padding:6px 12px;cursor:pointer;flex-shrink:0" onclick="NAV.encerrarOcorrenciaDireta('', '${sv.id}')">
+                🏁 Liberar (Disponível)
+              </button>
+            </div>
+          `).join('') : ''}
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px">
+          <button class="btn btn-secondary btn-sm" onclick="NAV.fecharModalEncerrar()">Fechar</button>
+        </div>
+      </div>
+    `;
+    modal.style.display = 'flex';
+  },
+
+  fecharModalEncerrar() {
+    const modal = document.getElementById('navModalEncerrar');
+    if (modal) modal.style.display = 'none';
+  },
+
   updateServiceInfo(servico, postos) {
     const bar = document.getElementById('serviceInfoBar');
     if (!bar) return;
@@ -308,18 +557,35 @@ const NAV = {
     }
   },
 
-  async loadPostoLogo() {
+  loadPostoLogo() {
     try {
-      const data = await API.getServicoAtual(Auth.userId);
-      if (!data?.servico?.postoId) return;
-      const postos = await API.getPostosServico();
-      const posto = postos.find(p => p.id === data.servico.postoId);
-      if (posto?.logo) {
-        this._currentLogoUrl = posto.logo;
+      const savedLogo = localStorage.getItem('sgpo_posto_logo');
+      const savedNome = localStorage.getItem('sgpo_posto_nome') || 'SGPO';
+      if (savedLogo) {
+        this._currentLogoUrl = savedLogo;
         const logoEl = document.getElementById('sidebarLogo');
-        if (logoEl) logoEl.innerHTML = `<img src="${Utils.escapeHtml(posto.logo)}" alt="${Utils.escapeHtml(posto.nome)}" style="max-height:40px;max-width:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'">`;
+        if (logoEl) logoEl.innerHTML = `<img src="${Utils.escapeHtml(savedLogo)}" alt="${Utils.escapeHtml(savedNome)}" style="max-height:40px;max-width:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'">`;
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {}
+
+    // Atualização em segundo plano
+    setTimeout(async () => {
+      try {
+        const data = await API.getServicoAtual(Auth.userId);
+        if (!data?.servico?.postoId) return;
+        const postos = await API.getPostosServico();
+        const posto = postos.find(p => p.id === data.servico.postoId);
+        if (posto?.logo) {
+          this._currentLogoUrl = posto.logo;
+          try {
+            localStorage.setItem('sgpo_posto_logo', posto.logo);
+            if (posto.nome) localStorage.setItem('sgpo_posto_nome', posto.nome);
+          } catch(e) {}
+          const logoEl = document.getElementById('sidebarLogo');
+          if (logoEl) logoEl.innerHTML = `<img src="${Utils.escapeHtml(posto.logo)}" alt="${Utils.escapeHtml(posto.nome)}" style="max-height:40px;max-width:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-weight:700;font-size:1.2rem;color:var(--prontidao-color)>SGPO</span>'">`;
+        }
+      } catch (e) { /* ignore */ }
+    }, 100);
   },
 
   openLogoLightbox(url) {

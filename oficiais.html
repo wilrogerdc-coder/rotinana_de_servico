@@ -222,7 +222,7 @@
           el.innerHTML = '<div class="empty-state"><p>Nenhum registro hoje</p></div>';
           return;
         }
-        const sorted = [...this.historico].sort((a, b) => (b.horario || '').localeCompare(a.horario || ''));
+        const sorted = [...this.historico].sort((a, b) => { const getMin = (t) => { if(!t) return -1; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(b.horario) - getMin(a.horario); });
         el.innerHTML = sorted.map(h => {
           const tipo = h.tipo || 'entrada';
           const isAnunciado = h.anunciado || (h.observacao || '').includes('anunciado');
@@ -292,7 +292,6 @@
       },
 
       async saida(oficialId) {
-        if (!confirm('Registrar saida deste oficial?')) return;
         try {
           const result = await API.registrarSaidaOficial(oficialId);
           if (result.success) {

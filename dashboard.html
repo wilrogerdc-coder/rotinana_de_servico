@@ -131,23 +131,15 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="addEquipeModal" style="display:none">
+  <div class="modal-overlay sub-modal" id="addEquipeModal" style="display:none;z-index:10000">
     <div class="modal" style="max-width:560px">
       <div class="modal-header"><h3 class="modal-title">Adicionar à Equipe</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeAddEquipeModal()">✕</button></div>
       <div id="addEquipeList"></div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="modalOverlay" style="display:none">
-    <div class="modal" style="max-width:520px">
-      <div class="modal-header"><h3 class="modal-title" id="modalTitle">-</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeModal()">✕</button></div>
-      <div id="modalBody"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px" id="modalFooter"></div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="editarServicoModal" style="display:none">
-    <div class="modal" style="max-width:600px">
+  <div class="modal-overlay" id="editarServicoModal" style="display:none;z-index:500">
+    <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
       <div class="modal-header"><h3 class="modal-title">Editar Serviço Ativo</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeEditarServico()">✕</button></div>
       <div style="padding:16px 0">
         <div class="input-group">
@@ -167,18 +159,46 @@
           <label class="input-label">Observações</label>
           <textarea class="input" id="editServicoObs" rows="2" placeholder="Observações do serviço..."></textarea>
         </div>
-        <div style="margin-top:12px">
-          <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddEquipeEditModal()">+ Adicionar Integrante</button>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label class="input-label" style="margin:0;font-weight:600">Integrantes da Equipe</label>
+            <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddEquipeEditModal()">+ Adicionar Integrante</button>
+          </div>
+          <div id="editServicoEquipeList"></div>
         </div>
-        <div id="editServicoEquipeList" style="margin-top:12px"></div>
-        <h4 style="font-size:0.85rem;font-weight:600;margin:16px 0 8px">Viaturas</h4>
-        <div id="editServicoViaturasList" style="margin-bottom:8px"></div>
-        <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddViaturaEditModal()">+ Adicionar Viatura</button>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label class="input-label" style="margin:0;font-weight:600">Viaturas Vinculadas</label>
+            <button class="btn btn-primary btn-sm" onclick="Dashboard.showAddViaturaEditModal()">+ Adicionar Viatura</button>
+          </div>
+          <div id="editServicoViaturasList"></div>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:16px;border-top:1px solid var(--border-color)">
         <button class="btn btn-secondary" onclick="Dashboard.closeEditarServico()">Cancelar</button>
         <button class="btn btn-primary" onclick="Dashboard.salvarEditarServico()">Salvar Alterações</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal padrão do sistema -->
+  <div class="modal-overlay modal-top" id="modalOverlay" style="display:none;z-index:800">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header"><h3 class="modal-title" id="modalTitle">-</h3><button class="btn btn-ghost btn-icon" onclick="Dashboard.closeModal()">✕</button></div>
+      <div id="modalBody"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <!-- Sub-modal para Adicionar Integrante / Viatura / Configurar Viatura na Edição de Serviço -->
+  <div class="modal-overlay sub-modal" id="editSubModal" style="display:none;z-index:10000">
+    <div class="modal" style="max-width:560px;max-height:85vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <h3 class="modal-title" id="editSubModalTitle">-</h3>
+        <button class="btn btn-ghost btn-icon" onclick="Dashboard.closeEditSubModal()">✕</button>
+      </div>
+      <div id="editSubModalBody" style="overflow-y:auto;flex:1;padding:8px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color)" id="editSubModalFooter"></div>
     </div>
   </div>
 

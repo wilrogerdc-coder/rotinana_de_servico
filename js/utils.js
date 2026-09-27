@@ -1,19 +1,62 @@
 const Utils = {
   formatTime(date) {
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (!date) return '';
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   },
 
   formatDateTime(date) {
-    return date.toLocaleString('pt-BR', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
+    if (!date) return '';
+    if (typeof date === 'string') {
+      const trimmed = date.trim();
+      // Se já está no formato dd/mm/aaaa HH:MM:ss
+      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed;
+      }
+      // Se está no formato dd/mm/aaaa HH:MM (sem segundos)
+      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed + ':00';
+      }
+      // Se é apenas horário HH:mm ou HH:mm:ss
+      if (/^\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+        const today = this.formatDate(new Date());
+        return `${today} ${trimmed}${trimmed.length === 5 ? ':00' : ''}`;
+      }
+    }
+    let d;
+    if (date instanceof Date) {
+      d = date;
+    } else if (typeof date === 'number') {
+      d = new Date(date);
+    } else {
+      d = new Date(date);
+    }
+    if (isNaN(d.getTime())) return String(date);
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  },
+
+  nowDateTime() {
+    return this.formatDateTime(new Date());
+  },
+
+  formatRegistroDateTime(val) {
+    return this.formatDateTime(val);
   },
 
   formatDate(date) {
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit', month: '2-digit', year: 'numeric'
-    });
+    const d = typeof date === 'string' ? new Date(date + (date.includes('T') ? '' : 'T00:00:00')) : date;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   },
 
   formatDuration(ms) {
@@ -223,5 +266,53 @@ const Utils = {
     if (typeof API !== 'undefined' && API.registrarLog) {
       API.registrarLog(acao, detalhes, modulo).catch(() => {});
     }
+  },
+
+  initModalListeners() {
+    if (this._modalListenersBound) return;
+    this._modalListenersBound = true;
+
+    // Fechar ao clicar no backdrop do modal (fora da caixa de diálogo)
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains('modal-overlay')) {
+        if (e.target.id === 'noServiceModal' || e.target.id === 'acessoModal') return;
+        const closeBtn = e.target.querySelector('.btn-ghost.btn-icon, .modal-header .btn-icon, .btn-secondary');
+        if (closeBtn && typeof closeBtn.click === 'function') {
+          closeBtn.click();
+        } else {
+          e.target.style.display = 'none';
+        }
+      }
+    });
+
+    // Fechar com tecla Escape o modal do topo
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const visibleModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => {
+          return m.style.display !== 'none' && getComputedStyle(m).display !== 'none' && m.id !== 'noServiceModal' && m.id !== 'acessoModal';
+        });
+        if (visibleModals.length > 0) {
+          visibleModals.sort((a, b) => {
+            const zA = parseInt(getComputedStyle(a).zIndex, 10) || 0;
+            const zB = parseInt(getComputedStyle(b).zIndex, 10) || 0;
+            return zB - zA;
+          });
+          const topModal = visibleModals[0];
+          const closeBtn = topModal.querySelector('.btn-ghost.btn-icon, .modal-header .btn-icon, .btn-secondary');
+          if (closeBtn && typeof closeBtn.click === 'function') {
+            closeBtn.click();
+          } else {
+            topModal.style.display = 'none';
+          }
+        }
+      }
+    });
   }
 };
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => Utils.initModalListeners());
+} else {
+  Utils.initModalListeners();
+}
+

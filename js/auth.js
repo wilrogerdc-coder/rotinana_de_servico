@@ -98,9 +98,12 @@ const Auth = {
   },
 
   logout() {
-    Utils.log('logout', `${Auth.userName} saiu do sistema`, 'auth');
-    Sync.stop();
+    if (window._isLoggingOut) return;
+    window._isLoggingOut = true;
+    const userName = this.userName;
+    if (typeof Sync !== 'undefined') Sync.stop();
     sessionStorage.removeItem(this.SESSION_KEY);
+    try { Utils.log('logout', `${userName} saiu do sistema`, 'auth'); } catch (e) {}
     window.location.href = 'index.html';
   },
 

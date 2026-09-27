@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sgpo-v1';
+const CACHE_NAME = 'sgpo-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -20,16 +20,18 @@ const STATIC_ASSETS = [
   '/js/auth.js',
   '/js/sync.js',
   '/js/nav.js',
+  '/js/dashboard.js',
+  '/js/rotina.js',
   '/assets/logos/bombeiros.svg'
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch(() => {});
     })
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -38,9 +40,14 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -48,14 +55,15 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (url.origin !== location.origin) return;
-
   if (request.method !== 'GET') return;
-
   if (url.pathname.includes('/api/') || url.hostname.includes('script.google.com')) return;
 
+  // Network-first com fallback para cache:
+  // Garante que atualizações de código e interface apareçam imediatamente para o usuário,
+  // mantendo funcionamento offline total quando a conexão estiver indisponível.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -63,9 +71,9 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return response;
-      }).catch(() => cached);
-
-      return cached || networkFetch;
-    })
+      })
+      .catch(() => {
+        return caches.match(request);
+      })
   );
 });

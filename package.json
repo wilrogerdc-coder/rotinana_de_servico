@@ -1,0 +1,13 @@
+{
+  "name": "rotinana-de-servico",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

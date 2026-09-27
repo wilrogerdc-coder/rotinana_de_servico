@@ -34,7 +34,7 @@
   </main>
 
   <!-- Editar Serviço Modal -->
-  <div class="modal-overlay" id="editarServicoModal" style="display:none">
+  <div class="modal-overlay" id="editarServicoModal" style="display:none;z-index:500">
     <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
       <div class="modal-header"><h3 class="modal-title" id="editTitle">Editar Serviço</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeEdit()">✕</button></div>
       <div style="padding:16px 0">
@@ -76,7 +76,7 @@
   </div>
 
   <!-- Adicionar Equipe Modal -->
-  <div class="modal-overlay" id="addEquipeModal" style="display:none">
+  <div class="modal-overlay sub-modal" id="addEquipeModal" style="display:none;z-index:10000">
     <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
       <div class="modal-header"><h3 class="modal-title">Adicionar à Equipe</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeAddEquipe()">✕</button></div>
       <div id="addEquipeList"></div>
@@ -84,10 +84,22 @@
   </div>
 
   <!-- Adicionar Viatura ao Editar Modal -->
-  <div class="modal-overlay" id="addViaturaEditModal" style="display:none">
+  <div class="modal-overlay sub-modal" id="addViaturaEditModal" style="display:none;z-index:10000">
     <div class="modal" style="max-width:520px;max-height:80vh;overflow-y:auto">
       <div class="modal-header"><h3 class="modal-title">Adicionar Viatura</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeAddViaturaEdit()">✕</button></div>
       <div id="addViaturaEditList"></div>
+    </div>
+  </div>
+
+  <!-- Configurar Viatura em Edição Modal -->
+  <div class="modal-overlay sub-modal" id="configViaturaModal" style="display:none;z-index:10001">
+    <div class="modal" style="max-width:520px;max-height:85vh;overflow-y:auto">
+      <div class="modal-header"><h3 class="modal-title" id="configViaturaTitle">Configurar Viatura</h3><button class="btn btn-ghost btn-icon" onclick="PostosPage.closeConfigViatura()">✕</button></div>
+      <div id="configViaturaBody" style="padding:16px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border,#333)">
+        <button class="btn btn-secondary" onclick="PostosPage.closeConfigViatura()">Cancelar</button>
+        <button class="btn btn-primary" onclick="PostosPage.salvarConfigViatura()">Salvar Viatura</button>
+      </div>
     </div>
   </div>
 
@@ -177,24 +189,57 @@
 
       async load() {
         try {
-          const [postosResult, viaturasResult, tiposResult] = await Promise.all([
+          const [postosResult, viaturasResult, tiposResult] = await Promise.allSettled([
             API.getPostosComServico(),
-            API.get('viaturas'),
+            API.getViaturas(),
             API.getTiposViatura()
           ]);
-          this.postos = postosResult.postos || [];
-          this.viaturas = (viaturasResult || []).filter(v => v.ativo !== false && v.Status !== 'removido');
-          this.tiposViatura = (tiposResult || []).filter(t => t.Status !== 'removido');
+          const postosData = postosResult.status === 'fulfilled' && postosResult.value ? postosResult.value : {};
+          const viaturasData = viaturasResult.status === 'fulfilled' && Array.isArray(viaturasResult.value) ? viaturasResult.value : [];
+          const tiposData = tiposResult.status === 'fulfilled' && Array.isArray(tiposResult.value) ? tiposResult.value : [];
+
+          this.postos = Array.isArray(postosData.postos) ? postosData.postos : [];
+          this.viaturas = (viaturasData || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
+          this.tiposViatura = (tiposData || []).filter(t => t && t.Status !== 'removido');
+
+          if (this.postos.length === 0) {
+            const rawCached = localStorage.getItem('sgpo_cached_postos_com_servico');
+            if (rawCached) {
+              try {
+                const parsed = JSON.parse(rawCached);
+                if (parsed && Array.isArray(parsed.postos) && parsed.postos.length > 0) {
+                  this.postos = parsed.postos;
+                }
+              } catch(e) {}
+            }
+            if (this.postos.length === 0 && typeof DemoData !== 'undefined') {
+              const demo = DemoData.handle('getPostosComServico', {});
+              if (demo && Array.isArray(demo.postos)) this.postos = demo.postos;
+            }
+          }
+          if (this.viaturas.length === 0 && typeof DemoData !== 'undefined') {
+            this.viaturas = (DemoData.getState().viaturas || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
+          }
+          if (this.tiposViatura.length === 0 && typeof DemoData !== 'undefined') {
+            this.tiposViatura = (DemoData.getState().tiposViatura || []).filter(t => t && t.Status !== 'removido');
+          }
+
           this.render();
         } catch (e) {
-          console.error('Postos load error:', e);
-          Utils.showToast('Erro ao carregar postos: ' + e.message, 'error');
+          console.warn('Postos load warn:', e);
+          if (typeof DemoData !== 'undefined') {
+            const demo = DemoData.handle('getPostosComServico', {});
+            this.postos = (demo && demo.postos) ? demo.postos : [];
+            this.viaturas = (DemoData.getState().viaturas || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
+            this.tiposViatura = (DemoData.getState().tiposViatura || []).filter(t => t && t.Status !== 'removido');
+            this.render();
+          }
         }
       },
 
       render() {
         const comServico = this.postos.filter(p => p.servico);
-        const semServico = this.postos.filter(p => !p.servico && p.tipo === 'POSTO');
+        const semServico = this.postos.filter(p => !p.servico && (!p.tipo || String(p.tipo).toUpperCase() === 'POSTO'));
 
         document.getElementById('postosStats').innerHTML = `
           <div style="padding:12px 20px;background:var(--surface,#1a1a2e);border-radius:12px;border:1px solid var(--border,#333);min-width:120px">
@@ -222,6 +267,10 @@
         if (semServico.length > 0) {
           html += '<h2 style="font-size:1.05rem;color:var(--text-secondary);margin-top:24px;margin-bottom:12px">Sem Serviço</h2>';
           html += semServico.map(p => this.renderPostoCard(p, false, podeEditar)).join('');
+        }
+
+        if (comServico.length === 0 && semServico.length === 0 && this.postos.length > 0) {
+          html += this.postos.map(p => this.renderPostoCard(p, !!p.servico, podeEditar)).join('');
         }
 
         document.getElementById('postosList').innerHTML = html || '<p style="color:var(--text-secondary);text-align:center;padding:40px">Nenhum posto cadastrado</p>';
@@ -276,13 +325,24 @@
 
       /* ═══ EDITAR SERVIÇO ═══ */
 
-      openEdit(postoId) {
+      async openEdit(postoId) {
         const posto = this.postos.find(p => p.id === postoId);
         if (!posto || !posto.servico) return;
         this.editServicoId = posto.servico.id;
         this._editPostoId = postoId;
         this._equipeEdicao = JSON.parse(JSON.stringify(posto.servico.equipe || []));
-        this._viaturasEdicao = JSON.parse(JSON.stringify(posto.servico.viaturas || []));
+
+        let viaturas = [];
+        try {
+          const svs = await API.getServicoViaturas(posto.servico.id);
+          if (svs && svs.length > 0) {
+            viaturas = svs.filter(x => x.Status !== 'encerrado' && x.status !== 'encerrada');
+          }
+        } catch(e) {}
+        if (!viaturas.length && posto.servico.viaturas) {
+          viaturas = posto.servico.viaturas;
+        }
+        this._viaturasEdicao = JSON.parse(JSON.stringify(viaturas));
 
         document.getElementById('editTitle').textContent = 'Editar Serviço — ' + posto.nome;
 
@@ -319,18 +379,23 @@
         this._renderEquipeEdicao();
       },
 
-      showAddEquipeModal() {
-        const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
-        const cadastrados = state.militares || [];
-        const existingIds = this._equipeEdicao.map(m => m.id);
+      async showAddEquipeModal() {
+        const militares = await API.getMilitares() || [];
+        const existingIds = new Set(this._equipeEdicao.map(m => m.id));
+        const cadastrados = (militares || []).filter(m => m.ativo !== false && m.Status !== 'removido' && !existingIds.has(m.id));
         const body = document.getElementById('addEquipeList');
-        body.innerHTML = cadastrados.filter(m => !existingIds.includes(m.id)).map(m => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
-            <span style="font-size:.88rem;color:var(--text-primary)">${Utils.escapeHtml(m.nome)}${m.posto ? ' — ' + Utils.escapeHtml(m.posto) : ''}</span>
-            <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:2px 8px" onclick="PostosPage._addMembro('${m.id}','${m.nome.replace(/'/g, "\\'")}','${(m.posto||'').replace(/'/g, "\\'")}')">Adicionar</button>
+        body.innerHTML = cadastrados.map(m => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface,#1a1a2e);border-radius:8px;margin-bottom:6px">
+            <div>
+              <div style="font-size:.88rem;color:var(--text-primary);font-weight:500">${Utils.escapeHtml(m.nome)}</div>
+              <div style="font-size:.75rem;color:var(--text-secondary)">${Utils.escapeHtml(m.posto || m.graduacao || '')}</div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:4px 10px" onclick="PostosPage._addMembro('${m.id}','${m.nome.replace(/'/g, "\\'")}','${(m.posto||m.graduacao||'').replace(/'/g, "\\'")}')">+ Adicionar</button>
           </div>
-        `).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhum cadastrado disponível</p>';
-        document.getElementById('addEquipeModal').style.display = 'flex';
+        `).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhum militar disponível para adicionar</p>';
+        const modal = document.getElementById('addEquipeModal');
+        modal.style.display = 'flex';
+        modal.style.zIndex = '10000';
       },
 
       _addMembro(id, nome, posto) {
@@ -348,44 +413,237 @@
         el.innerHTML = this._viaturasEdicao.map(v => {
           const vt = this.viaturas.find(x => x.id === v.viaturaId) || {};
           const tc = (this.tiposViatura.find(t => t.sigla === vt.tipo) || {}).cor || '#9e9e9e';
+          const tripCount = Array.isArray(v.tripulantes) ? v.tripulantes.length : 0;
+          const statusV = v.status || 'ativa';
           return `
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem">${vt.tipo || '?'}</span>
-                <span style="font-size:.88rem">${Utils.escapeHtml(vt.nome || v.viaturaId)}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:6px;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem;flex-shrink:0">${vt.tipo || '?'}</span>
+                <div style="min-width:0">
+                  <div style="font-size:.88rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Utils.escapeHtml(vt.nome || v.viaturaNome || v.viaturaId)}</div>
+                  <div style="font-size:.75rem;color:var(--text-secondary)">
+                    Cmdt: <strong>${Utils.escapeHtml(v.comandante || (v.tripulantes || []).find(t => t.funcao === 'Comandante')?.nome || '-')}</strong> • Mot: <strong>${Utils.escapeHtml(v.motorista || '-')}</strong> • Aux: ${(v.tripulantes || []).filter(t => t.funcao === 'Auxiliar' || (!t.funcao && t.id !== v.motoristaId && t.id !== v.comandanteId)).length}
+                    ${statusV === 'encerrada' ? ' • <span style="color:#e53935">Reserva</span>' : ''}
+                  </div>
+                </div>
               </div>
-              <button class="btn btn-danger btn-sm" style="font-size:.72rem;padding:2px 8px" onclick="PostosPage.removeViaturaEdit('${v.viaturaId}')">✕</button>
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                <button class="btn btn-secondary btn-sm" style="font-size:.72rem;padding:3px 8px" onclick="PostosPage.openConfigViatura('${v.viaturaId}')">Configurar</button>
+                <button class="btn btn-danger btn-sm" title="Remover e enviar para reserva" style="font-size:.72rem;padding:3px 8px" onclick="PostosPage.removeViaturaEdit('${v.viaturaId}')">✕</button>
+              </div>
             </div>
           `;
         }).join('');
       },
 
+      openConfigViatura(viaturaId) {
+        const v = this._viaturasEdicao.find(x => x.viaturaId === viaturaId);
+        if (!v) return;
+        const vt = this.viaturas.find(x => x.id === viaturaId) || {};
+        this._configViaturaId = viaturaId;
+        const equipe = this._equipeEdicao || [];
+        const comandanteTrip = (v.tripulantes || []).find(t => t.funcao === 'Comandante');
+        const comandanteId = v.comandanteId || comandanteTrip?.id || '';
+        const motoristaId = v.motoristaId || '';
+        const atuaisAux = new Set((v.tripulantes || []).filter(t => t.funcao === 'Auxiliar' || (!t.funcao && t.id !== motoristaId && t.id !== comandanteId)).map(t => t.id).filter(Boolean));
+
+        document.getElementById('configViaturaTitle').textContent = `Compor Viatura — ${vt.nome || v.viaturaNome || viaturaId}`;
+        document.getElementById('configViaturaBody').innerHTML = `
+          <div class="input-group" style="margin-bottom:12px">
+            <label class="input-label" style="font-weight:700">Comandante da Viatura <span style="color:#e53935">* (Obrigatório)</span></label>
+            <select class="input select" id="postEditViaturaComandante" onchange="PostosPage.onPostFuncoesChange()">
+              <option value="">Selecione o Comandante</option>
+              ${equipe.map(m => `<option value="${m.id}" ${comandanteId === m.id ? 'selected' : ''}>${Utils.escapeHtml(m.nome)} ${m.posto ? '— ' + m.posto : ''}</option>`).join('')}
+            </select>
+          </div>
+          <div class="input-group" style="margin-bottom:12px">
+            <label class="input-label" style="font-weight:700">Motorista da Viatura <span style="color:#e53935">* (Obrigatório)</span></label>
+            <select class="input select" id="postEditViaturaMotorista" onchange="PostosPage.onPostFuncoesChange()">
+              <option value="">Selecione o Motorista</option>
+              ${equipe.map(m => `<option value="${m.id}" ${motoristaId === m.id ? 'selected' : ''}>${Utils.escapeHtml(m.nome)} ${m.posto ? '— ' + m.posto : ''}</option>`).join('')}
+            </select>
+          </div>
+          <div class="input-group" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <label class="input-label" style="font-weight:700;margin:0">Auxiliares da Guarnição</label>
+              <span style="font-size:0.75rem;color:var(--text-muted)">Os demais selecionados serão Auxiliares</span>
+            </div>
+            <div id="postEditViaturaTripulantes" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding:4px 0">
+              ${equipe.length === 0 ? '<p style="font-size:.8rem;color:var(--text-secondary)">Adicione militares à equipe primeiro</p>' : equipe.map(m => {
+                const isCom = comandanteId === m.id;
+                const isMot = motoristaId === m.id;
+                const checked = atuaisAux.has(m.id) && !isCom && !isMot;
+                const disabled = isCom || isMot;
+                return `<label id="labelPostTrip_${m.id}" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? 0.45 : 1}">
+                  <input type="checkbox" value="${m.id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} style="accent-color:var(--prontidao-color)">
+                  <span>${Utils.escapeHtml(m.nome)} ${m.posto ? '— ' + m.posto : ''} ${isCom ? '<span class="badge-post-role" style="color:#2979ff;font-size:0.75rem;font-weight:600">(Comandante)</span>' : (isMot ? '<span class="badge-post-role" style="color:var(--text-muted);font-size:0.75rem;font-weight:600">(Motorista)</span>' : '<span style="color:var(--prontidao-color);font-size:0.72rem;font-weight:600">[Auxiliar]</span>')}</span>
+                </label>`;
+              }).join('')}
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Situação / Status</label>
+            <select class="input select" id="postEditViaturaStatus">
+              <option value="ativa" ${(!v.status || v.status === 'ativa') ? 'selected' : ''}>Em atendimento (Ativa)</option>
+              <option value="retornando" ${v.status === 'retornando' ? 'selected' : ''}>Retornando</option>
+              <option value="encerrada" ${(v.status === 'encerrada' || v.status === 'reserva') ? 'selected' : ''}>Encerrada (Reserva)</option>
+            </select>
+          </div>
+        `;
+        document.getElementById('configViaturaModal').style.display = 'flex';
+      },
+
+      onPostFuncoesChange() {
+        const comId = document.getElementById('postEditViaturaComandante')?.value || '';
+        const motId = document.getElementById('postEditViaturaMotorista')?.value || '';
+        const container = document.getElementById('postEditViaturaTripulantes');
+        if (!container) return;
+
+        const inputs = container.querySelectorAll('input[type=checkbox]');
+        inputs.forEach(cb => {
+          const parentLabel = cb.closest('label');
+          const isCom = cb.value === comId;
+          const isMot = cb.value === motId;
+          if (isCom || isMot) {
+            cb.checked = false;
+            cb.disabled = true;
+            if (parentLabel) {
+              parentLabel.style.cursor = 'not-allowed';
+              parentLabel.style.opacity = '0.45';
+              const oldBadge = parentLabel.querySelector('.badge-post-role');
+              if (oldBadge) oldBadge.remove();
+              const s = document.createElement('span');
+              s.className = 'badge-post-role';
+              s.style.cssText = `font-size:0.75rem;margin-left:4px;color:${isCom ? '#2979ff' : 'var(--text-muted)'};font-weight:600`;
+              s.textContent = isCom ? '(Comandante)' : '(Motorista)';
+              parentLabel.appendChild(s);
+            }
+          } else {
+            cb.disabled = false;
+            if (parentLabel) {
+              parentLabel.style.cursor = 'pointer';
+              parentLabel.style.opacity = '1';
+              const b = parentLabel.querySelector('.badge-post-role');
+              if (b) b.remove();
+            }
+          }
+        });
+      },
+
+      onPostMotoristaChange(newMotoristaId) {
+        this.onPostFuncoesChange();
+      },
+
+      salvarConfigViatura() {
+        const v = this._viaturasEdicao.find(x => x.viaturaId === this._configViaturaId);
+        if (!v) return;
+
+        const comandanteId = document.getElementById('postEditViaturaComandante')?.value || '';
+        const motoristaId = document.getElementById('postEditViaturaMotorista')?.value || '';
+        const status = document.getElementById('postEditViaturaStatus')?.value || 'ativa';
+        const equipe = this._equipeEdicao || [];
+
+        if (!comandanteId) {
+          Utils.showToast('É obrigatório definir o Comandante da viatura', 'warning');
+          document.getElementById('postEditViaturaComandante')?.focus();
+          return;
+        }
+        if (!motoristaId) {
+          Utils.showToast('É obrigatório definir o Motorista da viatura', 'warning');
+          document.getElementById('postEditViaturaMotorista')?.focus();
+          return;
+        }
+        if (comandanteId === motoristaId) {
+          Utils.showToast('O Comandante e o Motorista devem ser militares diferentes', 'warning');
+          return;
+        }
+
+        const cMilitar = equipe.find(x => x.id === comandanteId);
+        const mMilitar = equipe.find(x => x.id === motoristaId);
+        const checked = document.querySelectorAll('#postEditViaturaTripulantes input[type=checkbox]:checked');
+        const auxiliares = Array.from(checked).map(cb => {
+          const m = equipe.find(x => x.id === cb.value);
+          return m ? { id: m.id, nome: m.nome, funcao: 'Auxiliar' } : null;
+        }).filter(Boolean);
+
+        const tripulantes = [
+          { id: comandanteId, nome: cMilitar?.nome || '', funcao: 'Comandante' },
+          ...auxiliares
+        ];
+
+        v.comandanteId = comandanteId;
+        v.comandante = cMilitar?.nome || '';
+        v.motoristaId = motoristaId;
+        v.motorista = mMilitar?.nome || '';
+        v.tripulantes = tripulantes;
+        v.status = status;
+        if (status === 'encerrada' || status === 'reserva') {
+          v.Status = 'encerrado';
+        } else {
+          v.Status = 'ativo';
+        }
+
+        // Regra de exclusividade: desvincula militares desta viatura das demais em edição
+        const membrosV = new Set([comandanteId, motoristaId, ...auxiliares.map(a => a.id)]);
+        (this._viaturasEdicao || []).forEach(outra => {
+          if (outra.viaturaId === v.viaturaId) return;
+          if (outra.comandanteId && membrosV.has(outra.comandanteId)) {
+            outra.comandanteId = '';
+            outra.comandante = '';
+          }
+          if (outra.motoristaId && membrosV.has(outra.motoristaId)) {
+            outra.motoristaId = '';
+            outra.motorista = '';
+          }
+          if (outra.tripulantes && Array.isArray(outra.tripulantes)) {
+            outra.tripulantes = outra.tripulantes.filter(t => !membrosV.has(t.id));
+          }
+        });
+
+        this._renderViaturasEdicao();
+        this.closeConfigViatura();
+        Utils.showToast('Viatura composta com Comandante, Motorista e Auxiliares (componentes exclusivos)', 'success');
+      },
+
+      closeConfigViatura() {
+        document.getElementById('configViaturaModal').style.display = 'none';
+        this._configViaturaId = null;
+      },
+
       removeViaturaEdit(viaturaId) {
+        if (!confirm('Deseja retirar esta viatura do serviço e colocá-la na reserva?')) return;
         this._viaturasEdicao = this._viaturasEdicao.filter(v => v.viaturaId !== viaturaId);
         this._renderViaturasEdicao();
       },
 
-      showAddViaturaEditModal() {
-        const existingIds = this._viaturasEdicao.map(v => v.viaturaId);
+      async showAddViaturaEditModal() {
+        const existingIds = new Set(this._viaturasEdicao.map(v => v.viaturaId));
+        const allViaturas = (this.viaturas && this.viaturas.length > 0) ? this.viaturas : (await API.getViaturas() || []);
         const body = document.getElementById('addViaturaEditList');
-        body.innerHTML = this.viaturas.filter(v => !existingIds.includes(v.id) && (!v.postoId || v.postoId === this._editPostoId)).map(v => {
+        const available = allViaturas.filter(v => !existingIds.has(v.id) && v.ativo !== false && v.Status !== 'removido' && (!v.postoId || v.postoId === this._editPostoId));
+        body.innerHTML = available.map(v => {
           const tc = (this.tiposViatura.find(t => t.sigla === v.tipo) || {}).cor || '#9e9e9e';
           return `
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg,#12121e);border-radius:8px;margin-bottom:4px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface,#1a1a2e);border-radius:8px;margin-bottom:6px">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:${tc}22;color:${tc};font-weight:700;font-size:.65rem">${v.tipo || '?'}</span>
-                <span style="font-size:.88rem;color:var(--text-primary)">${Utils.escapeHtml(v.nome)}<span style="font-size:.75rem;color:var(--text-secondary);margin-left:4px">${v.placa || ''}</span></span>
+                <div>
+                  <span style="font-size:.88rem;color:var(--text-primary);font-weight:500">${Utils.escapeHtml(v.nome)}</span>
+                  ${v.placa ? `<span style="font-size:.75rem;color:var(--text-secondary);margin-left:6px">${v.placa}</span>` : ''}
+                </div>
               </div>
-              <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:2px 8px" onclick="PostosPage._addViaturaEdicao('${v.id}','${v.nome.replace(/'/g, "\\'")}')">Adicionar</button>
+              <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:4px 10px" onclick="PostosPage._addViaturaEdicao('${v.id}','${v.nome.replace(/'/g, "\\'")}')">+ Adicionar</button>
             </div>
           `;
-        }).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhuma viatura disponível</p>';
-        document.getElementById('addViaturaEditModal').style.display = 'flex';
+        }).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhuma viatura disponível para este posto</p>';
+        const modal = document.getElementById('addViaturaEditModal');
+        modal.style.display = 'flex';
+        modal.style.zIndex = '10000';
       },
 
       _addViaturaEdicao(id, nome) {
         if (this._viaturasEdicao.some(v => v.viaturaId === id)) return;
-        this._viaturasEdicao.push({ viaturaId: id });
+        this._viaturasEdicao.push({ viaturaId: id, viaturaNome: nome, motorista: '', motoristaId: '', tripulantes: [], status: 'ativa' });
         this._renderViaturasEdicao();
         this.closeAddViaturaEdit();
       },
@@ -410,6 +668,48 @@
             observacoes
           });
           if (result.success) {
+            // Sincronizar viaturas caso haja alterações
+            try {
+              const currentV = await API.getServicoViaturas(this.editServicoId).catch(() => []);
+              const currentVMap = new Set((currentV || []).map(x => x.viaturaId));
+              const editVMap = new Set(this._viaturasEdicao.map(x => x.viaturaId));
+              
+              for (const sv of (currentV || [])) {
+                if (!editVMap.has(sv.viaturaId)) {
+                  await API.encerrarServicoViatura(this.editServicoId, sv.id).catch(() => {});
+                } else {
+                  const vConfig = this._viaturasEdicao.find(x => x.viaturaId === sv.viaturaId);
+                  if (vConfig) {
+                    if (vConfig.status === 'encerrada') {
+                      await API.encerrarServicoViatura(this.editServicoId, sv.id).catch(() => {});
+                    } else {
+                      await API.editarServicoViatura({
+                        id: sv.id,
+                        servicoViaturaId: sv.id,
+                        motorista: vConfig.motorista || '',
+                        motoristaId: vConfig.motoristaId || '',
+                        tripulantes: vConfig.tripulantes || [],
+                        status: vConfig.status || 'ativa'
+                      }).catch(() => {});
+                    }
+                  }
+                }
+              }
+              for (const v of this._viaturasEdicao) {
+                if (!currentVMap.has(v.viaturaId) && v.status !== 'encerrada') {
+                  const vt = (this.viaturas || []).find(x => x.id === v.viaturaId) || {};
+                  await API.iniciarServicoViatura({
+                    servicoId: this.editServicoId,
+                    viaturaId: v.viaturaId,
+                    viaturaNome: vt.nome || v.viaturaNome || '',
+                    motorista: v.motorista || '',
+                    motoristaId: v.motoristaId || '',
+                    tripulantes: v.tripulantes || []
+                  }).catch(() => {});
+                }
+              }
+            } catch(ve) {}
+
             Utils.log('editar_servico', `Serviço ${this.editServicoId} atualizado`, 'postos');
             Utils.showToast('Serviço atualizado com sucesso!', 'success');
             this.closeEdit();

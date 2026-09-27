@@ -4,66 +4,98 @@ const Sync = {
   channel: null,
   servicoId: null,
   _lastData: null,
-  _baseInterval: 5000,
-  _activeInterval: 3000,
+  _baseInterval: 10000,
+  _activeInterval: 10000,
   _idleInterval: 30000,
+  _burstInterval: 5000,
+  _burstUntil: 0,
   _isIdle: false,
-  _pendingPull: false,
+  _isPulling: false,
+  _hasPendingPull: false,
+  _pendingPullTimer: null,
+  _debounceTimer: null,
   _lastPullTime: 0,
   _lastConfigHash: null,
   _keepaliveTimer: null,
   _visibilityHandler: null,
-  _focusPullTimeout: null,
+  _focusHandler: null,
+  _onlineHandler: null,
+  _activityHandler: null,
 
-  start(servicoId, intervalMs = 5000) {
+  start(servicoId, intervalMs) {
     this.stop();
     this.servicoId = servicoId;
-    this._baseInterval = intervalMs || 5000;
+    
+    // Intervalo configurado: padrão ágil de 10s quando ativo (máx 15s)
+    const configured = parseInt(intervalMs) || 10000;
+    this._activeInterval = Math.max(3000, Math.min(configured, 15000));
+    this._baseInterval = this._activeInterval;
+    this._idleInterval = Math.max(20000, this._activeInterval * 2);
     this._isIdle = false;
+    this._isPulling = false;
+    this._hasPendingPull = false;
     this._lastPullTime = 0;
-
-    this._schedulePull();
 
     try {
       this.channel = new BroadcastChannel('sgpo_sync');
       this.channel.onmessage = (e) => {
-        if (e.data && e.data.type === 'update') {
+        if (!e.data) return;
+        if (e.data.type === 'update') {
           this._processData(e.data.payload);
-        } else if (e.data && e.data.type === 'config_changed') {
+        } else if (e.data.type === 'config_changed') {
           this._onConfigChanged(e.data);
-        } else if (e.data && e.data.type === 'force_refresh') {
-          this.pull();
+        } else if (e.data.type === 'force_refresh') {
+          this.requestImmediatePull(true);
         }
       };
     } catch (err) {}
 
-    document.addEventListener('visibilitychange', () => {
+    this._visibilityHandler = () => {
       if (document.hidden) {
         this._isIdle = true;
       } else {
         this._isIdle = false;
-        this._clearPendingPull();
-        this._lastPullTime = 0;
-        this.pull();
+        this.triggerBurst(15000);
+        this.requestImmediatePull(true);
         this._schedulePull();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
 
-    window.addEventListener('focus', () => {
+    this._focusHandler = () => {
       this._isIdle = false;
-      this._clearPendingPull();
-      this._lastPullTime = 0;
-      this.pull();
+      this.triggerBurst(15000);
+      this.requestImmediatePull(true);
       this._schedulePull();
-    });
+    };
+    window.addEventListener('focus', this._focusHandler);
 
-    window.addEventListener('online', () => {
-      this.pull();
+    this._onlineHandler = () => {
+      this._isIdle = false;
+      if (typeof SyncQueue !== 'undefined') SyncQueue.sync();
+      this.requestImmediatePull(true);
       this._schedulePull();
-    });
+    };
+    window.addEventListener('online', this._onlineHandler);
+
+    // Detecção leve de atividade do usuário para agilizar sincronização
+    let lastActivityLog = 0;
+    this._activityHandler = () => {
+      const now = Date.now();
+      if (now - lastActivityLog > 8000) {
+        lastActivityLog = now;
+        if (this._isIdle) {
+          this._isIdle = false;
+          this._schedulePull();
+        }
+      }
+    };
+    window.addEventListener('pointerdown', this._activityHandler, { passive: true });
+    window.addEventListener('keydown', this._activityHandler, { passive: true });
 
     this._startKeepalive();
-    this.pull();
+    this.pull(true);
+    this._schedulePull();
   },
 
   stop() {
@@ -72,36 +104,66 @@ const Sync = {
       this.interval = null;
     }
     if (this.channel) {
-      this.channel.close();
+      try { this.channel.close(); } catch (e) {}
       this.channel = null;
     }
     if (this._visibilityHandler) {
       document.removeEventListener('visibilitychange', this._visibilityHandler);
       this._visibilityHandler = null;
     }
+    if (this._focusHandler) {
+      window.removeEventListener('focus', this._focusHandler);
+      this._focusHandler = null;
+    }
+    if (this._onlineHandler) {
+      window.removeEventListener('online', this._onlineHandler);
+      this._onlineHandler = null;
+    }
+    if (this._activityHandler) {
+      window.removeEventListener('pointerdown', this._activityHandler);
+      window.removeEventListener('keydown', this._activityHandler);
+      this._activityHandler = null;
+    }
     if (this._keepaliveTimer) {
       clearInterval(this._keepaliveTimer);
       this._keepaliveTimer = null;
     }
-    this._clearPendingPull();
+    this._clearTimers();
+  },
+
+  _clearTimers() {
+    if (this._pendingPullTimer) {
+      clearTimeout(this._pendingPullTimer);
+      this._pendingPullTimer = null;
+    }
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+  },
+
+  triggerBurst(durationMs = 20000) {
+    this._burstUntil = Date.now() + durationMs;
   },
 
   _schedulePull() {
     if (this.interval) clearTimeout(this.interval);
-    const delay = this._isIdle ? this._idleInterval : this._baseInterval;
+    let delay = this._baseInterval;
+    const now = Date.now();
+
+    if (this._isIdle || document.hidden) {
+      delay = this._idleInterval;
+    } else if (now < this._burstUntil) {
+      delay = this._burstInterval;
+    } else {
+      delay = this._activeInterval;
+    }
+
     this.interval = setTimeout(() => {
       this.pull().then(() => {
         if (this.servicoId) this._schedulePull();
       });
     }, delay);
-  },
-
-  _clearPendingPull() {
-    if (this._focusPullTimeout) {
-      clearTimeout(this._focusPullTimeout);
-      this._focusPullTimeout = null;
-    }
-    this._pendingPull = false;
   },
 
   _startKeepalive() {
@@ -112,9 +174,14 @@ const Sync = {
     }, 30000);
   },
 
-  requestImmediatePull() {
-    this._clearPendingPull();
-    this.pull();
+  requestImmediatePull(force = true) {
+    this._clearTimers();
+    this.triggerBurst(15000);
+    if (this._isPulling) {
+      this._hasPendingPull = true;
+      return;
+    }
+    this.pull(force);
   },
 
   broadcast(payload) {
@@ -152,22 +219,64 @@ const Sync = {
     }
   },
 
-  async pull() {
+  async pull(force = false) {
     if (!this.servicoId) return;
-    const now = Date.now();
-    const minInterval = this._isIdle ? 15000 : 2000;
-    if (now - this._lastPullTime < minInterval) return;
 
-    this._lastPullTime = now;
+    if (this._isPulling) {
+      this._hasPendingPull = true;
+      return;
+    }
+
+    const now = Date.now();
+    const minInterval = force ? 150 : (this._isIdle ? 8000 : 1000);
+    const elapsed = now - this._lastPullTime;
+
+    if (elapsed < minInterval) {
+      if (force) {
+        if (!this._debounceTimer) {
+          this._debounceTimer = setTimeout(() => {
+            this._debounceTimer = null;
+            this.pull(true);
+          }, minInterval - elapsed + 10);
+        }
+      } else {
+        if (!this._pendingPullTimer) {
+          this._pendingPullTimer = setTimeout(() => {
+            this._pendingPullTimer = null;
+            this.pull();
+          }, minInterval - elapsed + 20);
+        }
+      }
+      return;
+    }
+
+    if (typeof SyncQueue !== 'undefined' && SyncQueue.queue.length > 0) {
+      console.log('[Sync] Pull ignorado pois há atualizações locais pendentes.');
+      return;
+    }
+
+    this._isPulling = true;
+    this._lastPullTime = Date.now();
+
     try {
-      const data = await API.getServicoAtual(Auth.userId);
+      const data = await API.getServicoAtual(Auth.userId, true);
       if (data && data.servico) {
         this._processData(data);
         this.broadcast(data);
         this._checkConfigChanges(data);
       }
     } catch (err) {
-      console.warn('Sync pull failed:', err.message);
+      if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
+        console.log('[Sync] Pull offline (tentaremos novamente):', err.message);
+      } else {
+        console.log('[Sync] Pull error:', err.message);
+      }
+    } finally {
+      this._isPulling = false;
+      if (this._hasPendingPull) {
+        this._hasPendingPull = false;
+        setTimeout(() => this.pull(true), 100);
+      }
     }
   },
 
@@ -187,13 +296,13 @@ const Sync = {
   _processData(data) {
     if (!data) return;
 
-    const changed = (key, newVal) => {
-      const old = this._lastData ? this._lastData[key] : null;
-      return JSON.stringify(old) !== JSON.stringify(newVal);
-    };
-
     const prev = this._lastData;
     this._lastData = { ...data };
+
+    const changed = (key, newVal) => {
+      const old = prev ? prev[key] : null;
+      return JSON.stringify(old) !== JSON.stringify(newVal);
+    };
 
     this.emit('servico_updated', data);
 

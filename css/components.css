@@ -218,7 +218,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-toast);
+  z-index: 99999 !important;
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
@@ -248,6 +248,13 @@
   justify-content: center;
   padding: var(--spacing-lg);
   animation: fadeIn 0.2s ease;
+}
+
+.modal-overlay.sub-modal,
+.modal-overlay.modal-top,
+.sub-modal {
+  z-index: 10000 !important;
+  background: rgba(0, 0, 0, 0.82) !important;
 }
 
 .modal {

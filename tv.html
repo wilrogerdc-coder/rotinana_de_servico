@@ -446,9 +446,27 @@
 
       updateTimeline() {
         const el = document.getElementById('tvTimeline');
-        const items = this.rotina
-          .filter(a => a.status === 'concluida')
-          .slice(-12)
+        if (!el) return;
+        if (typeof TimelineStore !== 'undefined') {
+          const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
+          this.rotina = TimelineStore.mergeInto(this.rotina || [], sId);
+        }
+        const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
+        const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
+        const items = (this.rotina || [])
+          .filter(a => activeStatuses.includes(a.status) || opPrefixes.some(p => (a.id || '').startsWith(p)))
+          .sort((a, b) => {
+            const getMin = (t) => {
+              if (!t) return 99999;
+              const p = String(t).split(':');
+              const mins = (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0);
+              return mins < 450 ? mins + 1440 : mins;
+            };
+            const tA = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
+            const tB = b.horaConclusao || b.horaInicio || b.horaAtualizacao || b.horario;
+            return getMin(tA) - getMin(tB);
+          })
+          .slice(-15)
           .reverse();
 
         if (items.length === 0) {
@@ -456,12 +474,24 @@
           return;
         }
 
-        el.innerHTML = items.map(a => `
+        const badgeIcon = (s) => {
+          if (s === 'concluida') return '✅ ';
+          if (s === 'em_andamento') return '⏳ ';
+          if (s === 'nao_realizada') return '⚠️ ';
+          if (s === 'cancelada') return '❌ ';
+          return '';
+        };
+
+        el.innerHTML = items.map(a => {
+          const isOp = opPrefixes.some(p => (a.id || '').startsWith(p));
+          const icon = !isOp ? badgeIcon(a.status) : '';
+          const t = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
+          return `
           <div class="tv-timeline-item">
-            <div class="tv-timeline-time">${a.horaConclusao || a.horario}</div>
-            <div>${Utils.escapeHtml(a.nome)}</div>
-          </div>
-        `).join('');
+            <div class="tv-timeline-time">${t}</div>
+            <div>${icon}${Utils.escapeHtml(a.nome)}</div>
+          </div>`;
+        }).join('');
       },
 
       updateMilitares(militares) {
