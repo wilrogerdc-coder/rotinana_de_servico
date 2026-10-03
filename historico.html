@@ -11,17 +11,163 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <style>
-    .hist-date-bar{display:flex;gap:16px;align-items:end;margin-bottom:24px;flex-wrap:wrap}
+    .hist-date-bar{display:flex;gap:16px;align-items:end;margin-bottom:16px;flex-wrap:wrap}
     .hist-date-bar .input-group{min-width:200px}
     .hist-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
     .hist-stat{background:var(--bg-card);border:1px solid var(--border-light);border-radius:12px;padding:16px;text-align:center}
     .hist-stat-value{font-size:1.8rem;font-weight:700;color:var(--prontidao-color);font-family:var(--font-mono)}
     .hist-stat-label{font-size:0.8rem;color:var(--text-muted);margin-top:4px}
+
+    /* Calendário de Dias com Dados Gravados */
+    .hist-cal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .hist-cal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .hist-cal-title {
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hist-cal-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hist-cal-month-label {
+      font-weight: 600;
+      font-size: 0.95rem;
+      min-width: 140px;
+      text-align: center;
+      text-transform: capitalize;
+    }
+    .hist-cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+    }
+    .hist-cal-head {
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 4px 0;
+      text-transform: uppercase;
+    }
+    .hist-cal-day {
+      min-height: 48px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      padding: 4px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .hist-cal-day:hover {
+      border-color: var(--prontidao-color, #00c853);
+      transform: translateY(-1px);
+    }
+    .hist-cal-day.other-month {
+      opacity: 0.3;
+    }
+    .hist-cal-day.today {
+      border-color: #2196f3;
+    }
+    .hist-cal-day.selected {
+      outline: 2px solid var(--prontidao-color, #00c853);
+      background: rgba(0, 200, 83, 0.12);
+      font-weight: 700;
+    }
+    .hist-cal-day.has-data {
+      border-color: var(--prontidao-color, #00c853);
+      background: rgba(0, 200, 83, 0.08);
+      box-shadow: 0 0 6px rgba(0, 200, 83, 0.2);
+    }
+    .hist-cal-day-num {
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+    }
+    .hist-cal-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .hist-cal-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .hist-cal-dot.pront-verde { background: #00c853; }
+    .hist-cal-dot.pront-amarela { background: #ffd600; }
+    .hist-cal-dot.pront-vermelha { background: #ff1744; }
+
+    .hist-quick-container {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .hist-quick-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      flex-wrap: wrap;
+    }
+    .hist-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-light);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .hist-chip:hover {
+      border-color: var(--prontidao-color, #00c853);
+      background: rgba(0, 200, 83, 0.1);
+    }
+    .hist-chip.active {
+      border-color: var(--prontidao-color, #00c853);
+      background: rgba(0, 200, 83, 0.18);
+      font-weight: 600;
+    }
+
     @media (max-width: 768px) {
       .hist-date-bar{flex-direction:column;align-items:stretch}
       .hist-date-bar .input-group{min-width:auto;width:100%}
       .hist-summary{grid-template-columns:repeat(2,1fr)}
       .hist-stat-value{font-size:1.4rem}
+      .hist-cal-day { min-height: 42px; padding: 2px 4px; }
+      .hist-cal-day-num { font-size: 0.75rem; }
     }
   </style>
 </head>
@@ -29,10 +175,41 @@
   <main class="main-content" id="mainContent">
     <div class="hist-date-bar">
       <div class="input-group">
-        <label class="input-label">Data do Serviço</label>
-        <input class="input" type="date" id="histDate">
+        <label class="input-label">Posto de Bombeiros</label>
+        <select class="input select" id="histPosto" onchange="Historico.onPostoChange()"></select>
       </div>
-      <button class="btn btn-primary" onclick="Historico.load()">Carregar</button>
+      <div class="input-group">
+        <label class="input-label">Data do Serviço (DD/MM/AAAA)</label>
+        <input class="input" type="date" id="histDate" onchange="Historico.onDateInputChange()">
+      </div>
+      <button class="btn btn-primary" onclick="Historico.load()">🔍 Carregar Histórico</button>
+      <button class="btn btn-secondary" id="btnHistRelatorio" style="display:none" onclick="Historico.gerarRelatorio()">📄 Gerar Relatórios</button>
+      <button class="btn btn-primary" id="btnHistAbrirServico" style="display:none;background:#1565c0;border-color:#1565c0" onclick="Historico.abrirNoDashboard()">👁️ Abrir Serviço no Dashboard</button>
+    </div>
+
+    <!-- Calendário com visualização de dias gravados -->
+    <div class="hist-cal-box" id="histCalBox">
+      <div class="hist-cal-top">
+        <div class="hist-cal-title">
+          <span>📅 Calendário de Serviços Registrados</span>
+          <span class="badge badge-info" id="histCalBadge">Verificando datas...</span>
+        </div>
+        <div class="hist-cal-nav">
+          <button class="btn btn-sm btn-secondary" onclick="Historico.changeMonth(-1)" title="Mês anterior">◀</button>
+          <span class="hist-cal-month-label" id="histCalMonthLabel">--</span>
+          <button class="btn btn-sm btn-secondary" onclick="Historico.changeMonth(1)" title="Próximo mês">▶</button>
+          <button class="btn btn-sm btn-secondary" onclick="Historico.goToday()" title="Ir para hoje">Hoje</button>
+        </div>
+      </div>
+
+      <div class="hist-cal-grid" id="histCalGrid">
+        <!-- Dias renderizados via JavaScript -->
+      </div>
+
+      <div class="hist-quick-container" id="histQuickContainer">
+        <span style="font-size:0.8rem;color:var(--text-muted);font-weight:600;white-space:nowrap">Dias com dados gravados:</span>
+        <div class="hist-quick-chips" id="histQuickChips"></div>
+      </div>
     </div>
 
     <div id="histContent" style="display:none">
@@ -55,11 +232,16 @@
         </div>
 
         <div class="dash-card">
+          <div class="dash-card-header"><span class="dash-card-title">Ocorrências</span></div>
+          <div id="histOcorrencias"></div>
+        </div>
+
+        <div class="dash-card">
           <div class="dash-card-header"><span class="dash-card-title">Oficiais</span></div>
           <div id="histOficiais"></div>
         </div>
 
-        <div class="dash-card">
+        <div class="dash-card" style="grid-column:1/-1">
           <div class="dash-card-header"><span class="dash-card-title">Linha do Tempo</span></div>
           <div id="histTimeline"></div>
         </div>
@@ -67,7 +249,7 @@
     </div>
 
     <div id="histEmpty" class="empty-state" style="padding:80px 0">
-      <p style="font-size:1.1rem;color:var(--text-muted)">Selecione uma data para visualizar o histórico</p>
+      <p style="font-size:1.1rem;color:var(--text-muted)">Selecione o posto e a data para visualizar o histórico</p>
     </div>
   </main>
 
@@ -78,41 +260,338 @@
   <script src="js/nav.js"></script>
   <script>
     const Historico = {
+      postos: [],
+      currentData: null,
+      calYear: new Date().getFullYear(),
+      calMonth: new Date().getMonth(),
+      recordedData: { dates: [], map: {}, items: [] },
+
       async init() {
         if (!Auth.requireAuth()) return;
         if (!Auth.canTela('historico', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
         NAV.init('historico');
-        document.getElementById('histDate').value = new Date().toISOString().split('T')[0];
+
+        const params = new URLSearchParams(window.location.search);
+        const urlDate = params.get('data');
+        const urlPosto = params.get('postoId');
+
+        const initialDate = urlDate || new Date().toISOString().split('T')[0];
+        document.getElementById('histDate').value = initialDate;
+
+        // Ajusta mês do calendário para a data inicial
+        if (initialDate && initialDate.includes('-')) {
+          const parts = initialDate.split('-');
+          this.calYear = parseInt(parts[0]) || this.calYear;
+          this.calMonth = (parseInt(parts[1]) - 1) || this.calMonth;
+        }
+
+        await this.loadPostos(urlPosto);
+        await this.refreshRecordedDates();
+        this.load();
+      },
+
+      async onPostoChange() {
+        await this.refreshRecordedDates();
+        this.load();
+      },
+
+      onDateInputChange() {
+        const d = document.getElementById('histDate').value;
+        if (d && d.includes('-')) {
+          const parts = d.split('-');
+          this.calYear = parseInt(parts[0]) || this.calYear;
+          this.calMonth = (parseInt(parts[1]) - 1) || this.calMonth;
+        }
+        this.renderCalendar();
+        this.load();
+      },
+
+      changeMonth(delta) {
+        this.calMonth += delta;
+        if (this.calMonth < 0) {
+          this.calMonth = 11;
+          this.calYear--;
+        } else if (this.calMonth > 11) {
+          this.calMonth = 0;
+          this.calYear++;
+        }
+        this.renderCalendar();
+      },
+
+      goToday() {
+        const now = new Date();
+        this.calYear = now.getFullYear();
+        this.calMonth = now.getMonth();
+        const todayIso = `${this.calYear}-${String(this.calMonth + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        document.getElementById('histDate').value = todayIso;
+        this.renderCalendar();
+        this.load();
+      },
+
+      selectDate(isoDate) {
+        document.getElementById('histDate').value = isoDate;
+        if (isoDate && isoDate.includes('-')) {
+          const parts = isoDate.split('-');
+          this.calYear = parseInt(parts[0]) || this.calYear;
+          this.calMonth = (parseInt(parts[1]) - 1) || this.calMonth;
+        }
+        this.renderCalendar();
+        this.load();
+      },
+
+      async refreshRecordedDates() {
+        const postoId = document.getElementById('histPosto')?.value || '';
+        const badge = document.getElementById('histCalBadge');
+        if (badge) badge.textContent = 'Carregando dias gravados...';
+
+        try {
+          this.recordedData = await API.getDatasComServico(postoId);
+          const count = this.recordedData.dates.length;
+          if (badge) {
+            badge.textContent = count === 0 ? 'Nenhum dia gravado' : `${count} dia${count > 1 ? 's' : ''} com serviço gravado`;
+            badge.className = count > 0 ? 'badge badge-green' : 'badge badge-info';
+          }
+        } catch (e) {
+          console.warn('[SGPO] Falha ao carregar datas com serviço:', e);
+          if (badge) badge.textContent = 'Modo offline / busca manual';
+        }
+
+        this.renderCalendar();
+      },
+
+      renderCalendar() {
+        const monthLabel = document.getElementById('histCalMonthLabel');
+        const grid = document.getElementById('histCalGrid');
+        const chipsContainer = document.getElementById('histQuickChips');
+        const quickBox = document.getElementById('histQuickContainer');
+        if (!grid || !monthLabel) return;
+
+        const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        monthLabel.textContent = `${months[this.calMonth]} ${this.calYear}`;
+
+        const firstDayOfMonth = new Date(this.calYear, this.calMonth, 1).getDay();
+        const daysInMonth = new Date(this.calYear, this.calMonth + 1, 0).getDate();
+        const daysInPrevMonth = new Date(this.calYear, this.calMonth, 0).getDate();
+
+        const selectedDate = document.getElementById('histDate')?.value || '';
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        let html = weekdays.map(w => `<div class="hist-cal-head">${w}</div>`).join('');
+
+        // Dias do mês anterior
+        for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+          const dayNum = daysInPrevMonth - i;
+          const prevMonth = this.calMonth === 0 ? 11 : this.calMonth - 1;
+          const prevYear = this.calMonth === 0 ? this.calYear - 1 : this.calYear;
+          const iso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+          const records = this.recordedData.map[iso] || [];
+          const hasData = records.length > 0;
+          const isSelected = iso === selectedDate;
+          const prontidao = hasData ? (records[0].prontidao || 'verde') : '';
+
+          html += `
+            <div class="hist-cal-day other-month ${hasData ? 'has-data' : ''} ${isSelected ? 'selected' : ''}" 
+                 onclick="Historico.selectDate('${iso}')" 
+                 title="${hasData ? `Serviço gravado: ${records[0].comandante || 'Oficial'} (${prontidao.toUpperCase()})` : Utils.formatDate(iso)}">
+              <span class="hist-cal-day-num">${dayNum}</span>
+              ${hasData ? `<span class="hist-cal-indicator"><span class="hist-cal-dot pront-${prontidao}"></span></span>` : ''}
+            </div>
+          `;
+        }
+
+        // Dias do mês atual
+        for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+          const iso = `${this.calYear}-${String(this.calMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+          const records = this.recordedData.map[iso] || [];
+          const hasData = records.length > 0;
+          const isSelected = iso === selectedDate;
+          const isToday = iso === todayIso;
+          const prontidao = hasData ? (records[0].prontidao || 'verde') : '';
+          const cmtNome = hasData ? (records[0].comandante || 'Comandante') : '';
+
+          html += `
+            <div class="hist-cal-day ${hasData ? 'has-data' : ''} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}" 
+                 onclick="Historico.selectDate('${iso}')" 
+                 title="${hasData ? `Serviço gravado em ${Utils.formatDate(iso)}\nComandante: ${cmtNome}\nProntidão: ${prontidao.toUpperCase()}` : (isToday ? 'Hoje (Sem registros)' : Utils.formatDate(iso))}">
+              <span class="hist-cal-day-num">${dayNum}</span>
+              ${hasData ? `
+                <span class="hist-cal-indicator">
+                  <span class="hist-cal-dot pront-${prontidao}"></span>
+                  <span style="font-weight:600;color:var(--text-primary)">${records.length > 1 ? records.length + 'sv' : 'Gravado'}</span>
+                </span>
+              ` : (isToday ? '<span style="font-size:0.6rem;color:#2196f3">Hoje</span>' : '')}
+            </div>
+          `;
+        }
+
+        // Preenche até fechar múltiplo de 7
+        const totalCells = firstDayOfMonth + daysInMonth;
+        const remaining = (7 - (totalCells % 7)) % 7;
+        for (let dayNum = 1; dayNum <= remaining; dayNum++) {
+          const nextMonth = this.calMonth === 11 ? 0 : this.calMonth + 1;
+          const nextYear = this.calMonth === 11 ? this.calYear + 1 : this.calYear;
+          const iso = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+          const records = this.recordedData.map[iso] || [];
+          const hasData = records.length > 0;
+          const isSelected = iso === selectedDate;
+          const prontidao = hasData ? (records[0].prontidao || 'verde') : '';
+
+          html += `
+            <div class="hist-cal-day other-month ${hasData ? 'has-data' : ''} ${isSelected ? 'selected' : ''}" 
+                 onclick="Historico.selectDate('${iso}')" 
+                 title="${hasData ? `Serviço gravado: ${records[0].comandante || 'Oficial'} (${prontidao.toUpperCase()})` : Utils.formatDate(iso)}">
+              <span class="hist-cal-day-num">${dayNum}</span>
+              ${hasData ? `<span class="hist-cal-indicator"><span class="hist-cal-dot pront-${prontidao}"></span></span>` : ''}
+            </div>
+          `;
+        }
+
+        grid.innerHTML = html;
+
+        // Renderiza Chips Rápidos de Dias Gravados
+        if (chipsContainer && quickBox) {
+          const recordedList = this.recordedData.dates || [];
+          if (recordedList.length === 0) {
+            quickBox.style.display = 'none';
+          } else {
+            quickBox.style.display = 'flex';
+            chipsContainer.innerHTML = recordedList.slice(0, 10).map(d => {
+              const recs = this.recordedData.map[d] || [];
+              const pront = recs[0]?.prontidao || 'verde';
+              const isAct = d === selectedDate;
+              return `
+                <div class="hist-chip ${isAct ? 'active' : ''}" onclick="Historico.selectDate('${d}')">
+                  <span class="hist-cal-dot pront-${pront}"></span>
+                  <span>${Utils.formatDate(d)}</span>
+                  ${recs[0]?.comandante ? `<span style="color:var(--text-muted);font-size:0.75rem">(${Utils.escapeHtml(recs[0].comandante.split(' ')[0])})</span>` : ''}
+                </div>
+              `;
+            }).join('');
+          }
+        }
+      },
+
+      async loadPostos(preselectedPostoId) {
+        try {
+          const list = await API.getPostosServico();
+          this.postos = Array.isArray(list) ? list.filter(p => p.Status !== 'removido') : [];
+          const select = document.getElementById('histPosto');
+          if (!select) return;
+
+          let userPostos = Auth.userPostos || [];
+          let userPostoIds = userPostos.map(p => p.id || p.postoId);
+          const isGB = Auth.nivelPermissao === 'GB' || Auth.userRole === 'admin' || Auth.userRole === 'superadmin' || Auth.userId === '_superuser_';
+
+          let postosDisponiveis = this.postos;
+          if (!isGB && userPostoIds.length > 0) {
+            postosDisponiveis = this.postos.filter(p => userPostoIds.includes(p.id));
+          }
+
+          if (postosDisponiveis.length === 0) postosDisponiveis = this.postos;
+
+          select.innerHTML = postosDisponiveis.map(p => `
+            <option value="${p.id}">${Utils.escapeHtml(p.nome)} (${p.tipo || 'POSTO'})</option>
+          `).join('');
+
+          if (preselectedPostoId) {
+            select.value = preselectedPostoId;
+          } else if (postosDisponiveis.length > 0) {
+            select.value = postosDisponiveis[0].id;
+          }
+        } catch(e) {
+          console.error('Erro ao carregar postos:', e);
+        }
       },
 
       async load() {
-        const date = document.getElementById('histDate').value;
+        const dateInput = document.getElementById('histDate');
+        let date = dateInput.value;
+        const postoId = document.getElementById('histPosto').value;
         if (!date) { Utils.showToast('Selecione uma data', 'warning'); return; }
 
+        date = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(date) : date;
+        dateInput.value = date;
+        this.renderCalendar();
+
         try {
-          const data = await API.getHistorico(date);
+          const data = await API.getHistorico({ data: date, postoId });
           if (!data || !data.servico) {
+            this.currentData = null;
             document.getElementById('histContent').style.display = 'none';
-            document.getElementById('histEmpty').style.display = 'block';
-            document.getElementById('histEmpty').innerHTML = '<p style="font-size:1.1rem;color:var(--text-muted)">Nenhum serviço registrado nesta data</p>';
+            const emptyEl = document.getElementById('histEmpty');
+            emptyEl.style.display = 'block';
+
+            const latestRecorded = (this.recordedData.dates && this.recordedData.dates.length > 0) ? this.recordedData.dates[0] : null;
+            let emptyMsg = `<p style="font-size:1.1rem;color:var(--text-muted);margin-bottom:12px">Nenhum serviço registrado para este posto nesta data (${Utils.formatDate(date)})</p>`;
+            if (latestRecorded && latestRecorded !== date) {
+              emptyMsg += `
+                <div style="margin-top:16px">
+                  <span style="font-size:0.9rem;color:var(--text-muted)">Dia com serviço gravado disponível:</span><br>
+                  <button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="Historico.selectDate('${latestRecorded}')">
+                    📅 Carregar serviço de ${Utils.formatDate(latestRecorded)}
+                  </button>
+                </div>
+              `;
+            }
+            emptyEl.innerHTML = emptyMsg;
+            document.getElementById('btnHistRelatorio').style.display = 'none';
+            document.getElementById('btnHistAbrirServico').style.display = 'none';
             return;
           }
 
+          this.currentData = data;
           document.getElementById('histEmpty').style.display = 'none';
           document.getElementById('histContent').style.display = 'block';
+          document.getElementById('btnHistRelatorio').style.display = 'inline-flex';
+          document.getElementById('btnHistAbrirServico').style.display = 'inline-flex';
 
           NAV.updateProntidao(data.servico.prontidao);
+          const servicoId = data.servico?.id;
           const rotina = typeof TimelineStore !== 'undefined' ? TimelineStore.mergeInto(data.rotina || [], servicoId) : (data.rotina || []);
           data.rotina = rotina;
           this.renderSummary(data);
           this.renderServico(data.servico);
           this.renderTelegrafia(data.telegrafia || []);
           this.renderRotina(rotina);
+          this.renderOcorrencias(data.ocorrencias || []);
           this.renderOficiais(data.oficiais || [], data.entradas || []);
           this.renderTimeline(rotina);
         } catch (e) {
           Utils.showToast('Erro ao carregar: ' + e.message, 'error');
         }
+      },
+
+      renderOcorrencias(items) {
+        const el = document.getElementById('histOcorrencias');
+        if (!el) return;
+        if (!items || items.length === 0) {
+          el.innerHTML = '<p style="color:var(--text-muted)">Nenhuma ocorrência registrada neste serviço</p>';
+          return;
+        }
+
+        const badge = (s) => {
+          if (s === 'finalizada') return '<span class="badge badge-green">Finalizada</span>';
+          if (s === 'em_andamento') return '<span class="badge badge-yellow">Em Atendimento</span>';
+          if (s === 'cancelada') return '<span class="badge badge-danger">Cancelada</span>';
+          return `<span class="badge badge-info">${Utils.escapeHtml(s || 'Ativa')}</span>`;
+        };
+
+        el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">` + items.map(oc => `
+          <div style="padding:10px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-light)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="font-weight:600;font-size:0.9rem">#${oc.numero || ''} ${Utils.escapeHtml(oc.titulo || 'Ocorrência')}</span>
+              ${badge(oc.status)}
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap">
+              <span>🚨 Natureza: <strong>${Utils.escapeHtml(oc.natureza || '-')}</strong></span>
+              <span>🕐 Acionamento: <strong>${oc.horaAcionamento || '-'}</strong></span>
+              ${oc.horaRetorno ? `<span>🏠 Retorno: <strong>${oc.horaRetorno}</strong></span>` : ''}
+            </div>
+            ${oc.descricao ? `<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px">${Utils.escapeHtml(oc.descricao)}</div>` : ''}
+          </div>
+        `).join('') + '</div>';
       },
 
       renderSummary(data) {
@@ -130,15 +609,44 @@
       },
 
       renderServico(s) {
+        const posto = this.postos.find(p => p.id === s.postoId);
+        const postoNome = posto ? posto.nome : (s.postoId || '-');
         document.getElementById('histServico').innerHTML = `
           <div style="display:flex;flex-direction:column;gap:12px">
-            <div><span style="color:var(--text-muted);font-size:0.8rem">Data</span><div style="font-weight:500">${s.data || '-'}</div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Posto</span><div style="font-weight:600;color:var(--text-primary)">${Utils.escapeHtml(postoNome)}</div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Data</span><div style="font-weight:600;font-family:var(--font-mono)">${Utils.formatDate(s.data)}</div></div>
             <div><span style="color:var(--text-muted);font-size:0.8rem">Prontidão</span><div><span class="badge badge-green">${(s.prontidao || '-').toUpperCase()}</span></div></div>
             <div><span style="color:var(--text-muted);font-size:0.8rem">Comandante</span><div style="font-weight:500">${Utils.escapeHtml(s.comandanteNome || s.comandante || '-')}</div></div>
             <div><span style="color:var(--text-muted);font-size:0.8rem">Horário Início</span><div style="font-family:var(--font-mono)">${s.horarioInicio || s.inicio || '-'}</div></div>
-            <div><span style="color:var(--text-muted);font-size:0.8rem">Status</span><div><span class="badge ${s.Status === 'encerrado' ? 'badge-info' : 'badge-green'}">${s.Status || 'ativo'}</span></div></div>
+            <div><span style="color:var(--text-muted);font-size:0.8rem">Status</span><div><span class="badge ${s.Status === 'encerrado' ? 'badge-info' : 'badge-green'}">${(s.Status || 'ativo').toUpperCase()}</span></div></div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-sm btn-primary" style="background:#1565c0;border-color:#1565c0" onclick="Historico.abrirNoDashboard()">👁️ Abrir Serviço no Dashboard</button>
+              <button class="btn btn-sm btn-secondary" onclick="Historico.gerarRelatorio()">📄 Gerar Relatórios</button>
+            </div>
           </div>
         `;
+      },
+
+      abrirNoDashboard() {
+        if (!this.currentData || !this.currentData.servico) {
+          Utils.showToast('Nenhum serviço carregado', 'warning');
+          return;
+        }
+        const s = this.currentData.servico;
+        localStorage.setItem('sgpo_active_servico_id', s.id);
+        Utils.showToast('Abrindo serviço no Dashboard...', 'info');
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 300);
+      },
+
+      gerarRelatorio() {
+        if (!this.currentData || !this.currentData.servico) {
+          Utils.showToast('Nenhum serviço carregado', 'warning');
+          return;
+        }
+        const s = this.currentData.servico;
+        const d = s.data || document.getElementById('histDate').value;
+        const pId = s.postoId || document.getElementById('histPosto').value;
+        window.location.href = `relatorios.html?data=${encodeURIComponent(d)}&postoId=${encodeURIComponent(pId)}&servicoId=${encodeURIComponent(s.id)}`;
       },
 
       renderTelegrafia(items) {
@@ -155,14 +663,15 @@
 
       renderRotina(items) {
         const el = document.getElementById('histRotina');
-        if (items.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem atividades</p>'; return; }
+        const clean = (items || []).filter(a => !a.id?.startsWith('r-tele-') && a.programa !== 'Telegrafia' && !a.nome?.includes('assumiu a telegrafia') && !a.nome?.includes('Telegrafia vazia'));
+        if (clean.length === 0) { el.innerHTML = '<p style="color:var(--text-muted)">Sem atividades</p>'; return; }
 
         const badge = (s) => {
           const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Não realizada</span>' };
           return m[s] || m.nao_iniciada;
         };
 
-        el.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">` + items.map(a => `
+        el.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">` + clean.map(a => `
           <div style="display:grid;grid-template-columns:80px 1fr auto auto;gap:12px;padding:10px;background:var(--bg-secondary);border-radius:8px;align-items:center">
             <span style="font-family:var(--font-mono);font-weight:600;color:var(--prontidao-color)">${a.horario}</span>
             <span style="font-weight:500">${Utils.escapeHtml(a.nome)}</span>
@@ -192,7 +701,11 @@
         const el = document.getElementById('histTimeline');
         const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
         const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
-        const done = (items || []).filter(a => activeStatuses.includes(a.status) || opPrefixes.some(p => (a.id || '').startsWith(p))).sort((a, b) => {
+        const done = (items || []).filter(a => {
+          if (!activeStatuses.includes(a.status) && !opPrefixes.some(p => (a.id || '').startsWith(p))) return false;
+          if (a.id?.startsWith('r-tele-') && (a.nome?.includes('após retorno da viatura') || a.nome?.includes('substituído automaticamente'))) return false;
+          return true;
+        }).sort((a, b) => {
           const getMin = (t) => {
             if (!t) return 99999;
             const p = String(t).split(':');

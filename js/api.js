@@ -4,12 +4,45 @@ const TimelineStore = {
     return `sgpo_persistent_timeline_${sId}`;
   },
 
+  initForService(servicoId, initialEvents = []) {
+    if (!servicoId) return;
+    try {
+      const key = this._getKey(servicoId);
+      const eventsWithSid = (initialEvents || []).map(ev => ({ ...ev, servicoId }));
+      localStorage.setItem(key, JSON.stringify(eventsWithSid));
+      localStorage.removeItem('sgpo_persistent_timeline_current');
+    } catch(e) {}
+  },
+
   getAll(servicoId) {
     try {
-      const raw = localStorage.getItem(this._getKey(servicoId));
+      const sId = servicoId || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null) || 'current';
+      const raw = localStorage.getItem(this._getKey(sId));
       if (!raw) return [];
       const list = JSON.parse(raw);
-      return Array.isArray(list) ? list : [];
+      if (!Array.isArray(list)) return [];
+      const isOcorrItem = (item) => {
+        if (!item) return false;
+        const id = String(item.id || '');
+        const prog = String(item.programa || '');
+        const nome = String(item.nome || '');
+        return id.startsWith('r-oc-') || id.startsWith('r-desp-') || id.startsWith('r-ret-') || id.startsWith('r-ocf-') ||
+               prog === 'Ocorrências' || prog === 'Ocorrência' ||
+               nome.includes('🚨') || nome.includes('Ocorrência #') || nome.includes('Despacho:');
+      };
+      return list.filter(item => {
+        if (!item || !item.id) return false;
+        if (sId && sId !== 'current' && item.servicoId && item.servicoId !== sId) return false;
+        // Registros operacionais de ocorrência pertencem estritamente ao serviço em que foram criados
+        if (isOcorrItem(item)) {
+          if (!sId || sId === 'current' || !item.servicoId || item.servicoId !== sId) return false;
+        }
+        // Ignora eventos de telegrafia gerados automaticamente (sem alteração pelo usuário)
+        if (item.id.startsWith('r-tele-') && (item.nome?.includes('após retorno da viatura') || item.nome?.includes('substituído automaticamente'))) return false;
+        // Ignora retornos espúrios
+        if (item.id.startsWith('r-ret-') && !item.nome?.includes('liberada da Ocorrência') && !item.nome?.includes('#') && item.nome?.includes('(disponível na base)')) return false;
+        return true;
+      });
     } catch(e) {
       return [];
     }
@@ -17,18 +50,15 @@ const TimelineStore = {
 
   add(event, servicoId) {
     if (!event || !event.id) return;
+    // Não persiste eventos de telegrafia que tenham sido gerados automaticamente sem ação de usuário
+    if (event.id.startsWith('r-tele-') && (event.nome?.includes('após retorno da viatura') || event.nome?.includes('substituído automaticamente'))) return;
     try {
-      if (typeof Utils !== 'undefined' && Utils.formatDateTime) {
-        if (event.horario) event.horario = Utils.formatDateTime(event.horario);
-        if (event.horaConclusao) event.horaConclusao = Utils.formatDateTime(event.horaConclusao);
-        if (event.horaInicio) event.horaInicio = Utils.formatDateTime(event.horaInicio);
-      }
       const sId = servicoId || event.servicoId || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null) || 'current';
       const key = this._getKey(sId);
       const list = this.getAll(sId);
       const idx = list.findIndex(x => x.id === event.id);
       if (idx >= 0) {
-        list[idx] = { ...list[idx], ...event };
+        list[idx] = { ...list[idx], ...event, servicoId: sId };
       } else {
         list.push({ ...event, servicoId: sId });
       }
@@ -45,24 +75,54 @@ const TimelineStore = {
 
   mergeInto(rotinaArray, servicoId) {
     if (!Array.isArray(rotinaArray)) rotinaArray = [];
-    const persistent = this.getAll(servicoId);
+    const sId = servicoId || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null) || 'current';
+    const persistent = this.getAll(sId);
     const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
     const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
+
+    const isOcorrItem = (item) => {
+      if (!item) return false;
+      const id = String(item.id || '');
+      const prog = String(item.programa || '');
+      const nome = String(item.nome || '');
+      return id.startsWith('r-oc-') || id.startsWith('r-desp-') || id.startsWith('r-ret-') || id.startsWith('r-ocf-') ||
+             prog === 'Ocorrências' || prog === 'Ocorrência' ||
+             nome.includes('🚨') || nome.includes('Ocorrência #') || nome.includes('Despacho:');
+    };
 
     const map = new Map();
 
     persistent.forEach(item => {
-      if (item && item.id) map.set(item.id, item);
+      if (item && item.id) {
+        if (sId && sId !== 'current' && item.servicoId && item.servicoId !== sId) return;
+        // Não mescla registros operacionais de ocorrências sem servicoId ou de outro serviço
+        if (isOcorrItem(item)) {
+          if (!sId || sId === 'current' || !item.servicoId || item.servicoId !== sId) return;
+        }
+        if (!item.servicoId || item.servicoId === sId || sId === 'current') {
+          // Filtra telegrafia automática espúria
+          if (item.id.startsWith('r-tele-') && (item.nome?.includes('após retorno da viatura') || item.nome?.includes('substituído automaticamente'))) return;
+          map.set(item.id, item);
+        }
+      }
     });
 
     rotinaArray.forEach(item => {
       if (!item || !item.id) return;
+      if (sId && sId !== 'current' && item.servicoId && item.servicoId !== sId) return;
+      // Não mescla registros operacionais de ocorrências sem servicoId ou de outro serviço
+      if (isOcorrItem(item)) {
+        if (!sId || sId === 'current' || !item.servicoId || item.servicoId !== sId) return;
+      }
+      // Filtra telegrafia automática espúria
+      if (item.id.startsWith('r-tele-') && (item.nome?.includes('após retorno da viatura') || item.nome?.includes('substituído automaticamente'))) return;
       const existing = map.get(item.id);
       if (existing) {
         const statusFinal = (existing.status && existing.status !== 'nao_iniciada') ? existing.status : item.status;
         const merged = {
           ...item,
           ...existing,
+          servicoId: sId,
           status: statusFinal,
           horaConclusao: existing.horaConclusao || item.horaConclusao,
           horaInicio: existing.horaInicio || item.horaInicio,
@@ -72,25 +132,62 @@ const TimelineStore = {
         };
         map.set(item.id, merged);
       } else {
-        map.set(item.id, item);
+        map.set(item.id, { ...item, servicoId: sId });
       }
     });
 
     rotinaArray.forEach(item => {
       if (!item || !item.id) return;
+      if (sId && sId !== 'current' && item.servicoId && item.servicoId !== sId) return;
+      if (isOcorrItem(item)) {
+        if (!sId || sId === 'current' || !item.servicoId || item.servicoId !== sId) return;
+      }
       if (opPrefixes.some(p => (item.id || '').startsWith(p)) || activeStatuses.includes(item.status)) {
-        this.add(item, servicoId);
+        this.add({ ...item, servicoId: sId }, sId);
       }
     });
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+    const seenRet = new Set();
+    const seenTele = new Set();
+    const cleaned = [];
+    result.forEach(item => {
+      if (!item || !item.id) return;
+      if (sId && sId !== 'current' && item.servicoId && item.servicoId !== sId) return;
+      if (isOcorrItem(item)) {
+        if (!sId || sId === 'current' || !item.servicoId || item.servicoId !== sId) return;
+      }
+      if (item.id.startsWith('r-ret-')) {
+        // Ignora retornos espúrios que foram criados automaticamente sem ocorrência real
+        if (!item.nome?.includes('liberada da Ocorrência') && !item.nome?.includes('#') && item.nome?.includes('(disponível na base)')) {
+          return;
+        }
+        const key = `${item.horario}_${item.nome}`;
+        if (seenRet.has(key)) return;
+        seenRet.add(key);
+      }
+      if (item.id.startsWith('r-tele-')) {
+        // Ignora eventos de telegrafia gerados automaticamente sem alteração explícita do usuário
+        if (item.nome?.includes('após retorno da viatura') || item.nome?.includes('substituído automaticamente')) {
+          return;
+        }
+        const keyT = `${item.horario}_${item.nome}`;
+        if (seenTele.has(keyT)) return;
+        seenTele.add(keyT);
+      }
+      cleaned.push(item);
+    });
+    return cleaned;
   }
 };
 if (typeof window !== 'undefined') window.TimelineStore = TimelineStore;
 
 const API_Local = {
   applyToState(s, action, data) {
-    const now = () => (typeof Utils !== 'undefined' && Utils.formatDateTime) ? Utils.formatDateTime(new Date()) : (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; })();
+    const now = () => {
+      const d = new Date();
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    };
     let id = '';
     if (!s) return '';
     if (!s.rotina) s.rotina = [];
@@ -117,6 +214,7 @@ const API_Local = {
           if (msgStatus) {
             s.notificacoes.unshift({
               id: 'n-' + Date.now(),
+              servicoId: servicoId,
               mensagem: msgStatus,
               tipo: data.status === 'concluida' ? 'sucesso' : (data.status === 'nao_realizada' ? 'warning' : (data.status === 'cancelada' ? 'danger' : 'info')),
               horario: a.horaConclusao || a.horaAtualizacao || now(),
@@ -130,12 +228,12 @@ const API_Local = {
       case 'criarAtividadeExtra': {
         id = 'ext-' + Date.now();
         if (!s.extras) s.extras = [];
-        const ext = { id, nome: data.nome, horario: data.horario, responsavel: data.responsavel, observacoes: data.observacoes, criadoPor: data.criadoPor, status: 'nao_iniciada' };
+        const ext = { id, servicoId, nome: data.nome, horario: data.horario, responsavel: data.responsavel, observacoes: data.observacoes, criadoPor: data.criadoPor, status: 'nao_iniciada' };
         s.extras.push(ext);
-        const itemRot = { id, horario: data.horario, nome: data.nome, programa: data.programa || '', responsavel: data.responsavel, responsavelId: data.responsavelId || '', status: 'nao_iniciada', observacoes: data.observacoes, criadoPor: data.criadoPor, origem: 'extra' };
+        const itemRot = { id, servicoId, horario: data.horario, nome: data.nome, programa: data.programa || '', responsavel: data.responsavel, responsavelId: data.responsavelId || '', status: 'nao_iniciada', observacoes: data.observacoes, criadoPor: data.criadoPor, origem: 'extra' };
         s.rotina.push(itemRot);
         s.rotina.sort((x, y) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(x.horario) - getMin(y.horario); });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Nova atividade extra: ' + data.nome, tipo: 'info', horario: now(), lida: false });
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: 'Nova atividade extra: ' + data.nome, tipo: 'info', horario: now(), lida: false });
         TimelineStore.add(itemRot, servicoId);
         break;
       }
@@ -144,6 +242,7 @@ const API_Local = {
         id = 'rot-' + Date.now();
         const nova = {
           id,
+          servicoId,
           horario: data.horario || (padrao ? padrao.horario : now()),
           nome: data.nome || (padrao ? padrao.nome : 'Atividade'),
           programa: data.programa || (padrao ? padrao.programa : ''),
@@ -156,7 +255,7 @@ const API_Local = {
         };
         s.rotina.push(nova);
         s.rotina.sort((x, y) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(x.horario) - getMin(y.horario); });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Atividade fixa adicionada: ' + nova.nome, tipo: 'info', horario: now(), lida: false });
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: 'Atividade fixa adicionada: ' + nova.nome, tipo: 'info', horario: now(), lida: false });
         TimelineStore.add(nova, servicoId);
         break;
       }
@@ -208,7 +307,27 @@ const API_Local = {
         const agoraT = now();
         if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
         if (s.telegrafia) {
-          s.telegrafiaHistorico.push({ ...s.telegrafia, horarioSaida: agoraT });
+          let durCalc = '0h 00m';
+          let minCalc = 0;
+          if (s.telegrafia.horario) {
+            try {
+              const pI = String(s.telegrafia.horario).split(':');
+              const pF = String(agoraT).split(':');
+              let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
+              if (diff < 0) diff += 1440;
+              minCalc = diff;
+              const h = Math.floor(diff / 60);
+              const m = diff % 60;
+              durCalc = `${h}h ${String(m).padStart(2, '0')}m`;
+            } catch(e) {}
+          }
+          s.telegrafiaHistorico.push({
+            ...s.telegrafia,
+            horarioSaida: agoraT,
+            fim: agoraT,
+            duracao: durCalc,
+            minutos: minCalc
+          });
         }
         if (!data.militarId || data.militarId === '__VAZIA__' || data.vazia) {
           s.telegrafia = null;
@@ -216,7 +335,7 @@ const API_Local = {
           const evtTele = { id: 'r-tele-' + Date.now(), horario: agoraT, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraT };
           s.rotina.push(evtTele);
           TimelineStore.add(evtTele, servicoId);
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Telegrafia vazia — sem operador disponível no quartel', tipo: 'alerta', horario: agoraT, lida: false });
+          s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: 'Telegrafia vazia — sem operador disponível no quartel', tipo: 'alerta', horario: agoraT, lida: false });
         } else {
           let duracaoStr = data.tempoVazia || '';
           if (s.telegrafiaVazioDesde) {
@@ -242,7 +361,7 @@ const API_Local = {
           const evtTele = { id: 'r-tele-' + Date.now(), horario: agoraT, nome: `📡 ${nomeOp} assumiu a telegrafia${vTexto}${durTexto}`, programa: 'Telegrafia', responsavel: nomeOp, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraT };
           s.rotina.push(evtTele);
           TimelineStore.add(evtTele, servicoId);
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `${nomeOp} assumiu a telegrafia${vTexto}${durTexto}`, tipo: 'telegrafia', horario: agoraT, lida: false });
+          s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `${nomeOp} assumiu a telegrafia${vTexto}${durTexto}`, tipo: 'telegrafia', horario: agoraT, lida: false });
         }
         break;
       }
@@ -263,7 +382,7 @@ const API_Local = {
           const evtOf = { id: 'r-ofe-' + Date.now(), horario: agoraO, nome: `${anunciado ? '📢' : '🚪'} ${o.nome}${anunciado ? ' anunciado' : ' entrou no quartel'}`, programa: 'Oficiais', responsavel: o.nome, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraO };
           s.rotina.push(evtOf);
           TimelineStore.add(evtOf, servicoId);
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: (o.nome || 'Oficial') + ' ' + (anunciado ? 'anunciado' : 'entrou no quartel'), tipo: 'oficial', horario: agoraO, lida: false });
+          s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: (o.nome || 'Oficial') + ' ' + (anunciado ? 'anunciado' : 'entrou no quartel'), tipo: 'oficial', horario: agoraO, lida: false });
         }
         break;
       }
@@ -278,7 +397,7 @@ const API_Local = {
         const evtOfS = { id: 'r-ofs-' + Date.now(), horario: agoraS, nome: `🚪 ${oS?.nome || 'Oficial'} saiu do quartel`, programa: 'Oficiais', responsavel: oS?.nome || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraS };
         s.rotina.push(evtOfS);
         TimelineStore.add(evtOfS, servicoId);
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Oficial ' + (oS?.nome || '-') + ' saiu do quartel', tipo: 'oficial', horario: agoraS, lida: false });
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: 'Oficial ' + (oS?.nome || '-') + ' saiu do quartel', tipo: 'oficial', horario: agoraS, lida: false });
         break;
       }
       case 'despacharViatura': {
@@ -296,13 +415,14 @@ const API_Local = {
             const evtTeleVazia = { id: 'r-tele-' + Date.now(), horario: nowD, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowD };
             s.rotina.push(evtTeleVazia);
             TimelineStore.add(evtTeleVazia, servicoId);
-            s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Telegrafista despachado — telegrafia operando vazia`, tipo: 'telegrafia', horario: nowD, lida: false });
+            s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `Telegrafista despachado — telegrafia operando vazia`, tipo: 'telegrafia', horario: nowD, lida: false });
           }
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${sv.viaturaNome} despachada para ocorrência`, tipo: 'alerta', horario: nowD, lida: false });
+          s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `Viatura ${sv.viaturaNome} despachada para ocorrência`, tipo: 'alerta', horario: nowD, lida: false });
           const num = data.ocorrenciaNumero || '';
           const titulo = data.ocorrenciaTitulo || '';
           const evtDesp = {
             id: 'r-desp-' + Date.now(),
+            servicoId: servicoId || sv.servicoId || '',
             horario: nowD,
             nome: `🚨 Despacho: ${sv.viaturaNome}${num ? ' — #' + num + ' ' + titulo : ''}`,
             programa: 'Ocorrência',
@@ -328,69 +448,55 @@ const API_Local = {
             if (outrasViaturas.length === 0) {
               ocFinalizar.horaRetorno = agoraR;
               ocFinalizar.status = 'finalizada';
-              const evtOcf = { id: 'r-ocf-' + Date.now(), horario: agoraR, nome: '✅ Ocorrência #' + (ocFinalizar.numero || '') + ' finalizada — viatura(s) retornou à base', programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraR };
+              const evtOcf = { id: 'r-ocf-' + Date.now(), servicoId: servicoId || svr.servicoId || ocFinalizar.servicoId || '', horario: agoraR, nome: '✅ Ocorrência #' + (ocFinalizar.numero || '') + ' finalizada — viatura(s) retornou à base', programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraR };
               s.rotina.push(evtOcf);
               TimelineStore.add(evtOcf, servicoId);
             }
           }
-          const evtRet = { id: 'r-ret-' + Date.now(), horario: agoraR, nome: `🏠 Retorno à base: ${svr.viaturaNome}`, programa: 'Ocorrências', responsavel: svr.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraR };
+          const evtRet = { id: 'r-ret-' + Date.now(), servicoId: servicoId || svr.servicoId || '', horario: agoraR, nome: `🏠 Retorno à base: ${svr.viaturaNome}`, programa: 'Ocorrências', responsavel: svr.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agoraR };
           s.rotina.push(evtRet);
           TimelineStore.add(evtRet, servicoId);
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${svr.viaturaNome} retornou à base`, tipo: 'info', horario: agoraR, lida: false });
+          s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `Viatura ${svr.viaturaNome} retornou à base`, tipo: 'info', horario: agoraR, lida: false });
 
-          // Se a telegrafia estava desocupada (vazia), alguém da composição da viatura assume a telegrafia
-          const isVazia = !s.telegrafia || !s.telegrafia.militarId || s.telegrafia.militarId === '__VAZIA__' || !s.telegrafia.operador || s.telegrafia.operador === '---';
-          if (isVazia) {
-            let militarIdTele = data.novoTelegrafistaId;
-            let militarNomeTele = data.novoTelegrafistaNome;
-            if (!militarIdTele) {
-              if (svr.tripulantes && svr.tripulantes.length > 0 && svr.tripulantes[0]?.id) {
-                militarIdTele = svr.tripulantes[0].id;
-                militarNomeTele = svr.tripulantes[0].nome;
-              } else if (svr.motoristaId) {
-                militarIdTele = svr.motoristaId;
-                militarNomeTele = svr.motorista;
-              } else if (svr.comandanteId) {
-                militarIdTele = svr.comandanteId;
-                militarNomeTele = svr.comandante;
-              }
+          // Apenas altera a telegrafia se o usuário selecionou explicitamente um novo telegrafista no retorno
+          if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
+            const militarIdTele = data.novoTelegrafistaId;
+            const milObj = (s.militares || []).find(m => m.id === militarIdTele);
+            const militarNomeTele = data.novoTelegrafistaNome || (milObj ? milObj.nome : 'Militar');
+            const iniVazia = s.telegrafiaVazioDesde || agoraR;
+            let duracaoStr = data.tempoVazia || '';
+            if (s.telegrafiaVazioDesde && !duracaoStr) {
+              try {
+                const pI = String(iniVazia).split(':');
+                const pF = String(agoraR).split(':');
+                let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
+                if (diff < 0) diff += 1440;
+                const h = Math.floor(diff / 60);
+                const m = diff % 60;
+                duracaoStr = h > 0 ? `${h}h ${m}min` : `${m} min`;
+              } catch(e) {}
             }
-            if (militarIdTele) {
-              if (!militarNomeTele) {
-                const milObj = (s.militares || []).find(m => m.id === militarIdTele);
-                militarNomeTele = milObj ? milObj.nome : 'Militar';
-              }
-              const iniVazia = s.telegrafiaVazioDesde || agoraR;
-              let duracaoStr = data.tempoVazia || '';
-              if (!duracaoStr) {
-                try {
-                  const pI = String(iniVazia).split(':');
-                  const pF = String(agoraR).split(':');
-                  let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
-                  if (diff < 0) diff += 1440;
-                  const h = Math.floor(diff / 60);
-                  const m = diff % 60;
-                  duracaoStr = h > 0 ? `${h}h ${m}min` : (diff === 0 ? 'menos de 1 min' : `${m} min`);
-                } catch(e) { duracaoStr = '1 min'; }
-              }
-              if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
-              s.telegrafiaHistorico.push({ operador: '---', inicio: iniVazia, fim: agoraR, duracao: duracaoStr });
-              s.telegrafia = { operador: militarNomeTele, militarId: militarIdTele, horario: agoraR };
-              s.telegrafiaVazioDesde = null;
+            if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
+            if (s.telegrafiaVazioDesde) {
+              s.telegrafiaHistorico.push({ operador: '---', inicio: iniVazia, fim: agoraR, duracao: duracaoStr || '1 min' });
+            }
+            s.telegrafia = { operador: militarNomeTele, militarId: militarIdTele, horario: agoraR };
+            s.telegrafiaVazioDesde = null;
 
-              const evtTeleAuto = {
-                id: 'r-tele-' + Date.now(),
-                horario: agoraR,
-                nome: `📡 ${militarNomeTele} assumiu a telegrafia após retorno da viatura ${svr.viaturaNome} (telegrafia esteve vazia por ${duracaoStr})`,
-                programa: 'Telegrafia',
-                responsavel: militarNomeTele,
-                status: 'concluida',
-                concluidoPor: 'Sistema',
-                horaConclusao: agoraR
-              };
-              s.rotina.push(evtTeleAuto);
-              TimelineStore.add(evtTeleAuto, servicoId);
-            }
+            const evtTele = {
+              id: 'r-tele-' + Date.now(),
+              horario: agoraR,
+              nome: `📡 ${militarNomeTele} assumiu a telegrafia`,
+              programa: 'Telegrafia',
+              responsavel: militarNomeTele,
+              status: 'concluida',
+              concluidoPor: 'Sistema',
+              horaConclusao: agoraR
+            };
+            TimelineStore.add(evtTele, servicoId);
+          } else if (data.novoTelegrafistaId === '__VAZIA__') {
+            s.telegrafia = null;
+            if (!s.telegrafiaVazioDesde) s.telegrafiaVazioDesde = agoraR;
           }
         }
         break;
@@ -421,7 +527,7 @@ const API_Local = {
                 s.telegrafia = null;
                 s.telegrafiaVazioDesde = nowOc;
               }
-              const evtDesp = { id: 'r-desp-' + Date.now() + Math.random(), horario: nowOc, nome: `🚨 Despacho/Empenho: ${sv.viaturaNome} — #${num} ${data.titulo}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
+              const evtDesp = { id: 'r-desp-' + Date.now() + Math.random(), servicoId: servicoId || data.servicoId || '', horario: nowOc, nome: `🚨 Despacho/Empenho: ${sv.viaturaNome} — #${num} ${data.titulo}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
               s.rotina.push(evtDesp);
               TimelineStore.add(evtDesp, servicoId);
             }
@@ -430,22 +536,22 @@ const API_Local = {
         if (data.telegrafiaVazia || data.novoTelegrafistaId === '__VAZIA__') {
           s.telegrafia = null;
           s.telegrafiaVazioDesde = nowOc;
-          const evtTeleVazia = { id: 'r-tele-' + Date.now(), horario: nowOc, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
+          const evtTeleVazia = { id: 'r-tele-' + Date.now(), servicoId: servicoId || data.servicoId || '', horario: nowOc, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
           s.rotina.push(evtTeleVazia);
           TimelineStore.add(evtTeleVazia, servicoId);
         } else if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
           const mNovo = (s.militares || []).find(x => x.id === data.novoTelegrafistaId);
           const nomeNovo = mNovo ? mNovo.nome : 'Novo militar';
           s.telegrafia = { operador: nomeNovo, militarId: data.novoTelegrafistaId, horario: nowOc };
-          const evtTeleNovo = { id: 'r-tele-' + Date.now(), horario: nowOc, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
+          const evtTeleNovo = { id: 'r-tele-' + Date.now(), servicoId: servicoId || data.servicoId || '', horario: nowOc, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
           s.rotina.push(evtTeleNovo);
           TimelineStore.add(evtTeleNovo, servicoId);
         }
 
-        const evtOc = { id: 'r-oc-' + Date.now(), horario: nowOc, nome: `🚨 Ocorrência #${num}: ${data.titulo}${data.endereco ? ' (' + data.endereco + ')' : ''}`, programa: 'Ocorrências', responsavel: data.efetivo?.[0] || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
+        const evtOc = { id: 'r-oc-' + Date.now(), servicoId: servicoId || data.servicoId || '', horario: nowOc, nome: `🚨 Ocorrência #${num}: ${data.titulo}${data.endereco ? ' (' + data.endereco + ')' : ''}`, programa: 'Ocorrências', responsavel: data.efetivo?.[0] || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowOc };
         s.rotina.push(evtOc);
         TimelineStore.add(evtOc, servicoId);
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Nova ocorrência #${num}: ${data.titulo}`, tipo: 'urgente', horario: nowOc, lida: false });
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `Nova ocorrência #${num}: ${data.titulo}`, tipo: 'urgente', horario: nowOc, lida: false });
         break;
       }
       case 'editarOcorrencia': {
@@ -457,13 +563,14 @@ const API_Local = {
         const ocf = (s.ocorrencias || []).find(x => x.id === (data.id || data.ocorrenciaId));
         if (ocf) {
           const nowF = data.horaRetorno || now();
+          const sidF = servicoId || ocf.servicoId || '';
           if (data.liberarApenasServicoViaturaId) {
             const sv = (s.servicoViaturas || []).find(x => x.id === data.liberarApenasServicoViaturaId);
             if (sv) {
               sv.horarioRetorno = nowF;
               sv.status = data.destinoStatus || 'ativa';
               ocf.viaturaIds = (ocf.viaturaIds || []).filter(vid => vid !== sv.viaturaId);
-              const evtDesemp = { id: 'r-ret-' + Date.now(), horario: nowF, nome: `🏠 Desempenho: ${sv.viaturaNome} liberada da Ocorrência #${ocf.numero} (${sv.status === 'retornando' ? 'retornando' : 'disponível na base'})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
+              const evtDesemp = { id: 'r-ret-' + Date.now(), servicoId: sidF, horario: nowF, nome: `🏠 Desempenho: ${sv.viaturaNome} liberada da Ocorrência #${ocf.numero} (${sv.status === 'retornando' ? 'retornando' : 'disponível na base'})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
               s.rotina.push(evtDesemp);
               TimelineStore.add(evtDesemp, servicoId);
             }
@@ -475,15 +582,15 @@ const API_Local = {
             viaturasDaOcorr.forEach(sv => {
               sv.horarioRetorno = nowF;
               sv.status = data.destinoStatus || 'ativa';
-              const evtRetV = { id: 'r-ret-' + Date.now() + Math.random(), horario: nowF, nome: `🏠 Retorno à base: ${sv.viaturaNome}`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
+              const evtRetV = { id: 'r-ret-' + Date.now() + Math.random(), servicoId: sidF, horario: nowF, nome: `🏠 Retorno à base: ${sv.viaturaNome}`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
               s.rotina.push(evtRetV);
               TimelineStore.add(evtRetV, servicoId);
             });
             const statusTexto = ocf.status === 'cancelada' ? 'cancelada' : (ocf.status === 'trote' ? 'trote confirmado' : 'finalizada');
-            const evtOcf = { id: 'r-ocf-' + Date.now(), horario: nowF, nome: `✅ Ocorrência #${ocf.numero || ''} ${statusTexto}${data.desfecho ? ' — ' + data.desfecho : ''}`, programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
+            const evtOcf = { id: 'r-ocf-' + Date.now(), servicoId: sidF, horario: nowF, nome: `✅ Ocorrência #${ocf.numero || ''} ${statusTexto}${data.desfecho ? ' — ' + data.desfecho : ''}`, programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowF };
             s.rotina.push(evtOcf);
             TimelineStore.add(evtOcf, servicoId);
-            s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Ocorrência #${ocf.numero || ''} ${statusTexto}`, tipo: 'info', horario: nowF, lida: false });
+            s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId, mensagem: `Ocorrência #${ocf.numero || ''} ${statusTexto}`, tipo: 'info', horario: nowF, lida: false });
           }
         }
         break;
@@ -492,13 +599,14 @@ const API_Local = {
         const ocr = (s.ocorrencias || []).find(x => x.id === data.ocorrenciaId);
         if (ocr && data.servicoViaturaIds) {
           const nowR = data.horario || now();
+          const sidR = servicoId || ocr.servicoId || '';
           data.servicoViaturaIds.forEach(svId => {
             const sv = (s.servicoViaturas || []).find(x => x.id === svId);
             if (sv) {
               if (!ocr.viaturaIds.includes(sv.viaturaId)) ocr.viaturaIds.push(sv.viaturaId);
               sv.status = 'em_ocorrencia';
               sv.horarioSaida = nowR;
-              const evtApoio = { id: 'r-desp-' + Date.now() + Math.random(), horario: nowR, nome: `🚨 Apoio/Empenho: ${sv.viaturaNome} despachada para Ocorrência #${ocr.numero}${data.motivoApoio ? ' (' + data.motivoApoio + ')' : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
+              const evtApoio = { id: 'r-desp-' + Date.now() + Math.random(), servicoId: sidR, horario: nowR, nome: `🚨 Apoio/Empenho: ${sv.viaturaNome} despachada para Ocorrência #${ocr.numero}${data.motivoApoio ? ' (' + data.motivoApoio + ')' : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
               s.rotina.push(evtApoio);
               TimelineStore.add(evtApoio, servicoId);
             }
@@ -506,14 +614,14 @@ const API_Local = {
           if (data.telegrafiaVazia || data.novoTelegrafistaId === '__VAZIA__') {
             s.telegrafia = null;
             s.telegrafiaVazioDesde = nowR;
-            const evtTeleVazia = { id: 'r-tele-' + Date.now(), horario: nowR, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
+            const evtTeleVazia = { id: 'r-tele-' + Date.now(), servicoId: sidR, horario: nowR, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
             s.rotina.push(evtTeleVazia);
             TimelineStore.add(evtTeleVazia, servicoId);
           } else if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
             const mNovo = (s.militares || []).find(x => x.id === data.novoTelegrafistaId);
             const nomeNovo = mNovo ? mNovo.nome : 'Novo militar';
             s.telegrafia = { operador: nomeNovo, militarId: data.novoTelegrafistaId, horario: nowR };
-            const evtTeleNovo = { id: 'r-tele-' + Date.now(), horario: nowR, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
+            const evtTeleNovo = { id: 'r-tele-' + Date.now(), servicoId: sidR, horario: nowR, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowR };
             s.rotina.push(evtTeleNovo);
             TimelineStore.add(evtTeleNovo, servicoId);
           }
@@ -638,7 +746,11 @@ const API_Local = {
         s.rotina = TimelineStore.mergeInto(s.rotina, sId);
       }
       if (typeof Sync !== 'undefined') {
-        Sync._processData(s);
+        if (typeof Sync._processData === 'function') {
+          Sync._processData(s);
+        } else if (typeof Sync.syncNow === 'function') {
+          Sync.syncNow();
+        }
       }
       try {
         localStorage.setItem('sgpo_cached_servico', JSON.stringify(s));
@@ -652,7 +764,7 @@ const API_Local = {
         DemoData.save();
       }
     } catch(e) {
-       console.error('API_Local error:', e);
+       console.warn('API_Local error:', e);
     }
     
     return { success: true, id: id };
@@ -663,6 +775,7 @@ const SyncQueue = {
   queue: [],
   isSyncing: false,
   _interval: null,
+  _authError: false,
   
   init() {
     try {
@@ -683,8 +796,18 @@ const SyncQueue = {
   _sanitizeQueue() {
     let changed = false;
     const initialLen = this.queue.length;
+    const isDemoMode = (typeof window !== 'undefined' && window.API && window.API.isDemo) ||
+                       (typeof localStorage !== 'undefined' && localStorage.getItem('sgpo_demo') === 'true') ||
+                       (typeof Auth !== 'undefined' && (!Auth.user?.token || (typeof Auth.user.token === 'string' && Auth.user.token.startsWith('demo-token'))));
+
     this.queue = this.queue.filter(item => {
       if (!item || typeof item !== 'object' || !item.action) {
+        changed = true;
+        return false;
+      }
+      // Se estamos em modo demonstração ou a requisição possui credencial de demonstração,
+      // a ação já foi persistida localmente e não deve permanecer na fila de sincronização com o Google Apps Script.
+      if (isDemoMode || (item.auth && typeof item.auth.token === 'string' && item.auth.token.startsWith('demo-token'))) {
         changed = true;
         return false;
       }
@@ -722,6 +845,15 @@ const SyncQueue = {
   
   add(payload) {
     if (!payload || typeof payload !== 'object') return;
+
+    // Se o sistema estiver em modo demo ou com token padrão de demonstração,
+    // a alteração já foi aplicada localmente em API_Local e não deve ser enviada para a API remota do GAS.
+    const isDemoMode = (typeof API !== 'undefined' && API.isDemo) ||
+                       (typeof Auth !== 'undefined' && (!Auth.user?.token || (typeof Auth.user.token === 'string' && Auth.user.token.startsWith('demo-token'))));
+    if (isDemoMode) {
+      return;
+    }
+
     if (['editarServicoViatura', 'finalizarOcorrencia', 'editarOcorrencia'].includes(payload.action)) {
       if (!payload.id && (payload.servicoViaturaId || payload.ocorrenciaId)) {
         payload.id = payload.servicoViaturaId || payload.ocorrenciaId;
@@ -761,18 +893,29 @@ const SyncQueue = {
       }
       const count = this.queue.length;
       const isOnline = navigator.onLine;
-      const labelText = !isOnline 
-        ? `${count} ${count === 1 ? 'atualização pendente (offline)' : 'atualizações pendentes (offline)'}` 
-        : (this.isSyncing ? 'Sincronizando atualizações...' : `${count} ${count === 1 ? 'atualização pendente' : 'atualizações pendentes'}`);
+      let labelText = '';
+      if (this._authError) {
+        labelText = `${count} ${count === 1 ? 'pendência (sessão expirada)' : 'pendências (sessão expirada)'}`;
+      } else if (!isOnline) {
+        labelText = `${count} ${count === 1 ? 'atualização pendente (offline)' : 'atualizações pendentes (offline)'}`;
+      } else {
+        labelText = this.isSyncing ? 'Sincronizando atualizações...' : `${count} ${count === 1 ? 'atualização pendente' : 'atualizações pendentes'}`;
+      }
       
       bar.innerHTML = `
         <span style="display:flex;align-items:center;gap:6px;font-weight:600;color:var(--warning, #f59e0b)">
           <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warning, #f59e0b);box-shadow:0 0 8px var(--warning, #f59e0b)"></span>
           ${labelText}
         </span>
-        <button onclick="SyncQueue.sync()" class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:3px 10px;background:var(--warning, #f59e0b);color:#000;border:none;font-weight:700;${this.isSyncing ? 'opacity:0.6;pointer-events:none' : ''}">
-          ${this.isSyncing ? 'Enviando...' : 'Sincronizar agora'}
-        </button>
+        ${this._authError ? `
+          <a href="login.html" class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:3px 10px;background:var(--warning, #f59e0b);color:#000;border:none;font-weight:700;text-decoration:none">
+            Fazer login
+          </a>
+        ` : `
+          <button onclick="SyncQueue.sync()" class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:3px 10px;background:var(--warning, #f59e0b);color:#000;border:none;font-weight:700;${this.isSyncing ? 'opacity:0.6;pointer-events:none' : ''}">
+            ${this.isSyncing ? 'Enviando...' : 'Sincronizar agora'}
+          </button>
+        `}
       `;
     } else {
       if (bar) bar.remove();
@@ -781,6 +924,25 @@ const SyncQueue = {
   
   async sync() {
     if (this.queue.length === 0 || this.isSyncing) return;
+
+    // Se o usuário estiver em modo demo ou sem autenticação real de backend,
+    // não tenta enviar requisições protegidas para o GAS.
+    const isDemoMode = (typeof API !== 'undefined' && API.isDemo) ||
+                       (typeof Auth !== 'undefined' && (!Auth.user?.token || (typeof Auth.user.token === 'string' && Auth.user.token.startsWith('demo-token'))));
+    if (isDemoMode) {
+      this.queue = [];
+      try { localStorage.setItem('sgpo_sync_queue', JSON.stringify([])); } catch(e) {}
+      this._authError = false;
+      this.updateUI();
+      return;
+    }
+
+    if (typeof Auth !== 'undefined' && (!Auth.isLoggedIn || !Auth.user)) {
+      this._authError = true;
+      this.updateUI();
+      return;
+    }
+
     this.isSyncing = true;
     this.updateUI();
     
@@ -788,6 +950,14 @@ const SyncQueue = {
     let anySuccess = false;
     
     for (const req of batch) {
+      // Atualiza dinamicamente com as credenciais válidas mais recentes do usuário logado
+      if (typeof Auth !== 'undefined' && Auth.user) {
+        req.auth = {
+          id: Auth.user.id,
+          token: Auth.user.token || ''
+        };
+      }
+
       if (['editarServicoViatura', 'finalizarOcorrencia', 'editarOcorrencia'].includes(req.action)) {
         if (!req.id && (req.servicoViaturaId || req.ocorrenciaId)) {
           req.id = req.servicoViaturaId || req.ocorrenciaId;
@@ -816,6 +986,7 @@ const SyncQueue = {
       try {
         await API._gasFetch(req);
         anySuccess = true;
+        this._authError = false;
         this.queue = this.queue.filter(q => q !== req);
         try {
           localStorage.setItem('sgpo_sync_queue', JSON.stringify(this.queue));
@@ -823,6 +994,25 @@ const SyncQueue = {
         this.updateUI();
       } catch (e) {
         const msg = (e && e.message) ? e.message : String(e);
+        const isAuthError = msg.includes('Sessão expirada') || 
+                            msg.includes('acesso não autorizado') || 
+                            msg.includes('não autorizado') || 
+                            msg.includes('não autorizada') ||
+                            msg.includes('Token inválido');
+
+        if (isAuthError) {
+          if (!req.auth?.token || (typeof req.auth.token === 'string' && req.auth.token.startsWith('demo-token')) || (typeof API !== 'undefined' && API.isDemo)) {
+            this.queue = this.queue.filter(q => q !== req);
+            try { localStorage.setItem('sgpo_sync_queue', JSON.stringify(this.queue)); } catch(err) {}
+            this.updateUI();
+            continue;
+          }
+          this._authError = true;
+          this.updateUI();
+          console.warn('[SyncQueue] Sessão expirada no servidor. Faça login novamente para concluir a sincronização.');
+          break;
+        }
+
         const isPermanentError = msg.includes('ID obrigatório') ||
                                  msg.includes('obrigatório') ||
                                  msg.includes('não encontrada') ||
@@ -848,11 +1038,19 @@ const SyncQueue = {
     this.updateUI();
     
     if (this.queue.length === 0) {
+      this._authError = false;
+      this.updateUI();
       if (anySuccess && typeof Utils !== 'undefined' && typeof Utils.showToast === 'function') {
         Utils.showToast('Todas as alterações foram sincronizadas!', 'success');
       }
       if (typeof Sync !== 'undefined' && Sync.servicoId) {
-        Sync.requestImmediatePull ? Sync.requestImmediatePull(true) : Sync.pull(true);
+        if (typeof Sync.requestImmediatePull === 'function') {
+          Sync.requestImmediatePull(true);
+        } else if (typeof Sync.pull === 'function') {
+          Sync.pull(true);
+        } else if (typeof Sync.syncNow === 'function') {
+          Sync.syncNow(true);
+        }
         if (typeof Sync.broadcastForceRefresh === 'function') {
           Sync.broadcastForceRefresh();
         }
@@ -864,12 +1062,6 @@ const SyncQueue = {
     }
   }
 };
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => SyncQueue.init());
-} else {
-  SyncQueue.init();
-}
 
 const API = {
   BASE_URL: '',
@@ -895,8 +1087,10 @@ const API = {
     if (typeof Sync !== 'undefined' && Sync.servicoId) {
       if (typeof Sync.requestImmediatePull === 'function') {
         Sync.requestImmediatePull(true);
-      } else {
+      } else if (typeof Sync.pull === 'function') {
         setTimeout(() => Sync.pull(true), 50);
+      } else if (typeof Sync.syncNow === 'function') {
+        setTimeout(() => Sync.syncNow(true), 50);
       }
       if (typeof Sync.broadcastForceRefresh === 'function') {
         Sync.broadcastForceRefresh();
@@ -923,7 +1117,11 @@ const API = {
   },
 
   get isDemo() {
-    return this._demo || localStorage.getItem('sgpo_demo') === 'true';
+    if (this._demo || localStorage.getItem('sgpo_demo') === 'true') return true;
+    if (typeof Auth !== 'undefined' && (!Auth.user?.token || (typeof Auth.user.token === 'string' && Auth.user.token.startsWith('demo-token')))) {
+      return true;
+    }
+    return false;
   },
 
   _showProgress(action) {
@@ -1089,6 +1287,10 @@ const API = {
       return this._inFlight[dedupKey];
     }
 
+    if (this._gasOffline && isRead && (Date.now() - (this._gasOfflineTime || 0) < 15000)) {
+      throw new Error('Erro de conexão. Verifique a URL da API ou sua rede.');
+    }
+
     const silentReads = [
       'getServicoAtual', 'getPostosServico', 'getPostosComServico', 'checkAcessoServico',
       'getViaturas', 'getMilitares', 'getTiposViatura', 'getNaturezas',
@@ -1154,8 +1356,13 @@ const API = {
 
     const text = await response.text();
     let result;
-    try { result = JSON.parse(text); } catch (e) {
-      console.error('[SGPO] Resposta nao-JSON recebida do GAS:', text.substring(0, 300));
+    try {
+      result = JSON.parse(text);
+      this._gasOffline = false;
+    } catch (e) {
+      this._gasOffline = true;
+      this._gasOfflineTime = Date.now();
+      console.warn('[SGPO] Resposta não-JSON recebida do GAS (possível indisponibilidade ou página de erro):', text.substring(0, 150));
       throw new Error('Resposta invalida do servidor (HTML em vez de JSON). Verifique o deploy do GAS Web App.');
     }
 
@@ -1168,7 +1375,7 @@ const API = {
     }
 
     if (result.status === 'SGPO API Online' && !result.success && _retrying) {
-      console.error('[SGPO] GAS Web App em modo redirect. Payload:', payload.action);
+      console.warn('[SGPO] GAS Web App em modo redirect. Payload:', payload.action);
       throw new Error('GAS Web App retornou status em vez de dados. Redeploy o Web App: Apps Script > Implantar > Nova implantacao > "Executar como: Eu" > "Quem pode acessar: Qualquer pessoa"');
     }
 
@@ -1179,6 +1386,7 @@ const API = {
     if (sheetName === 'viaturas') return this.getViaturas();
     if (sheetName === 'militares') return this.getMilitares();
     if (sheetName === 'naturezas') return this.getNaturezas();
+    if (sheetName === 'oficiais') return this.getOficiais();
     try {
       return await this.request('read', { sheet: sheetName, filters });
     } catch (e) {
@@ -1207,7 +1415,10 @@ const API = {
       if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
       return r;
     } catch (e) {
-      console.warn(`[SGPO] Falha ao criar em "${sheetName}" online, aplicando localmente:`, e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn(`[SGPO] Falha ao criar em "${sheetName}" online, aplicando localmente:`, e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('create', { sheet: sheetName, row });
         if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
@@ -1222,7 +1433,10 @@ const API = {
       if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
       return r;
     } catch (e) {
-      console.warn(`[SGPO] Falha ao atualizar em "${sheetName}" online, aplicando localmente:`, e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn(`[SGPO] Falha ao atualizar em "${sheetName}" online, aplicando localmente:`, e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('update', { sheet: sheetName, id, row });
         if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
@@ -1237,7 +1451,10 @@ const API = {
       if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
       return r;
     } catch (e) {
-      console.warn(`[SGPO] Falha ao excluir em "${sheetName}" online, aplicando localmente:`, e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn(`[SGPO] Falha ao excluir em "${sheetName}" online, aplicando localmente:`, e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('delete', { sheet: sheetName, id });
         if (sheetName === 'viaturas') localStorage.removeItem('sgpo_cached_viaturas');
@@ -1247,18 +1464,73 @@ const API = {
     }
   },
   async login(usuario, senha) {
-    try {
-      return await this.request('login', { usuario, senha });
-    } catch (e) {
-      console.warn('[SGPO] Login online falhou (' + e.message + '), tentando autenticação local/demo...');
+    const cleanUser = String(usuario || '').trim();
+    const cleanSenha = String(senha || '').trim();
+    const digitsOnly = cleanUser.replace(/\D/g, '');
+
+    // Se estiver explicitamente em modo demonstração local, tenta validar no DemoData primeiro
+    if (this.isDemo) {
       if (typeof DemoData !== 'undefined') {
-        const localResult = DemoData.handle('login', { usuario, senha });
+        const localResult = DemoData.handle('login', { usuario: cleanUser, senha: cleanSenha });
         if (localResult && localResult.success) {
           this.enableDemo();
           return localResult;
         }
       }
-      throw e;
+    }
+
+    // 1. Tenta autenticação direta na planilha (Google Apps Script)
+    try {
+      // Se for formato numérico (CPF com ou sem pontuação / RE numérico),
+      // tenta como Number pois o Google Sheets armazena CPF numérico como tipo número nativo
+      if (digitsOnly && digitsOnly.length >= 3 && /^\d+$/.test(cleanUser.replace(/[\.\-\/\s]/g, ''))) {
+        try {
+          const numRes = await this.request('login', { usuario: Number(digitsOnly), senha: cleanSenha });
+          if (numRes && numRes.success) {
+            this.disableDemo();
+            return numRes;
+          }
+        } catch(errNum) {}
+      }
+
+      // Tenta login enviando o identificador como string
+      const strRes = await this.request('login', { usuario: cleanUser, senha: cleanSenha });
+      if (strRes && strRes.success) {
+        this.disableDemo();
+        return strRes;
+      }
+    } catch (eOnline) {
+      // Se falhou online (ex.: usuário informou nomeUsuario ou RE, mas na planilha o campo principal é o CPF numérico),
+      // consulta a planilha para resolver o CPF correspondente e autenticar online
+      try {
+        const sheetUsers = await this.request('read', { sheet: 'Usuarios' });
+        if (Array.isArray(sheetUsers)) {
+          const match = sheetUsers.find(su =>
+            (su.nomeUsuario && String(su.nomeUsuario).trim().toLowerCase() === cleanUser.toLowerCase()) ||
+            (su.re && String(su.re).trim() === cleanUser) ||
+            (su.cpf !== undefined && String(su.cpf).replace(/\D/g, '') === digitsOnly)
+          );
+          if (match && match.cpf !== undefined) {
+            const cpfDigits = String(match.cpf).replace(/\D/g, '');
+            const targetLogin = cpfDigits ? (Number(cpfDigits) || match.cpf) : match.cpf;
+            const resResolved = await this.request('login', { usuario: targetLogin, senha: cleanSenha });
+            if (resResolved && resResolved.success) {
+              this.disableDemo();
+              return resResolved;
+            }
+          }
+        }
+      } catch(errResolve) {}
+
+      console.info('[SGPO] Login online não concluído (' + (eOnline?.message || '') + '), verificando dados locais...');
+      if (typeof DemoData !== 'undefined') {
+        const localResult = DemoData.handle('login', { usuario: cleanUser, senha: cleanSenha });
+        if (localResult && localResult.success) {
+          this.enableDemo();
+          return localResult;
+        }
+      }
+      throw eOnline;
     }
   },
   
@@ -1285,20 +1557,10 @@ const API = {
       if (cached && cached.servico && (!activeServicoId || cached.servico.id === activeServicoId)) {
         const clone = JSON.parse(JSON.stringify(cached));
         const sId = clone.servico?.id || activeServicoId;
-        clone.rotina = TimelineStore.mergeInto(clone.rotina, sId);
-
-        // Normalização: viaturas na base que não estão em nenhuma ocorrência ativa devem estar como 'ativa' (Disponível)
-        if (clone.servicoViaturas && Array.isArray(clone.servicoViaturas)) {
-          const ocsAtivas = (clone.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-          const vidsEmOcorr = new Set();
-          ocsAtivas.forEach(oc => (oc.viaturaIds || []).forEach(vid => vidsEmOcorr.add(String(vid))));
-
-          clone.servicoViaturas.forEach(sv => {
-            if (sv && sv.status === 'retornando' && !vidsEmOcorr.has(String(sv.viaturaId))) {
-              sv.status = 'ativa';
-            }
-          });
+        if (sId && Array.isArray(clone.ocorrencias)) {
+          clone.ocorrencias = clone.ocorrencias.filter(o => o && o.servicoId === sId);
         }
+        clone.rotina = TimelineStore.mergeInto(clone.rotina, sId);
 
         if (typeof SyncQueue !== 'undefined' && SyncQueue.queue.length > 0) {
           for (const payload of SyncQueue.queue) {
@@ -1306,6 +1568,7 @@ const API = {
           }
           clone.rotina = TimelineStore.mergeInto(clone.rotina, sId);
         }
+        this._reconciliarViaturasNaBase(clone);
         if (typeof Sync !== 'undefined') Sync._lastData = clone;
 
         // Background silent revalidation if older than 4 seconds
@@ -1322,6 +1585,89 @@ const API = {
     return this._fetchServicoAtualNetwork(usuarioId, activeServicoId);
   },
 
+  _reconciliarViaturasNaBase(data) {
+    if (!data || !data.servicoViaturas || !Array.isArray(data.servicoViaturas)) return;
+    const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+    const pertence = (o, sv) => (typeof Utils !== 'undefined' && Utils.viaturaPertenceAOcorrencia) ? Utils.viaturaPertenceAOcorrencia(o, sv) : (Array.isArray(o?.viaturaIds) ? o.viaturaIds.some(v => String(v?.viaturaId || v?.id || v) === String(sv?.viaturaId) || String(v?.viaturaId || v?.id || v) === String(sv?.id)) : false);
+
+    const sId = data.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
+    let alterado = false;
+
+    // Garante que ocorrências de outros serviços nunca poluam o estado do serviço atual
+    if (sId && Array.isArray(data.ocorrencias)) {
+      const ocsAntes = data.ocorrencias.length;
+      data.ocorrencias = data.ocorrencias.filter(o => o && o.servicoId === sId);
+      if (data.ocorrencias.length !== ocsAntes) alterado = true;
+    }
+
+    const ocsAtivas = (data.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : true) && isAtiva(o));
+    const viaturasParaSync = [];
+
+    data.servicoViaturas.forEach(sv => {
+      if (sv.Status === 'encerrado' || sv.status === 'encerrada' || sv.status === 'reserva') return;
+      const emOcorr = ocsAtivas.some(o => pertence(o, sv));
+      if (!emOcorr) {
+        if (sv.status !== 'ativa' || sv.Status !== 'ativo') {
+          sv.status = 'ativa';
+          sv.Status = 'ativo';
+          alterado = true;
+          viaturasParaSync.push(sv);
+        }
+      }
+    });
+
+    // Limpa quaisquer eventos espúrios de retorno à base ou de telegrafia gerados automaticamente,
+    // bem como registros de ocorrências de outros serviços na rotina
+    if (Array.isArray(data.rotina)) {
+      const rotAntes = data.rotina.length;
+      data.rotina = data.rotina.filter(r => {
+        if (!r) return false;
+        if (sId && r.servicoId && r.servicoId !== sId) return false;
+        const isOc = r.id?.startsWith('r-oc-') || r.id?.startsWith('r-desp-') || r.id?.startsWith('r-ret-') || r.id?.startsWith('r-ocf-') || r.programa === 'Ocorrências' || r.programa === 'Ocorrência' || r.nome?.includes('🚨');
+        if (isOc && (!r.servicoId || r.servicoId !== sId)) return false;
+        if (r.id?.startsWith('r-ret-') && !r.nome?.includes('liberada da Ocorrência') && !r.nome?.includes('#') && r.nome?.includes('(disponível na base)')) return false;
+        if (r.id?.startsWith('r-tele-') && (r.nome?.includes('após retorno') || r.nome?.includes('substituído'))) return false;
+        return true;
+      });
+      if (data.rotina.length !== rotAntes) alterado = true;
+    }
+
+    if (alterado) {
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('sgpo_cached_servico', JSON.stringify(data));
+        } catch (e) {}
+      }
+      if (typeof DemoData !== 'undefined') {
+        try {
+          const ds = DemoData.getState();
+          if (ds && ds.servicoViaturas) {
+            data.servicoViaturas.forEach(sv => {
+              const dsv = ds.servicoViaturas.find(x => x.id === sv.id || (sv.viaturaId && x.viaturaId === sv.viaturaId));
+              if (dsv && dsv.Status !== 'encerrado' && dsv.status !== 'reserva') {
+                const emO = ocsAtivas.some(o => pertence(o, dsv));
+                if (!emO) {
+                  dsv.status = 'ativa';
+                  dsv.Status = 'ativo';
+                }
+              }
+            });
+            DemoData.save();
+          }
+        } catch (e) {}
+      }
+      if (viaturasParaSync.length > 0 && typeof this.editarServicoViatura === 'function') {
+        viaturasParaSync.forEach(sv => {
+          this.editarServicoViatura({
+            id: sv.id,
+            servicoViaturaId: sv.id,
+            status: 'ativa'
+          }).catch(() => {});
+        });
+      }
+    }
+  },
+
   async _fetchServicoAtualNetwork(usuarioId, servicoId) {
     this._lastServicoFetchTime = Date.now();
     try {
@@ -1332,20 +1678,12 @@ const API = {
 
       if (response && response.servico) {
         const sId = response.servico.id;
+        if (Array.isArray(response.ocorrencias)) {
+          response.ocorrencias = response.ocorrencias.filter(o => o && o.servicoId === sId);
+        }
         response.rotina = TimelineStore.mergeInto(response.rotina, sId);
 
-        // Normalização: viaturas na base que não estão em nenhuma ocorrência ativa devem estar como 'ativa' (Disponível)
-        if (response.servicoViaturas && Array.isArray(response.servicoViaturas)) {
-          const ocsAtivas = (response.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-          const vidsEmOcorr = new Set();
-          ocsAtivas.forEach(oc => (oc.viaturaIds || []).forEach(vid => vidsEmOcorr.add(String(vid))));
-
-          response.servicoViaturas.forEach(sv => {
-            if (sv && sv.status === 'retornando' && !vidsEmOcorr.has(String(sv.viaturaId))) {
-              sv.status = 'ativa';
-            }
-          });
-        }
+        this._reconciliarViaturasNaBase(response);
 
         try {
           localStorage.setItem('sgpo_cached_servico', JSON.stringify(response));
@@ -1358,6 +1696,7 @@ const API = {
             API_Local.applyToState(clone, payload.action, payload);
           }
           clone.rotina = TimelineStore.mergeInto(clone.rotina, sId);
+          this._reconciliarViaturasNaBase(clone);
           if (typeof Sync !== 'undefined') Sync._lastData = clone;
           return clone;
         }
@@ -1371,6 +1710,9 @@ const API = {
         try {
           const cached = JSON.parse(raw);
           const sId = cached.servico?.id || servicoId;
+          if (sId && Array.isArray(cached.ocorrencias)) {
+            cached.ocorrencias = cached.ocorrencias.filter(o => o && o.servicoId === sId);
+          }
           cached.rotina = TimelineStore.mergeInto(cached.rotina, sId);
           if (typeof SyncQueue !== 'undefined' && SyncQueue.queue.length > 0) {
             for (const payload of SyncQueue.queue) {
@@ -1378,28 +1720,47 @@ const API = {
             }
             cached.rotina = TimelineStore.mergeInto(cached.rotina, sId);
           }
+          this._reconciliarViaturasNaBase(cached);
           if (typeof Sync !== 'undefined') Sync._lastData = cached;
           return cached;
         } catch(e) {}
       }
       if (typeof DemoData !== 'undefined') {
+        try {
+          const demoRes = DemoData.handle('getServicoAtual', { usuarioId, servicoId });
+          if (demoRes && demoRes.servico) {
+            const sId = demoRes.servico.id;
+            if (Array.isArray(demoRes.ocorrencias)) {
+              demoRes.ocorrencias = demoRes.ocorrencias.filter(o => o && o.servicoId === sId);
+            }
+            demoRes.rotina = TimelineStore.mergeInto(demoRes.rotina, sId);
+            this._reconciliarViaturasNaBase(demoRes);
+            return demoRes;
+          }
+        } catch (_) {}
         const demoState = DemoData.getState();
         if (demoState && demoState.servico) {
           const sId = demoState.servico.id;
           demoState.rotina = TimelineStore.mergeInto(demoState.rotina, sId);
-          return {
+          const isOcEvent = (r) => {
+            if (!r) return false;
+            return r.id?.startsWith('r-oc-') || r.id?.startsWith('r-desp-') || r.id?.startsWith('r-ret-') || r.id?.startsWith('r-ocf-') || r.programa === 'Ocorrências' || r.programa === 'Ocorrência' || r.nome?.includes('🚨');
+          };
+          const retObj = {
             servico: demoState.servico,
-            rotina: demoState.rotina || [],
+            rotina: (demoState.rotina || []).filter(r => !isOcEvent(r) || r.servicoId === sId),
             militares: demoState.militares || [],
-            servicoViaturas: demoState.servicoViaturas || [],
-            ocorrencias: demoState.ocorrencias || [],
+            servicoViaturas: (demoState.servicoViaturas || []).filter(sv => sv.servicoId === sId && sv.Status !== 'encerrado'),
+            ocorrencias: (demoState.ocorrencias || []).filter(o => o && o.servicoId === sId && o.Status !== 'removido'),
             oficiais: demoState.oficiais || [],
             oficiaisPresentes: demoState.oficiaisPresentes || [],
             oficiaisTodos: demoState.oficiais || [],
             telegrafia: demoState.telegrafia,
-            extras: demoState.extras || [],
-            notificacoes: demoState.notificacoes || []
+            extras: (demoState.extras || []).filter(e => !e.servicoId || e.servicoId === sId),
+            notificacoes: (demoState.notificacoes || []).filter(n => !n.servicoId || n.servicoId === sId)
           };
+          this._reconciliarViaturasNaBase(retObj);
+          return retObj;
         }
       }
       return { servico: null, rotina: [], militares: [], servicoViaturas: [], ocorrencias: [] };
@@ -1408,9 +1769,14 @@ const API = {
 
   _revalidateServicoAtual(usuarioId, servicoId) {
     this._fetchServicoAtualNetwork(usuarioId, servicoId).then(fresh => {
-      if (fresh && fresh.servico && fresh.rotina) {
+      if (fresh && fresh.servico) {
         const sId = fresh.servico.id || servicoId;
-        fresh.rotina = TimelineStore.mergeInto(fresh.rotina, sId);
+        if (sId && Array.isArray(fresh.ocorrencias)) {
+          fresh.ocorrencias = fresh.ocorrencias.filter(o => o && o.servicoId === sId);
+        }
+        if (fresh.rotina) {
+          fresh.rotina = TimelineStore.mergeInto(fresh.rotina, sId);
+        }
       }
       if (fresh && typeof Sync !== 'undefined' && typeof Sync._processData === 'function') {
         Sync._processData(fresh);
@@ -1421,24 +1787,106 @@ const API = {
     }).catch(() => {});
   },
 
+  iniciarTimelineENotificacoes(servicoId, dados) {
+    if (!servicoId) return;
+    const d = new Date();
+    const agora = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    const prontidaoStr = ((dados && dados.prontidao) || 'verde').toUpperCase();
+    const cmtNome = (dados && dados.comandanteNome) || 'Comandante';
+
+    // 1. Inicia a linha do tempo com o evento inicial do novo serviço
+    const evtInicio = {
+      id: 'r-act-inicio-' + servicoId,
+      servicoId: servicoId,
+      horario: agora,
+      nome: `🏁 Serviço iniciado — Prontidão ${prontidaoStr}`,
+      programa: 'Passagem de serviço',
+      responsavel: cmtNome,
+      status: 'concluida',
+      concluidoPor: cmtNome,
+      horaConclusao: agora
+    };
+    if (typeof TimelineStore !== 'undefined') {
+      TimelineStore.initForService(servicoId, [evtInicio]);
+    }
+
+    // 2. Inicia as notificações com a notificação de abertura do serviço
+    const notifInicio = {
+      id: 'n-' + Date.now(),
+      servicoId: servicoId,
+      mensagem: `Serviço iniciado às ${agora} — Prontidão ${prontidaoStr}`,
+      tipo: 'info',
+      horario: agora,
+      lida: false
+    };
+
+    if (typeof DemoData !== 'undefined') {
+      const state = DemoData.getState();
+      if (state) {
+        if (!state.notificacoes) state.notificacoes = [];
+        state.notificacoes.forEach(n => {
+          if (!n.servicoId) n.servicoId = 'anterior';
+        });
+        state.notificacoes = state.notificacoes.filter(n => n.servicoId !== servicoId);
+        state.notificacoes.unshift(notifInicio);
+        DemoData.save();
+      }
+    }
+  },
+
   async iniciarServico(dados) {
+    if (!dados || !dados.postoId) {
+      return { success: false, error: 'Posto de serviço é obrigatório' };
+    }
+
+    // Validação preventiva no frontend: apenas um serviço por posto por dia
+    try {
+      const statusHoje = await this.getStatusServicosHoje();
+      if (statusHoje && statusHoje.postosComServicoHoje && statusHoje.postosComServicoHoje.has(String(dados.postoId))) {
+        return { success: false, error: 'Já existe um serviço iniciado para este posto de serviço hoje. Permitido apenas um serviço por posto por dia.' };
+      }
+      if (statusHoje && statusHoje.usuariosEmpenhadosAtivos) {
+        const equipeTentada = Array.isArray(dados.equipe) ? [...dados.equipe] : [];
+        if (dados.comandanteId) equipeTentada.push({ id: dados.comandanteId, nome: dados.comandanteNome || 'Comandante' });
+        if (dados.telegrafistaId) equipeTentada.push({ id: dados.telegrafistaId, nome: 'Telegrafista' });
+        for (const m of equipeTentada) {
+          if (this.isMilitarEmpenhado(m, statusHoje)) {
+            return { success: false, error: `O integrante "${m.nome || m.id}" já está empenhado em outro posto ativo.` };
+          }
+        }
+      }
+    } catch(e) {
+      console.warn('[SGPO] Validação prévia de iniciarServico avisou:', e.message);
+    }
+
     try {
       const r = await this.request('iniciarServico', dados);
       if (r.success) {
+        const sid = r.servicoId;
         localStorage.removeItem('sgpo_cached_postos_com_servico');
         localStorage.removeItem('sgpo_cached_servico');
-        if (r.servicoId) localStorage.setItem('sgpo_active_servico_id', r.servicoId);
+        if (sid) {
+          localStorage.setItem('sgpo_active_servico_id', sid);
+          this.iniciarTimelineENotificacoes(sid, dados);
+        }
         this._triggerSync();
       }
       return r;
     } catch (e) {
-      console.warn('[SGPO] Iniciar serviço online falhou, aplicando localmente:', e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn('[SGPO] Iniciar serviço online falhou, aplicando localmente:', e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('iniciarServico', dados);
         if (r.success) {
+          const sid = r.servicoId;
           localStorage.removeItem('sgpo_cached_postos_com_servico');
           localStorage.removeItem('sgpo_cached_servico');
-          if (r.servicoId) localStorage.setItem('sgpo_active_servico_id', r.servicoId);
+          if (sid) {
+            localStorage.setItem('sgpo_active_servico_id', sid);
+            this.iniciarTimelineENotificacoes(sid, dados);
+          }
           this._triggerSync();
         }
         return r;
@@ -1461,7 +1909,10 @@ const API = {
       }
       return r;
     } catch (e) {
-      console.warn('[SGPO] Encerrar serviço online falhou, aplicando localmente:', e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn('[SGPO] Encerrar serviço online falhou, aplicando localmente:', e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('encerrarServico', payload);
         if (r.success) {
@@ -1490,8 +1941,410 @@ const API = {
   async registrarSaidaOficial(oficialId) { const r = await this.request('registrarSaidaOficial', { oficialId }); if (r.success) this._triggerSync(); return r; },
   async getNotificacoes(servicoId) { return this.request('getNotificacoes', { servicoId }); },
   async marcarLida(notificacaoId) { const r = await this.request('marcarLida', { notificacaoId }); if (r.success) this._triggerSync(); return r; },
-  async getHistorico(data) { return this.request('getHistorico', { data }); },
-  async getRelatorio(tipo, params) { return this.request('getRelatorio', { tipo, ...params }); },
+  async getDatasComServico(postoId = null) {
+    const datesMap = {};
+    const items = [];
+
+    const addServico = (sv) => {
+      if (!sv || sv.Status === 'removido') return;
+      const rawDate = sv.data || sv.dataInicio || sv.inicio || '';
+      const normDate = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(rawDate) : String(rawDate || '').substring(0, 10);
+      if (!normDate || normDate.length !== 10) return;
+      if (postoId && sv.postoId && sv.postoId !== postoId) return;
+
+      if (!datesMap[normDate]) datesMap[normDate] = [];
+      const item = {
+        id: sv.id,
+        data: normDate,
+        dataOriginal: sv.data,
+        dataFormatada: (typeof Utils !== 'undefined' && Utils.formatDate) ? Utils.formatDate(normDate) : normDate,
+        postoId: sv.postoId || '',
+        postoNome: sv.postoNome || '',
+        prontidao: sv.prontidao || 'verde',
+        comandante: sv.comandanteNome || sv.comandante || 'Comandante',
+        status: sv.Status || sv.status || 'ativo',
+        horarioInicio: sv.horarioInicio || sv.inicio || '07:30',
+        horarioFim: sv.horarioFim || '-'
+      };
+      // Evita duplicatas pelo ID
+      if (!datesMap[normDate].some(x => x.id === item.id)) {
+        datesMap[normDate].push(item);
+        items.push(item);
+      }
+    };
+
+    // 1. Tenta recuperar do backend ou DemoData via read 'servicos'
+    try {
+      const servicos = await this.request('read', { sheet: 'servicos' }, { silent: true });
+      if (Array.isArray(servicos)) {
+        servicos.forEach(addServico);
+      }
+    } catch(e) {}
+
+    // 2. Consulta serviços ativos
+    try {
+      const ativos = await this.request('getServicosAtivos', {}, { silent: true });
+      if (Array.isArray(ativos)) {
+        ativos.forEach(addServico);
+      }
+    } catch(e) {}
+
+    // 3. Verifica dados do DemoData se disponível
+    try {
+      if (typeof DemoData !== 'undefined' && DemoData.getState) {
+        const s = DemoData.getState();
+        if (Array.isArray(s.servicos)) s.servicos.forEach(addServico);
+        if (s.servico) addServico(s.servico);
+      }
+    } catch(e) {}
+
+    // 4. Verifica caches do localStorage
+    try {
+      const rawAtual = localStorage.getItem('sgpo_servico_atual');
+      if (rawAtual) {
+        try { addServico(JSON.parse(rawAtual)); } catch(_) {}
+      }
+      const rawState = localStorage.getItem('sgpo_state');
+      if (rawState) {
+        try {
+          const parsed = JSON.parse(rawState);
+          if (Array.isArray(parsed.servicos)) parsed.servicos.forEach(addServico);
+          if (parsed.servico) addServico(parsed.servico);
+        } catch(_) {}
+      }
+      const rawDemoState = localStorage.getItem('sgpo_demo_state');
+      if (rawDemoState) {
+        try {
+          const parsedDemo = JSON.parse(rawDemoState);
+          if (Array.isArray(parsedDemo.servicos)) parsedDemo.servicos.forEach(addServico);
+          if (parsedDemo.servico) addServico(parsedDemo.servico);
+        } catch(_) {}
+      }
+    } catch(e) {}
+
+    const dates = Object.keys(datesMap).sort().reverse();
+    return { dates, map: datesMap, items };
+  },
+
+  async getHistorico(params) {
+    const payload = typeof params === 'string' ? { data: params } : (params || {});
+    const rawDate = payload.data || '';
+    const normDate = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(rawDate) : rawDate;
+    const reqPayload = { ...payload, data: normDate };
+
+    // 1. Consulta primária com data normalizada (ISO YYYY-MM-DD)
+    try {
+      const res = await this.request('getHistorico', reqPayload);
+      if (res && res.servico) {
+        return res;
+      }
+    } catch(err) {
+      console.warn('[SGPO] Tentativa padrão de getHistorico:', err.message);
+    }
+
+    // 2. Se a planilha do GAS armazena data como DD/MM/AAAA, tenta o formato brasileiro
+    if (normDate && normDate.includes('-')) {
+      try {
+        const parts = normDate.split('-');
+        const brDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+        const resBr = await this.request('getHistorico', { ...payload, data: brDate });
+        if (resBr && resBr.servico) {
+          return resBr;
+        }
+      } catch(_) {}
+    }
+
+    // 3. Fallback inteligente: buscar registros na aba 'servicos' e buscar por ID exato
+    try {
+      const allServicos = await this.request('read', { sheet: 'servicos' }, { silent: true });
+      if (Array.isArray(allServicos) && allServicos.length > 0) {
+        const matched = allServicos.filter(sv => {
+          if (!sv) return false;
+          const svNorm = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(sv.data) : sv.data;
+          const matchDate = !normDate || svNorm === normDate;
+          const matchPosto = !payload.postoId || !sv.postoId || sv.postoId === payload.postoId;
+          const matchId = !payload.servicoId || sv.id === payload.servicoId;
+          return matchDate && matchPosto && matchId;
+        });
+
+        if (matched.length > 0) {
+          const target = (payload.servicoId ? matched.find(sv => sv.id === payload.servicoId) : null) || matched[0];
+          // Tenta carregar com servicoId e data exata da planilha
+          try {
+            const resById = await this.request('getHistorico', { data: target.data, servicoId: target.id, postoId: target.postoId });
+            if (resById && resById.servico) return resById;
+          } catch(_) {}
+
+          // Se a API não montou o histórico completo, monta estrutura base
+          let rotina = [];
+          try {
+            const rData = await this.getRotina(target.id);
+            rotina = Array.isArray(rData) ? rData : (rData?.itens || []);
+          } catch(_) {}
+
+          let telegrafia = [];
+          try {
+            const tData = await this.request('read', { sheet: 'telegrafia_historico', filters: { servicoId: target.id } }, { silent: true });
+            if (Array.isArray(tData)) telegrafia = tData;
+          } catch(_) {}
+
+          return {
+            servico: target,
+            servicos: matched,
+            rotina: rotina,
+            telegrafia: telegrafia,
+            oficiais: [],
+            notificacoes: [],
+            entradas: []
+          };
+        }
+      }
+    } catch(_) {}
+
+    // 4. Fallback no DemoData (se em modo demo ou offline)
+    if (typeof DemoData !== 'undefined') {
+      try {
+        const demoRes = DemoData.handle('getHistorico', reqPayload);
+        if (demoRes && demoRes.servico) return demoRes;
+      } catch(_) {}
+    }
+
+    // 5. Fallback no localStorage (servico atual salvo localmente)
+    try {
+      const localS = localStorage.getItem('sgpo_servico_atual');
+      if (localS) {
+        const sObj = JSON.parse(localS);
+        const sDateNorm = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(sObj.data) : sObj.data;
+        if (!normDate || sDateNorm === normDate) {
+          if (!payload.postoId || !sObj.postoId || sObj.postoId === payload.postoId) {
+            return {
+              servico: sObj,
+              servicos: [sObj],
+              rotina: sObj.rotina || [],
+              telegrafia: sObj.telegrafiaHistorico || [],
+              oficiais: sObj.oficiais || [],
+              notificacoes: sObj.notificacoes || [],
+              entradas: []
+            };
+          }
+        }
+      }
+    } catch(_) {}
+
+    return { servico: null, servicos: [], rotina: [], telegrafia: [], oficiais: [], notificacoes: [], entradas: [] };
+  },
+
+  async getRelatorio(tipo, params = {}) {
+    const normDate = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(params.data) : params.data;
+    const reqPayload = { ...params, tipo, data: normDate };
+
+    // 1. Tenta chamada direta ao backend
+    try {
+      const res = await this.request('getRelatorio', reqPayload);
+      if (res && res.servico) return res;
+    } catch(err) {
+      console.warn('[SGPO] Tentativa padrão de getRelatorio:', err.message);
+    }
+
+    // 2. Se falhar, busca os dados via getHistorico
+    try {
+      const hist = await this.getHistorico(reqPayload);
+      if (hist && hist.servico) {
+        // Tenta mais uma vez com o ID exato encontrado
+        try {
+          const resWithId = await this.request('getRelatorio', { ...reqPayload, servicoId: hist.servico.id });
+          if (resWithId && resWithId.servico) return resWithId;
+        } catch(_) {}
+
+        // Monta o relatório no frontend com garantia total de exibição dos dados
+        return this._buildRelatorioFromHistorico(tipo, hist);
+      }
+    } catch(_) {}
+
+    // 3. Fallback no DemoData
+    if (typeof DemoData !== 'undefined') {
+      try {
+        const demoRes = DemoData.handle('getRelatorio', reqPayload);
+        if (demoRes && demoRes.servico) return demoRes;
+      } catch(_) {}
+    }
+
+    return { servico: null, servicos: [], itens: [] };
+  },
+
+  _buildRelatorioFromHistorico(tipo, hist) {
+    if (!hist || !hist.servico) return { servico: null, servicos: [], itens: [] };
+    const target = hist.servico;
+    const rotina = hist.rotina || [];
+    const telegrafia = hist.telegrafia || [];
+    const oficiais = hist.oficiais || [];
+    const entradas = hist.entradas || [];
+    const ocorrencias = hist.ocorrencias || [];
+
+    const base = {
+      servico: {
+        id: target.id,
+        data: target.data,
+        prontidao: target.prontidao || 'verde',
+        comandante: target.comandanteNome || target.comandante || '-',
+        postoId: target.postoId || '',
+        postoNome: target.postoNome || '',
+        horarioInicio: target.horarioInicio || '-',
+        horarioFim: target.horarioFim || '-'
+      },
+      servicos: hist.servicos || []
+    };
+
+    if (tipo === 'resumo') {
+      const total = rotina.length;
+      const concluidas = rotina.filter(r => r.status === 'concluida').length;
+      return {
+        ...base,
+        stats: {
+          total,
+          concluidas,
+          emAndamento: rotina.filter(r => r.status === 'em_andamento').length,
+          naoIniciadas: rotina.filter(r => r.status === 'nao_iniciada').length,
+          atrasadas: rotina.filter(r => r.status === 'atrasada').length,
+          canceladas: rotina.filter(r => r.status === 'cancelada').length,
+          extras: rotina.filter(r => r.origem === 'extra' || String(r.id || '').startsWith('r-ext-')).length,
+          totalOcorrencias: ocorrencias.length,
+          ocorrenciasFinalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+          viaturasDespachadas: rotina.filter(r => String(r.id || '').startsWith('r-desp-')).length
+        },
+        itens: rotina.map(r => ({
+          Horario: r.horario || '-',
+          Atividade: r.nome || '-',
+          Responsavel: r.responsavel || '-',
+          Status: r.status || '-',
+          'Concluido por': r.concluidoPor || '-',
+          'Hora Conclusao': r.horaConclusao || '-'
+        }))
+      };
+    }
+
+    if (tipo === 'prontidao') {
+      let equipe = [];
+      try { equipe = Array.isArray(target.equipe) ? target.equipe : JSON.parse(target.equipe || '[]'); } catch(e) {}
+      return {
+        ...base,
+        efetivo: {
+          totalEquipe: equipe.length,
+          totalMilitares: equipe.length,
+          telegrafia: telegrafia.length > 0 ? (telegrafia[telegrafia.length - 1].operador || 'Ativo') : 'Sem operador'
+        },
+        viaturas: {
+          totalDespachadas: rotina.filter(r => String(r.id || '').startsWith('r-desp-')).length,
+          detalhes: []
+        },
+        rotina: {
+          total: rotina.length,
+          concluidas: rotina.filter(r => r.status === 'concluida').length,
+          percentual: rotina.length > 0 ? Math.round((rotina.filter(r => r.status === 'concluida').length / rotina.length) * 100) : 0
+        },
+        ocorrencias: {
+          total: ocorrencias.length,
+          finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+          emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length
+        },
+        oficiais: {
+          presentes: oficiais.length,
+          historico: entradas.map(e => ({ nome: e.nome || 'Oficial', tipo: e.tipo || 'entrada', horario: e.horario || '-' }))
+        }
+      };
+    }
+
+    if (tipo === 'telegrafia') {
+      const operadores = [...new Set(telegrafia.map(t => t.operador).filter(Boolean))];
+      const porOperador = operadores.map(op => {
+        const trocas = telegrafia.filter(t => t.operador === op);
+        let totalMinutos = trocas.length * 60; // estimativa padrão
+        return { operador: op, trocas: trocas.length, totalMinutos, horas: Math.floor(totalMinutos / 60), mins: totalMinutos % 60 };
+      });
+      return {
+        ...base,
+        stats: { totalTrocas: telegrafia.length, totalOperadores: operadores.length },
+        porOperador,
+        itens: telegrafia.map(t => ({ Operador: t.operador || '-', Assumiu: t.horario || t.inicio || '-', Saiu: t.horarioSaida || t.fim || '-' }))
+      };
+    }
+
+    if (tipo === 'oficiais') {
+      return {
+        ...base,
+        stats: { total: oficiais.length, presentes: oficiais.length },
+        itens: oficiais.map(o => ({
+          Nome: o.nome || '-',
+          Posto: o.posto || '-',
+          Antiguidade: o.antiguidade || '-',
+          Entrada: o.horarioEntrada || '-',
+          Saida: o.horarioSaida || '-',
+          Anunciado: o.anunciado ? 'Sim' : 'Não'
+        }))
+      };
+    }
+
+    if (tipo === 'historico' || tipo === 'timeline') {
+      const eventos = [];
+      rotina.forEach(r => {
+        eventos.push({ horario: r.horaConclusao || r.horario || '-', tipo: 'Rotina', nome: r.nome || '-', status: r.status || '-', detalhe: r.concluidoPor || '' });
+      });
+      telegrafia.forEach(t => {
+        eventos.push({ horario: t.horario || t.inicio || '-', tipo: 'Telegrafia', nome: t.operador || '-', status: 'troca', detalhe: 'Assumiu a telegrafia' });
+      });
+      entradas.forEach(e => {
+        eventos.push({ horario: e.horario || '-', tipo: 'Oficial', nome: e.nome || 'Oficial', status: e.tipo || 'entrada', detalhe: '' });
+      });
+      return {
+        ...base,
+        itens: eventos.map(e => ({ Horario: e.horario, Tipo: e.tipo, Evento: e.nome, Status: e.status, Detalhe: e.detalhe }))
+      };
+    }
+
+    if (tipo === 'ocorrencias') {
+      return {
+        ...base,
+        stats: {
+          total: ocorrencias.length,
+          finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length,
+          emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length,
+          canceladas: ocorrencias.filter(o => o.status === 'cancelada').length
+        },
+        porNatureza: [],
+        ocorrencias: ocorrencias.map(o => ({
+          numero: o.numero || '-',
+          titulo: o.titulo || '-',
+          descricao: o.descricao || '',
+          natureza: o.natureza || '-',
+          viaturaNomes: '',
+          efetivo: o.efetivo || [],
+          horaAcionamento: o.horaAcionamento || o.horario || '-',
+          horaRetorno: o.horaRetorno || '-',
+          prontidaoCor: o.prontidaoCor || 'verde',
+          status: o.status || 'finalizada'
+        }))
+      };
+    }
+
+    if (tipo === 'auditoria') {
+      return {
+        ...base,
+        itens: (hist.notificacoes || []).map(n => ({
+          Data: n.horario || '-',
+          Acao: n.tipo || 'Aviso',
+          Usuario: 'Sistema',
+          Detalhes: n.mensagem || '-'
+        }))
+      };
+    }
+
+    // Default
+    return {
+      ...base,
+      stats: { total: rotina.length, concluidas: rotina.filter(r => r.status === 'concluida').length },
+      itens: rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Status: r.status }))
+    };
+  },
   async adicionarEquipe(servicoId, integrante) { const r = await this.request('adicionarEquipe', { servicoId, integrante }); if (r.success) this._triggerSync(); return r; },
   async removerEquipe(servicoId, integranteId) { const r = await this.request('removerEquipe', { servicoId, integranteId }); if (r.success) this._triggerSync(); return r; },
   async testConnection() {
@@ -1515,16 +2368,33 @@ const API = {
     let cached = null;
     try {
       const raw = localStorage.getItem('sgpo_cached_postos');
-      if (raw) cached = JSON.parse(raw);
+      if (raw) {
+        cached = JSON.parse(raw);
+        if (Array.isArray(cached)) {
+          // Excluir todos os postos criados pelo sistema fixos (ps-*) e entradas com erro
+          cached = cached.filter(p => p && p.id && p.id !== '#ERROR!' && p.nome && !String(p.id).startsWith('ps-'));
+          if (cached.length === 0) {
+            localStorage.removeItem('sgpo_cached_postos');
+            cached = null;
+          }
+        }
+      }
     } catch(e) {}
 
     if (cached && Array.isArray(cached) && cached.length > 0) {
       const now = Date.now();
-      if (!this._lastPostosFetchTime || (now - this._lastPostosFetchTime > 60000)) {
+      if (!this._lastPostosFetchTime || (now - this._lastPostosFetchTime > 30000)) {
         this._lastPostosFetchTime = now;
         this.request('getPostosServico', {}, { silent: true }).then(fresh => {
           if (Array.isArray(fresh) && fresh.length > 0) {
-            try { localStorage.setItem('sgpo_cached_postos', JSON.stringify(fresh)); } catch(e) {}
+            const limpos = fresh.filter(p => p && p.id && p.id !== '#ERROR!' && p.nome && !String(p.id).startsWith('ps-'));
+            try {
+              localStorage.setItem('sgpo_cached_postos', JSON.stringify(limpos));
+              if (typeof DemoData !== 'undefined' && DemoData.getState) {
+                DemoData.getState().postosServico = limpos;
+                DemoData.save();
+              }
+            } catch(e) {}
           }
         }).catch(() => {});
       }
@@ -1534,24 +2404,151 @@ const API = {
     try {
       const fresh = await this.request('getPostosServico', {}, { silent: true });
       if (Array.isArray(fresh) && fresh.length > 0) {
-        try { localStorage.setItem('sgpo_cached_postos', JSON.stringify(fresh)); } catch(e) {}
-        return fresh;
+        const limpos = fresh.filter(p => p && p.id && p.id !== '#ERROR!' && p.nome && !String(p.id).startsWith('ps-'));
+        if (limpos.length > 0) {
+          try {
+            localStorage.setItem('sgpo_cached_postos', JSON.stringify(limpos));
+            if (typeof DemoData !== 'undefined' && DemoData.getState) {
+              DemoData.getState().postosServico = limpos;
+              DemoData.save();
+            }
+          } catch(e) {}
+          return limpos;
+        }
       }
     } catch (e) {
-      console.warn('[SGPO] getPostosServico rede indisponível, usando fallback:', e.message);
+      console.warn('[SGPO] getPostosServico rede indisponível:', e.message);
     }
+
+    // Fallback lendo a aba postos_servico diretamente da planilha
+    try {
+      const rawSheet = await this.request('read', { sheet: 'postos_servico' }, { silent: true });
+      if (Array.isArray(rawSheet) && rawSheet.length > 0) {
+        const limpos = rawSheet.filter(p => p && p.id && p.id !== '#ERROR!' && p.nome && !String(p.id).startsWith('ps-'));
+        if (limpos.length > 0) {
+          try {
+            localStorage.setItem('sgpo_cached_postos', JSON.stringify(limpos));
+            if (typeof DemoData !== 'undefined' && DemoData.getState) {
+              DemoData.getState().postosServico = limpos;
+              DemoData.save();
+            }
+          } catch(e) {}
+          return limpos;
+        }
+      }
+    } catch (e) {}
+
     if (cached && Array.isArray(cached) && cached.length > 0) return cached;
-    const demoP = (typeof DemoData !== 'undefined' ? DemoData.getState().postosServico : []) || [];
-    try { localStorage.setItem('sgpo_cached_postos', JSON.stringify(demoP)); } catch(e) {}
-    return demoP;
+    if (typeof DemoData !== 'undefined' && DemoData.getState) {
+      const demoPostos = DemoData.getState().postosServico || [];
+      const valid = demoPostos.filter(p => p && p.id && p.id !== '#ERROR!' && p.nome && !String(p.id).startsWith('ps-'));
+      if (valid.length > 0) return valid;
+    }
+    return [];
   },
-  async getUsuariosPostos(filtros) { return this.request('getUsuariosPostos', filtros || {}); },
-  async vincularUsuarioPosto(usuarioId, postoId, papel) { return this.request('vincularUsuarioPosto', { usuarioId, postoId, papel }); },
-  async desvincularUsuarioPosto(usuarioId, postoId) { return this.request('desvincularUsuarioPosto', { usuarioId, postoId }); },
-  async getUsuariosEditaveis(editorId) { return this.request('getUsuariosEditaveis', { editorId }); },
-  async getServicoPorPosto(postoId) { return this.request('getServicoPorPosto', { postoId }); },
-  async getServicosAtivos() { return this.request('getServicosAtivos', { usuarioId: Auth.userId }); },
-  async getServicoViaturas(servicoId) { return this.request('getServicoViaturas', { servicoId }); },
+  async getUsuariosPostos(filtros) {
+    try {
+      const res = await this.request('getUsuariosPostos', filtros || {}, { silent: true });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.usuariosPostos)) return res.usuariosPostos;
+      return [];
+    } catch (e) {
+      console.warn('[SGPO] getUsuariosPostos online falhou, utilizando fallback local:', e.message);
+      if (typeof DemoData !== 'undefined') {
+        try {
+          const local = DemoData.handle('getUsuariosPostos', filtros || {});
+          if (Array.isArray(local)) return local;
+        } catch(err) {}
+      }
+      return [];
+    }
+  },
+  async vincularUsuarioPosto(usuarioId, postoId, papel) {
+    try {
+      const r = await this.request('vincularUsuarioPosto', { usuarioId, postoId, papel });
+      if (r && r.success) this._triggerSync();
+      return r;
+    } catch(e) {
+      if (typeof DemoData !== 'undefined') {
+        const r = DemoData.handle('vincularUsuarioPosto', { usuarioId, postoId, papel });
+        if (r && r.success) this._triggerSync();
+        return r;
+      }
+      throw e;
+    }
+  },
+  async desvincularUsuarioPosto(usuarioId, postoId) {
+    try {
+      const r = await this.request('desvincularUsuarioPosto', { usuarioId, postoId });
+      if (r && r.success) this._triggerSync();
+      return r;
+    } catch(e) {
+      if (typeof DemoData !== 'undefined') {
+        const r = DemoData.handle('desvincularUsuarioPosto', { usuarioId, postoId });
+        if (r && r.success) this._triggerSync();
+        return r;
+      }
+      throw e;
+    }
+  },
+  async getUsuariosEditaveis(editorId) {
+    try {
+      const r = await this.request('getUsuariosEditaveis', { editorId }, { silent: true });
+      if (Array.isArray(r)) return r;
+      return [];
+    } catch(e) {
+      if (typeof DemoData !== 'undefined') {
+        try {
+          const local = DemoData.handle('getUsuariosEditaveis', { editorId });
+          if (Array.isArray(local)) return local;
+        } catch(err) {}
+      }
+      return [];
+    }
+  },
+  async getServicoPorPosto(postoId) {
+    try {
+      return await this.request('getServicoPorPosto', { postoId }, { silent: true });
+    } catch(e) {
+      if (typeof DemoData !== 'undefined') {
+        try { return DemoData.handle('getServicoPorPosto', { postoId }); } catch(err) {}
+      }
+      return null;
+    }
+  },
+  async getServicosAtivos() {
+    try {
+      const res = await this.request('getServicosAtivos', { usuarioId: Auth.userId });
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.servicos)) return res.servicos;
+      if (res && res.error) throw new Error(res.error);
+      return [];
+    } catch (e) {
+      console.warn('[SGPO] getServicosAtivos online falhou, utilizando fallback local:', e.message);
+      if (typeof DemoData !== 'undefined') {
+        try {
+          const local = DemoData.handle('getServicosAtivos', { usuarioId: Auth.userId });
+          if (Array.isArray(local)) return local;
+        } catch(err) {}
+      }
+      return [];
+    }
+  },
+  async getServicoViaturas(servicoId) {
+    try {
+      const r = await this.request('getServicoViaturas', { servicoId }, { silent: true });
+      if (Array.isArray(r)) return r;
+      return [];
+    } catch(e) {
+      if (typeof DemoData !== 'undefined') {
+        try {
+          const local = DemoData.handle('getServicoViaturas', { servicoId });
+          if (Array.isArray(local)) return local;
+        } catch(err) {}
+      }
+      return [];
+    }
+  },
   async iniciarServicoViatura(dados) {
     try {
       const r = await this.request('iniciarServicoViatura', dados);
@@ -1608,16 +2605,7 @@ const API = {
   async retornarViatura(servicoViaturaId) {
     const id = typeof servicoViaturaId === 'object' ? (servicoViaturaId.servicoViaturaId || servicoViaturaId.id) : servicoViaturaId;
     const extra = typeof servicoViaturaId === 'object' ? servicoViaturaId : {};
-    const destinoStatus = extra.destinoStatus || extra.status || 'ativa';
-    const agoraRet = extra.horarioRetorno || (typeof Utils !== 'undefined' ? Utils.formatDateTime(new Date()) : new Date().toISOString());
-    const r = await this.request('retornarViatura', {
-      destinoStatus,
-      status: destinoStatus,
-      horarioRetorno: agoraRet,
-      ...extra,
-      servicoViaturaId: id,
-      id
-    });
+    const r = await this.request('retornarViatura', { status: 'ativa', destinoStatus: 'ativa', ...extra, servicoViaturaId: id, id });
     if (r.success) this._triggerSync();
     return r;
   },
@@ -1633,10 +2621,7 @@ const API = {
     return r;
   },
   async finalizarOcorrencia(dados) {
-    const agoraFinal = typeof Utils !== 'undefined' ? Utils.formatDateTime(new Date()) : new Date().toISOString();
-    const payload = typeof dados === 'string' ? { id: dados, ocorrenciaId: dados, destinoStatus: 'ativa', horaRetorno: agoraFinal } : {
-      destinoStatus: 'ativa',
-      horaRetorno: dados?.horaRetorno || agoraFinal,
+    const payload = typeof dados === 'string' ? { id: dados, ocorrenciaId: dados } : {
       ...dados,
       id: dados?.id || dados?.ocorrenciaId,
       ocorrenciaId: dados?.ocorrenciaId || dados?.id
@@ -1655,7 +2640,10 @@ const API = {
       }
       return r;
     } catch (e) {
-      console.warn('[SGPO] Editar serviço online falhou, aplicando localmente:', e.message);
+      const isAuthErr = e && e.message && (e.message.includes('Sessão expirada') || e.message.includes('não autorizado') || e.message.includes('não autorizada'));
+      if (!isAuthErr) {
+        console.warn('[SGPO] Editar serviço online falhou, aplicando localmente:', e.message);
+      }
       if (typeof DemoData !== 'undefined') {
         const r = DemoData.handle('editarServico', dados);
         if (r.success) {
@@ -1671,49 +2659,227 @@ const API = {
   async alterarMinhaSenha(usuarioId, novaSenha) { const r = await this.request('alterarMinhaSenha', { usuarioId, novaSenha }); if (r.success) this._triggerSync(); return r; },
   async criarCivis(dados) { const r = await this.request('criarCivis', dados); if (r.success) this._triggerSync(); return r; },
   async getPostosComServico(forceNetwork = false) {
+    const sanitizePostos = (list) => {
+      if (!Array.isArray(list)) return [];
+      return list.filter(p => p && p.id && !String(p.id).startsWith('ps-'));
+    };
+
     if (!forceNetwork) {
       let cached = null;
       try {
         const raw = localStorage.getItem('sgpo_cached_postos_com_servico');
         if (raw) cached = JSON.parse(raw);
       } catch(e) {}
-      if (cached && Array.isArray(cached.postos) && cached.postos.length > 0) {
-        const now = Date.now();
-        if (!this._lastPostosComServicoFetchTime || (now - this._lastPostosComServicoFetchTime > 15000)) {
-          this._lastPostosComServicoFetchTime = now;
-          this.request('getPostosComServico', {}, { silent: true }).then(fresh => {
-            if (fresh && Array.isArray(fresh.postos) && fresh.postos.length > 0) {
-              try { localStorage.setItem('sgpo_cached_postos_com_servico', JSON.stringify(fresh)); } catch(e) {}
-            }
-          }).catch(() => {});
+      if (cached && Array.isArray(cached.postos)) {
+        cached.postos = sanitizePostos(cached.postos);
+        if (cached.postos.length > 0) {
+          const now = Date.now();
+          if (!this._lastPostosComServicoFetchTime || (now - this._lastPostosComServicoFetchTime > 15000)) {
+            this._lastPostosComServicoFetchTime = now;
+            this.request('getPostosComServico', {}, { silent: true }).then(fresh => {
+              if (fresh && Array.isArray(fresh.postos)) {
+                fresh.postos = sanitizePostos(fresh.postos);
+                try { localStorage.setItem('sgpo_cached_postos_com_servico', JSON.stringify(fresh)); } catch(e) {}
+              }
+            }).catch(() => {});
+          }
+          return cached;
         }
-        return cached;
       }
     }
     try {
       const r = await this.request('getPostosComServico', {}, { silent: true });
-      if (r && Array.isArray(r.postos) && r.postos.length > 0) {
+      if (r && Array.isArray(r.postos)) {
+        r.postos = sanitizePostos(r.postos);
         try { localStorage.setItem('sgpo_cached_postos_com_servico', JSON.stringify(r)); } catch(e) {}
         return r;
       }
     } catch (e) {
-      console.warn('[SGPO] getPostosComServico rede indisponível, usando dados locais/demo:', e.message);
+      console.warn('[SGPO] getPostosComServico rede indisponível:', e.message);
     }
     try {
       const raw = localStorage.getItem('sgpo_cached_postos_com_servico');
       if (raw) {
         const cached = JSON.parse(raw);
-        if (cached && Array.isArray(cached.postos) && cached.postos.length > 0) return cached;
+        if (cached && Array.isArray(cached.postos)) {
+          cached.postos = sanitizePostos(cached.postos);
+          if (cached.postos.length > 0) return cached;
+        }
       }
     } catch(e) {}
-    if (typeof DemoData !== 'undefined') {
-      const demoResult = DemoData.handle('getPostosComServico', {});
-      if (demoResult && Array.isArray(demoResult.postos)) {
-        try { localStorage.setItem('sgpo_cached_postos_com_servico', JSON.stringify(demoResult)); } catch(e) {}
-        return demoResult;
-      }
-    }
+    // Devem existir apenas os dados vindos da planilha
     return { postos: [] };
+  },
+
+  async getStatusServicosHoje() {
+    const hojeStr = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+
+    const postosComServicoHoje = new Set();
+    const servicosHoje = [];
+    const servicosAtivos = [];
+    const usuariosEmpenhadosAtivos = new Set();
+    const usuariosEmpenhadosReCpf = new Set();
+    const usuariosEmpenhadosNomes = new Set();
+    const processedServicoIds = new Set();
+
+    const processServico = (sv) => {
+      if (!sv || !sv.id || processedServicoIds.has(String(sv.id))) return;
+      if (sv.Status === 'removido') return;
+
+      const rawDate = sv.data || sv.dataInicio || sv.inicio || '';
+      const isHoje = (typeof Utils !== 'undefined' && Utils.datesMatch)
+        ? Utils.datesMatch(rawDate, hojeStr)
+        : (String(rawDate || '').startsWith(hojeStr));
+      const isAtivo = sv.Status === 'ativo' || sv.status === 'ativo';
+
+      // Se for de hoje ou ativo
+      if (isHoje || isAtivo) {
+        processedServicoIds.add(String(sv.id));
+        if (sv.postoId) {
+          postosComServicoHoje.add(String(sv.postoId));
+        }
+        if (isHoje) {
+          servicosHoje.push(sv);
+        }
+        if (isAtivo) {
+          servicosAtivos.push(sv);
+          // Registrar usuários empenhados neste serviço ativo
+          if (sv.comandanteId) {
+            usuariosEmpenhadosAtivos.add(String(sv.comandanteId));
+          }
+          if (sv.telegrafistaId) {
+            usuariosEmpenhadosAtivos.add(String(sv.telegrafistaId));
+          }
+          let equipeList = [];
+          if (Array.isArray(sv.equipe)) {
+            equipeList = sv.equipe;
+          } else if (typeof sv.equipe === 'string') {
+            try { equipeList = JSON.parse(sv.equipe); } catch(e) {}
+          }
+          if (Array.isArray(equipeList)) {
+            equipeList.forEach(m => {
+              if (!m) return;
+              if (m.id || m.usuarioId) usuariosEmpenhadosAtivos.add(String(m.id || m.usuarioId));
+              const re = String(m.reCpf || m.re || '').replace(/\D/g, '');
+              if (re) usuariosEmpenhadosReCpf.add(re);
+              const nomeNorm = String(m.nome || '').trim().toLowerCase();
+              if (nomeNorm.length > 2) usuariosEmpenhadosNomes.add(nomeNorm);
+            });
+          }
+          // Viaturas do serviço ativo (tripulantes / motoristas)
+          const viats = Array.isArray(sv.viaturas) ? sv.viaturas : (Array.isArray(sv.servicoViaturas) ? sv.servicoViaturas : []);
+          viats.forEach(v => {
+            if (!v) return;
+            if (v.comandanteId) usuariosEmpenhadosAtivos.add(String(v.comandanteId));
+            if (v.motoristaId) usuariosEmpenhadosAtivos.add(String(v.motoristaId));
+            const trips = Array.isArray(v.tripulantes) ? v.tripulantes : [];
+            trips.forEach(t => {
+              if (!t) return;
+              if (t.id) usuariosEmpenhadosAtivos.add(String(t.id));
+              const re = String(t.reCpf || t.re || '').replace(/\D/g, '');
+              if (re) usuariosEmpenhadosReCpf.add(re);
+              const nomeNorm = String(t.nome || '').trim().toLowerCase();
+              if (nomeNorm.length > 2) usuariosEmpenhadosNomes.add(nomeNorm);
+            });
+          });
+        }
+      }
+    };
+
+    // 1. Postos com serviço ativo via getPostosComServico
+    try {
+      const pcs = await this.getPostosComServico(true);
+      if (pcs && Array.isArray(pcs.postos)) {
+        pcs.postos.forEach(p => {
+          if (p && p.servico) {
+            processServico({ ...p.servico, postoId: p.servico.postoId || p.id });
+          }
+        });
+      }
+    } catch(e) {}
+
+    // 2. Serviços ativos via getServicosAtivos
+    try {
+      const ativos = await this.getServicosAtivos();
+      if (Array.isArray(ativos)) {
+        ativos.forEach(processServico);
+      }
+    } catch(e) {}
+
+    // 3. Consulta serviços via read sheet 'servicos'
+    try {
+      const servicos = await this.request('read', { sheet: 'servicos' }, { silent: true });
+      if (Array.isArray(servicos)) {
+        servicos.forEach(processServico);
+      }
+    } catch(e) {}
+
+    // 4. DemoData se disponível
+    try {
+      if (typeof DemoData !== 'undefined' && DemoData.getState) {
+        const s = DemoData.getState();
+        if (Array.isArray(s.servicos)) s.servicos.forEach(processServico);
+        if (s.servico) processServico(s.servico);
+        if (Array.isArray(s.servicoViaturas)) {
+          s.servicoViaturas.forEach(sv => {
+            if (sv.Status !== 'encerrado' && sv.servicoId) {
+              if (sv.motoristaId) usuariosEmpenhadosAtivos.add(String(sv.motoristaId));
+              if (sv.comandanteId) usuariosEmpenhadosAtivos.add(String(sv.comandanteId));
+              (sv.tripulantes || []).forEach(t => {
+                if (t && t.id) usuariosEmpenhadosAtivos.add(String(t.id));
+              });
+            }
+          });
+        }
+      }
+    } catch(e) {}
+
+    // 5. LocalStorage caches
+    try {
+      const rawCached = localStorage.getItem('sgpo_cached_postos_com_servico');
+      if (rawCached) {
+        const parsed = JSON.parse(rawCached);
+        if (parsed && Array.isArray(parsed.postos)) {
+          parsed.postos.forEach(p => {
+            if (p && p.servico) processServico({ ...p.servico, postoId: p.servico.postoId || p.id });
+          });
+        }
+      }
+      const rawAtual = localStorage.getItem('sgpo_servico_atual');
+      if (rawAtual) {
+        processServico(JSON.parse(rawAtual));
+      }
+      const rawState = localStorage.getItem('sgpo_state');
+      if (rawState) {
+        const parsed = JSON.parse(rawState);
+        if (Array.isArray(parsed.servicos)) parsed.servicos.forEach(processServico);
+        if (parsed.servico) processServico(parsed.servico);
+      }
+    } catch(e) {}
+
+    return {
+      hoje: hojeStr,
+      postosComServicoHoje,
+      servicosHoje,
+      servicosAtivos,
+      usuariosEmpenhadosAtivos,
+      usuariosEmpenhadosReCpf,
+      usuariosEmpenhadosNomes
+    };
+  },
+
+  isMilitarEmpenhado(m, statusHoje) {
+    if (!m || !statusHoje) return false;
+    const mId = String(m.id || m.usuarioId || '');
+    if (mId && statusHoje.usuariosEmpenhadosAtivos?.has(mId)) return true;
+    const re = String(m.reCpf || m.re || '').replace(/\D/g, '');
+    if (re && statusHoje.usuariosEmpenhadosReCpf?.has(re)) return true;
+    const nomeNorm = String(m.nome || '').trim().toLowerCase();
+    if (nomeNorm.length > 2 && statusHoje.usuariosEmpenhadosNomes?.has(nomeNorm)) return true;
+    return false;
   },
   async getTiposViatura() {
     let cached = null;
@@ -1834,6 +3000,33 @@ const API = {
     try { localStorage.setItem('sgpo_cached_naturezas', JSON.stringify(demoN)); } catch(e) {}
     return demoN;
   },
+  async getOficiais() {
+    const sanitizeOficiais = (list) => {
+      if (!Array.isArray(list)) return [];
+      // Excluir todos os oficiais cadastrados no sistema: exibir apenas os que estiverem no banco de dados
+      const systemNames = ['rodrigues', 'almeida', 'ferreira', 'santos'];
+      return list.filter(o => {
+        if (!o || !o.id) return false;
+        const idStr = String(o.id).toLowerCase();
+        if (idStr.startsWith('o-00') || idStr.startsWith('o-0') || idStr.startsWith('demo-') || idStr === 'o-1' || idStr === 'o-2' || idStr === 'o-3' || idStr === 'o-4') return false;
+        const nomeStr = String(o.nome || '').toLowerCase().trim();
+        if (systemNames.some(sn => nomeStr.includes(sn))) return false;
+        return true;
+      });
+    };
+
+    try {
+      const fresh = await this.request('read', { sheet: 'oficiais' }, { silent: true });
+      if (Array.isArray(fresh)) {
+        return sanitizeOficiais(fresh);
+      }
+    } catch (e) {
+      console.warn('[SGPO] getOficiais banco de dados indisponível:', e.message);
+    }
+
+    // Excluir todos os oficiais cadastrados no sistema: se não houver registros no banco, retorna vazio
+    return [];
+  },
   async importarAtividadesPadrao(atividades) { return this.request('importarAtividadesPadrao', { atividades }); },
   getTipoCor(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.cor : '#9e9e9e'; },
   getTipoNome(sigla) { const t = this._tiposCache.find(x => x.sigla === sigla); return t ? t.nome : sigla; },
@@ -1854,20 +3047,121 @@ window.SGPOdiagnosticar = async function() {
   }
 };
 
+// Purga imediata de quaisquer postos e oficiais fixos legados criados pelo sistema (ps-* e o-00*) de caches locais
+(() => {
+  try {
+    const rawPostos = localStorage.getItem('sgpo_cached_postos');
+    if (rawPostos && rawPostos.includes('ps-00')) {
+      localStorage.removeItem('sgpo_cached_postos');
+    }
+    const rawPostosCom = localStorage.getItem('sgpo_cached_postos_com_servico');
+    if (rawPostosCom && rawPostosCom.includes('ps-00')) {
+      localStorage.removeItem('sgpo_cached_postos_com_servico');
+    }
+    localStorage.removeItem('sgpo_cached_oficiais');
+    const rawServico = localStorage.getItem('sgpo_cached_servico');
+    if (rawServico) {
+      try {
+        const sc = JSON.parse(rawServico);
+        sc.oficiais = [];
+        sc.oficiaisTodos = [];
+        localStorage.setItem('sgpo_cached_servico', JSON.stringify(sc));
+      } catch(e) {}
+    }
+    const demoRaw = localStorage.getItem('sgpo_demo_state');
+    if (demoRaw) {
+      try {
+        const ds = JSON.parse(demoRaw);
+        if (Array.isArray(ds.postosServico)) {
+          ds.postosServico = ds.postosServico.filter(p => !p.id || !String(p.id).startsWith('ps-'));
+        }
+        if (Array.isArray(ds.usuariosPostos)) {
+          ds.usuariosPostos = ds.usuariosPostos.filter(up => !up.postoId || !String(up.postoId).startsWith('ps-'));
+        }
+        if (Array.isArray(ds.usuarios)) {
+          ds.usuarios.forEach(u => {
+            if (u.postoDefaultId && String(u.postoDefaultId).startsWith('ps-')) u.postoDefaultId = '';
+          });
+        }
+        if (Array.isArray(ds.viaturas)) {
+          ds.viaturas.forEach(v => {
+            if (v.postoId && String(v.postoId).startsWith('ps-')) v.postoId = '';
+          });
+        }
+        // Excluir todos os cadastros de oficiais do sistema
+        ds.oficiais = [];
+        ds.oficiaisPresentes = [];
+        ds.oficiaisHistorico = [];
+        localStorage.setItem('sgpo_demo_state', JSON.stringify(ds));
+      } catch(e) {}
+    }
+  } catch(e) {}
+})();
+
 const DemoData = {
   _state: null,
-  _version: 6,
+  _version: 7,
 
   _now() {
-    return (typeof Utils !== 'undefined' && Utils.formatDateTime) ? Utils.formatDateTime(new Date()) : (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; })();
+    const d = new Date();
+    return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
   },
 
   getState() {
-    if (this._state) return this._state;
+    if (this._state) {
+      if (Array.isArray(this._state.postosServico) && this._state.postosServico.some(p => p && p.id && String(p.id).startsWith('ps-'))) {
+        this._state.postosServico = this._state.postosServico.filter(p => !p.id || !String(p.id).startsWith('ps-'));
+        this.save();
+      }
+      // Excluir todos os cadastros de oficiais do sistema
+      if (Array.isArray(this._state.oficiais) && this._state.oficiais.length > 0) {
+        this._state.oficiais = this._state.oficiais.filter(o => o && o.criadoPeloUsuario === true);
+        this.save();
+      }
+      this._state.oficiaisPresentes = [];
+      return this._state;
+    }
     const saved = localStorage.getItem('sgpo_demo_state');
     const savedVer = parseInt(localStorage.getItem('sgpo_demo_version') || '0');
     if (saved && savedVer >= this._version) {
-      try { this._state = JSON.parse(saved); return this._state; } catch(e) {}
+      try {
+        this._state = JSON.parse(saved);
+        if (this._state) {
+          // Remove todos os postos fixos legados criados pelo sistema
+          if (Array.isArray(this._state.postosServico)) {
+            this._state.postosServico = this._state.postosServico.filter(p => !p.id || !String(p.id).startsWith('ps-'));
+          } else {
+            this._state.postosServico = [];
+          }
+          if (this._state.postosServico.length === 0) {
+            this._state.postosServico = this.freshState().postosServico;
+          }
+          if (Array.isArray(this._state.usuariosPostos)) {
+            this._state.usuariosPostos = this._state.usuariosPostos.filter(up => !up.postoId || !String(up.postoId).startsWith('ps-'));
+          }
+          if (Array.isArray(this._state.usuarios)) {
+            this._state.usuarios.forEach(u => {
+              if (u.postoDefaultId && String(u.postoDefaultId).startsWith('ps-')) u.postoDefaultId = '';
+            });
+          }
+          if (Array.isArray(this._state.viaturas)) {
+            this._state.viaturas.forEach(v => {
+              if (v.postoId && String(v.postoId).startsWith('ps-')) v.postoId = '';
+            });
+          }
+          // Remove todos os oficiais cadastrados no sistema
+          this._state.oficiais = (this._state.oficiais || []).filter(o => o && o.criadoPeloUsuario === true);
+          this._state.oficiaisPresentes = [];
+          this._state.oficiaisHistorico = [];
+          if (!Array.isArray(this._state.servicos) || this._state.servicos.length === 0) {
+            const fresh = this.freshState();
+            this._state.servicos = fresh.servicos;
+            if (!this._state.servico) this._state.servico = fresh.servico;
+            if (!this._state.rotinas || this._state.rotinas.length === 0) this._state.rotinas = fresh.rotinas;
+          }
+        }
+        return this._state;
+      } catch(e) {}
     }
     this._state = this.freshState();
     localStorage.setItem('sgpo_demo_version', this._version);
@@ -1880,9 +3174,73 @@ const DemoData = {
   freshState() {
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const dOntem = new Date(now); dOntem.setDate(now.getDate() - 1);
+    const ontem = `${dOntem.getFullYear()}-${String(dOntem.getMonth()+1).padStart(2,'0')}-${String(dOntem.getDate()).padStart(2,'0')}`;
+    const dAnteontem = new Date(now); dAnteontem.setDate(now.getDate() - 2);
+    const anteontem = `${dAnteontem.getFullYear()}-${String(dAnteontem.getMonth()+1).padStart(2,'0')}-${String(dAnteontem.getDate()).padStart(2,'0')}`;
+
+    const servicoHoje = {
+      id: 'demo-servico-hoje',
+      data: today,
+      inicio: new Date().toISOString(),
+      prontidao: 'verde',
+      comandanteId: 'm-001',
+      comandanteNome: 'Ten Cel Silva',
+      postoId: '',
+      postoNome: 'Posto Central',
+      equipe: [
+        { id: 'm-001', nome: 'Ten Cel Silva' },
+        { id: 'm-002', nome: 'Sgt Oliveira' },
+        { id: 'm-003', nome: 'Cb Santos' },
+        { id: 'm-004', nome: 'Sd Ferreira' }
+      ],
+      horarioInicio: '07:30',
+      horarioFim: '-',
+      observacoes: 'Plantão operacional em andamento',
+      Status: 'ativo'
+    };
+
+    const servicoOntem = {
+      id: 'demo-servico-ontem',
+      data: ontem,
+      inicio: new Date(Date.now() - 86400000).toISOString(),
+      prontidao: 'amarela',
+      comandanteId: 'm-002',
+      comandanteNome: 'Sgt Oliveira',
+      postoId: '',
+      postoNome: 'Posto Central',
+      equipe: [
+        { id: 'm-002', nome: 'Sgt Oliveira' },
+        { id: 'm-005', nome: '2º Ten Costa' }
+      ],
+      horarioInicio: '07:30',
+      horarioFim: '07:30',
+      observacoes: 'Plantão concluído com 2 ocorrências atendidas',
+      Status: 'encerrado'
+    };
+
+    const servicoAnteontem = {
+      id: 'demo-servico-anteontem',
+      data: anteontem,
+      inicio: new Date(Date.now() - 172800000).toISOString(),
+      prontidao: 'vermelha',
+      comandanteId: 'm-005',
+      comandanteNome: '2º Ten Costa',
+      postoId: '',
+      postoNome: 'Posto Central',
+      equipe: [
+        { id: 'm-005', nome: '2º Ten Costa' },
+        { id: 'm-006', nome: '1º Sgt Lima' }
+      ],
+      horarioInicio: '07:30',
+      horarioFim: '07:30',
+      observacoes: 'Alerta vermelho preventivo - Operação chuvas',
+      Status: 'encerrado'
+    };
+
     return {
-      servico: null,
-      servicos: [],
+      servico: servicoHoje,
+      servicos: [servicoHoje, servicoOntem, servicoAnteontem],
       militares: [
         { id: 'm-001', nome: 'Ten Cel Silva', posto: '1º Tenente', reCpf: '4444444' },
         { id: 'm-002', nome: 'Sgt Oliveira', posto: 'Sargento', reCpf: '5555555' },
@@ -1893,17 +3251,12 @@ const DemoData = {
         { id: 'm-007', nome: 'Cb Souza', posto: 'Cabo', reCpf: '1010101' },
         { id: 'm-008', nome: 'Sd Pereira', posto: 'Soldado', reCpf: '1212121' },
       ],
-      oficiais: [
-        { id: 'o-001', nome: 'Cel Rodrigues', posto: 'Coronel', antiguidade: 1, unidade: '1º CB' },
-        { id: 'o-002', nome: 'Maj Almeida', posto: 'Major', antiguidade: 2, unidade: '1º CB' },
-        { id: 'o-003', nome: 'Cap Ferreira', posto: 'Capitão', antiguidade: 3, unidade: '2º CB' },
-        { id: 'o-004', nome: '1º Ten Santos', posto: '1º Tenente', antiguidade: 4, unidade: '1º CB' },
-      ],
+      oficiais: [],
       oficiaisPresentes: [],
       oficiaisHistorico: [],
       rotina: [
-        { id: 'r-001', horario: '07:30', nome: 'Revista Matinal', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'concluida', concluidoPor: 'Cmt Prontidão', horaConclusao: '07:32' },
-        { id: 'r-002', horario: '07:45', nome: 'Ordem do Dia', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'em_andamento' },
+        { id: 'r-001', horario: '07:30', nome: 'Revista Matinal', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'nao_iniciada' },
+        { id: 'r-002', horario: '07:45', nome: 'Ordem do Dia', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'nao_iniciada' },
         { id: 'r-003', horario: '08:30', nome: 'Nós do Dia', programa: 'Instrução', responsavel: 'Cmt Prontidão', status: 'nao_iniciada' },
         { id: 'r-004', horario: '08:35', nome: 'Conferência das instalações', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'nao_iniciada' },
         { id: 'r-005', horario: '08:45', nome: 'Conferência de viaturas, equipamentos e materiais', programa: 'Passagem de serviço', responsavel: 'Cmt Prontidão', status: 'nao_iniciada' },
@@ -1992,23 +3345,11 @@ const DemoData = {
       ],
       usuarios: [
         { id: 'u-001', nome: 'Administrador', qra: '', nomeUsuario: 'admin', cpf: '00000000000', re: '', senha: 'admin', perfil: 'admin', nivelPermissao: 'GB', postoDefaultId: '', mustChangePassword: false },
-        { id: 'u-002', nome: 'Comandante', qra: '', nomeUsuario: 'comandante', cpf: '11111111111', re: '', senha: '123', perfil: 'comandante', nivelPermissao: 'SGB', postoDefaultId: 'ps-002', mustChangePassword: false },
-        { id: 'u-003', nome: 'Operador', qra: '', nomeUsuario: 'operador', cpf: '22222222222', re: '', senha: '123', perfil: 'operador', nivelPermissao: 'POSTO', postoDefaultId: 'ps-003', mustChangePassword: false },
+        { id: 'u-002', nome: 'Comandante', qra: '', nomeUsuario: 'comandante', cpf: '11111111111', re: '', senha: '123', perfil: 'comandante', nivelPermissao: 'SGB', postoDefaultId: '', mustChangePassword: false },
+        { id: 'u-003', nome: 'Operador', qra: '', nomeUsuario: 'operador', cpf: '22222222222', re: '', senha: '123', perfil: 'operador', nivelPermissao: 'POSTO', postoDefaultId: '', mustChangePassword: false },
       ],
-      postosServico: [
-        { id: 'ps-001', nome: '1º GB PMESP', tipo: 'GB', postoPaiId: '', responsavelId: '', ordem: 1 },
-        { id: 'ps-002', nome: '2º SGB', tipo: 'SGB', postoPaiId: 'ps-001', responsavelId: 'u-002', ordem: 1 },
-        { id: 'ps-003', nome: '3º SGB', tipo: 'SGB', postoPaiId: 'ps-001', responsavelId: '', ordem: 2 },
-        { id: 'ps-004', nome: '1º Posto de Bombeiros', tipo: 'POSTO', postoPaiId: 'ps-002', responsavelId: 'u-002', ordem: 1 },
-        { id: 'ps-005', nome: '2º Posto de Bombeiros', tipo: 'POSTO', postoPaiId: 'ps-002', responsavelId: '', ordem: 2 },
-        { id: 'ps-006', nome: '3º Posto de Bombeiros', tipo: 'POSTO', postoPaiId: 'ps-003', responsavelId: '', ordem: 1 },
-      ],
-      usuariosPostos: [
-        { id: 'up-001', usuarioId: 'u-001', postoId: 'ps-001', papel: 'comandante_posto' },
-        { id: 'up-002', usuarioId: 'u-002', postoId: 'ps-002', papel: 'comandante_posto' },
-        { id: 'up-003', usuarioId: 'u-002', postoId: 'ps-004', papel: 'operador' },
-        { id: 'up-004', usuarioId: 'u-003', postoId: 'ps-004', papel: 'operador' },
-      ],
+      postosServico: [],
+      usuariosPostos: [],
       permissoesServico: [],
       permissoesTela: [
         { id: 'pt-001', perfil: 'admin', tela: 'dashboard', acoes: '["ver","ver_equipe","ver_notificacoes","ver_countdown"]' },
@@ -2040,10 +3381,10 @@ const DemoData = {
         { id: 'pt-033', perfil: 'visualizador', tela: 'oficiais', acoes: '["ver"]' },
       ],
       viaturas: [
-        { id: 'v-001', nome: 'ABT-01', tipo: 'ABT', placa: 'ABC1D23', capacidade: 6, ativo: true, Status: 'ativo', postoId: 'ps-004' },
-        { id: 'v-002', nome: 'URG-02', tipo: 'URG', placa: 'DEF4G56', capacidade: 3, ativo: true, Status: 'ativo', postoId: 'ps-004' },
-        { id: 'v-003', nome: 'CV-03',  tipo: 'CV',  placa: 'HIJ7K89', capacidade: 2, ativo: true, Status: 'ativo', postoId: 'ps-005' },
-        { id: 'v-004', nome: 'APA-04', tipo: 'APA', placa: 'LMN0P12', capacidade: 4, ativo: true, Status: 'ativo', postoId: 'ps-005' },
+        { id: 'v-001', nome: 'ABT-01', tipo: 'ABT', placa: 'ABC1D23', capacidade: 6, ativo: true, Status: 'ativo', postoId: '' },
+        { id: 'v-002', nome: 'URG-02', tipo: 'URG', placa: 'DEF4G56', capacidade: 3, ativo: true, Status: 'ativo', postoId: '' },
+        { id: 'v-003', nome: 'CV-03',  tipo: 'CV',  placa: 'HIJ7K89', capacidade: 2, ativo: true, Status: 'ativo', postoId: '' },
+        { id: 'v-004', nome: 'APA-04', tipo: 'APA', placa: 'LMN0P12', capacidade: 4, ativo: true, Status: 'ativo', postoId: '' },
         { id: 'v-005', nome: 'SOC-05', tipo: 'SOC', placa: 'QRS3T45', capacidade: 8, ativo: true, Status: 'ativo', postoId: '' }
       ],
       servicoViaturas: [],
@@ -2185,87 +3526,244 @@ const DemoData = {
 
   handle(action, data) {
     const s = this.getState();
-    const now = () => (typeof Utils !== 'undefined' && Utils.formatDateTime) ? Utils.formatDateTime(new Date()) : (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; })();
+    const now = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
 
     switch (action) {
       case 'login': {
-        if (data.usuario === 'cavalieri' && data.senha === 'tricolor') {
+        const inputRaw = String(data.usuario || '').trim();
+        const inputDigits = inputRaw.replace(/\D/g, '');
+        const inputLower = inputRaw.toLowerCase();
+        const inputSenha = String(data.senha || '').trim();
+
+        if (inputLower === 'cavalieri' && inputSenha === 'tricolor') {
           const allPostos = s.postosServico || [];
           const adminPerms = (s.permissoesTela || []).filter(p => p.perfil === 'admin');
-          return { success: true, user: { id: '_superuser_', nome: 'Super Usuário', qra: '', nomeUsuario: 'cavalieri', cpf: '00000000000', re: '', usuario: 'cavalieri', perfil: 'superadmin', nivelPermissao: 'GB', postos: allPostos, permissoesTela: adminPerms.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })), mustChangePassword: false, token: 'demo-token-' + Date.now() } };
+          return { success: true, user: { id: '_superuser_', nome: 'Super Usuário', qra: '', nomeUsuario: 'cavalieri', cpf: '00000000000', re: '', usuario: 'cavalieri', perfil: 'superadmin', nivelPermissao: 'GB', postos: allPostos, postosAbrir: allPostos.map(p => p.id), postosVisualizar: allPostos.map(p => p.id), permissoesTela: adminPerms.map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') })), mustChangePassword: false, token: 'demo-token-' + Date.now() } };
         }
-        const user = s.usuarios.find(u => (u.cpf === data.usuario || u.re === data.usuario || u.nomeUsuario === data.usuario) && u.senha === data.senha);
+
+        const user = (s.usuarios || []).find(u => {
+          const uCpfDigits = String(u.cpf || '').replace(/\D/g, '');
+          const uReDigits = String(u.re || '').replace(/\D/g, '');
+          const uNomeUsuario = String(u.nomeUsuario || '').trim().toLowerCase();
+          const matchUser = (u.cpf && u.cpf === inputRaw) ||
+                            (uCpfDigits && inputDigits && uCpfDigits === inputDigits) ||
+                            (u.re && u.re === inputRaw) ||
+                            (uReDigits && inputDigits && uReDigits === inputDigits) ||
+                            (uNomeUsuario && uNomeUsuario === inputLower);
+          return matchUser && String(u.senha).trim() === inputSenha;
+        });
+
         if (user) {
           const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === user.id).map(up => {
             const posto = (s.postosServico || []).find(p => p.id === up.postoId);
             return { id: up.postoId, nome: posto?.nome || '', tipo: posto?.tipo || 'POSTO', papel: up.papel || 'operador' };
           });
           const userPerms = (s.permissoesTela || []).filter(p => p.perfil === user.perfil).map(p => ({ tela: p.tela, acoes: JSON.parse(p.acoes || '[]') }));
-          return { success: true, user: { id: user.id, nome: user.nome, qra: user.qra || '', nomeUsuario: user.nomeUsuario || '', cpf: user.cpf || '', re: user.re || '', usuario: user.cpf || user.re || '', perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postos: userPostos, permissoesTela: userPerms, mustChangePassword: user.mustChangePassword === true, token: 'demo-token-' + Date.now() } };
+          return { success: true, user: { id: user.id, nome: user.nome, qra: user.qra || '', nomeUsuario: user.nomeUsuario || '', cpf: user.cpf || '', re: user.re || '', usuario: user.cpf || user.re || '', perfil: user.perfil, nivelPermissao: user.nivelPermissao || 'POSTO', postosAbrir: user.postosAbrir || [], postosVisualizar: user.postosVisualizar || [], postos: user.postos || userPostos, permissoesTela: userPerms, mustChangePassword: user.mustChangePassword === true, token: 'demo-token-' + Date.now() } };
         }
         return { success: false, error: 'CPF ou senha inválidos' };
       }
 
       case 'getServicoAtual': {
         this._checkAutoEncerrarServico(s);
-        const emptyRet = { servico: null, rotina: [], militares: s.militares, telegrafia: null, telegrafiaVazioDesde: null, oficiais: [], oficiaisTodos: s.oficiais, notificacoes: [], extras: [], servicoViaturas: [], ocorrencias: [], config: s.config || {} };
-        if (!s.servico || s.servico.Status === 'encerrado') return emptyRet;
-        if (data && data.usuarioId && s.servico.postoId) {
+        if (!s.servicos) s.servicos = [];
+        if (!s.rotinas) s.rotinas = [];
+        const hoje = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+        const activeServices = s.servicos.filter(sv => sv.data === hoje && sv.Status === 'ativo');
+
+        const emptyRet = { servico: null, servicosAtivos: [], rotina: [], militares: s.militares, telegrafia: null, telegrafiaVazioDesde: null, oficiais: [], oficiaisTodos: s.oficiais, notificacoes: [], extras: [], servicoViaturas: [], ocorrencias: [], config: s.config || {} };
+        if (activeServices.length === 0 && (!s.servico || s.servico.Status === 'encerrado')) return emptyRet;
+
+        let targetServico = null;
+        if (data && data.servicoId) {
+          targetServico = s.servicos.find(sv => sv.id === data.servicoId) || (s.servico?.id === data.servicoId ? s.servico : null);
+        }
+        if (!targetServico && data && data.postoId) {
+          targetServico = s.servicos.find(sv => sv.postoId === data.postoId && sv.Status === 'ativo') || (s.servico?.postoId === data.postoId && s.servico.Status === 'ativo' ? s.servico : null);
+        }
+        if (!targetServico) {
+          const storedId = typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null;
+          if (storedId) {
+            targetServico = s.servicos.find(sv => sv.id === storedId && sv.Status === 'ativo') || (s.servico?.id === storedId && s.servico.Status === 'ativo' ? s.servico : null);
+          }
+        }
+        if (!targetServico && s.servico && s.servico.Status === 'ativo') {
+          targetServico = s.servicos.find(sv => sv.id === s.servico.id) || s.servico;
+        }
+        if (!targetServico && activeServices.length > 0) {
+          targetServico = activeServices[0];
+        }
+        if (!targetServico) return emptyRet;
+
+        s.servico = targetServico;
+
+        if (data && data.usuarioId && targetServico.postoId) {
           const user = (s.usuarios || []).find(u => u.id === data.usuarioId);
           const isAdmin = user && (user.perfil === 'admin' || user.perfil === 'superadmin');
           const isGB = user && user.nivelPermissao === 'GB';
           if (!isAdmin && !isGB) {
             const userPostos = (s.usuariosPostos || []).filter(up => up.usuarioId === data.usuarioId && up.Status === 'ativo');
             const userPostoIds = userPostos.map(up => up.postoId);
-            if (userPostoIds.length > 0 && !userPostoIds.includes(s.servico.postoId)) {
+            if (userPostoIds.length > 0 && !userPostoIds.includes(targetServico.postoId)) {
               return emptyRet;
             }
           }
-          if (!s.servico.equipe.some(e => e.id === data.usuarioId)) {
+          if (Array.isArray(targetServico.equipe) && !targetServico.equipe.some(e => e.id === data.usuarioId)) {
             if (user) {
-              s.servico.equipe.push({ id: user.id, nome: user.nome, posto: '', reCpf: user.reCpf || '', avulso: false });
-              if (!s.servicos) s.servicos = [];
-              s.servicos.push(s.servico);
+              targetServico.equipe.push({ id: user.id, nome: user.nome, posto: '', reCpf: user.reCpf || '', avulso: false });
+              const inServicos = s.servicos.find(sv => sv.id === targetServico.id);
+              if (inServicos) inServicos.equipe = targetServico.equipe;
               this.save();
             }
           }
         }
-        return { servico: s.servico, rotina: s.rotina, militares: s.militares, telegrafia: s.telegrafia, telegrafiaVazioDesde: s.telegrafiaVazioDesde, oficiais: s.oficiaisPresentes, oficiaisTodos: s.oficiais, notificacoes: s.notificacoes, extras: s.extras, servicoViaturas: (s.servicoViaturas || []).filter(sv => sv.servicoId === s.servico.id && sv.Status !== 'encerrado'), ocorrencias: (s.ocorrencias || []).filter(oc => oc.servicoId === s.servico.id && oc.Status !== 'removido'), config: s.config || {} };
+
+        const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'cancelada', 'trote', 'apoio_desnecessario', 'encerrada', 'concluida', 'arquivada'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+        const pertence = (o, sv) => (typeof Utils !== 'undefined' && Utils.viaturaPertenceAOcorrencia) ? Utils.viaturaPertenceAOcorrencia(o, sv) : (Array.isArray(o?.viaturaIds) ? o.viaturaIds.some(v => String(v?.viaturaId || v?.id || v) === String(sv?.viaturaId) || String(v?.viaturaId || v?.id || v) === String(sv?.id)) : false);
+
+        const ocsAtivas = (s.ocorrencias || []).filter(oc => oc.servicoId === targetServico.id && isAtiva(oc));
+        let alterouViats = false;
+        (s.servicoViaturas || []).forEach(sv => {
+          if (sv.servicoId === targetServico.id && sv.Status !== 'encerrado') {
+            const emOcorr = ocsAtivas.some(oc => pertence(oc, sv));
+            if (!emOcorr && (sv.status === 'retornando' || sv.status === 'em_ocorrencia' || sv.status !== 'ativa')) {
+              sv.status = 'ativa';
+              sv.Status = 'ativo';
+              alterouViats = true;
+            }
+          }
+        });
+
+        // Remove quaisquer eventos de retorno espúrios ou de telegrafia gerados automaticamente
+        if (s.rotina) {
+          const antes = s.rotina.length;
+          s.rotina = s.rotina.filter(r => !(r.id?.startsWith('r-ret-') && !r.nome?.includes('liberada da Ocorrência') && !r.nome?.includes('#') && r.nome?.includes('(disponível na base)')) && !(r.id?.startsWith('r-tele-') && (r.nome?.includes('após retorno') || r.nome?.includes('substituído'))));
+          if (s.rotina.length !== antes) alterouViats = true;
+        }
+        if (s.rotinas) {
+          const antes = s.rotinas.length;
+          s.rotinas = s.rotinas.filter(r => !(r.id?.startsWith('r-ret-') && !r.nome?.includes('liberada da Ocorrência') && !r.nome?.includes('#') && r.nome?.includes('(disponível na base)')) && !(r.id?.startsWith('r-tele-') && (r.nome?.includes('após retorno') || r.nome?.includes('substituído'))));
+          if (s.rotinas.length !== antes) alterouViats = true;
+        }
+        if (typeof TimelineStore !== 'undefined') {
+          const pList = TimelineStore.getAll(targetServico.id);
+          const filtered = pList.filter(r => !(r.id?.startsWith('r-ret-') && !r.nome?.includes('liberada da Ocorrência') && !r.nome?.includes('#') && r.nome?.includes('(disponível na base)')) && !(r.id?.startsWith('r-tele-') && (r.nome?.includes('após retorno') || r.nome?.includes('substituído'))));
+          if (filtered.length !== pList.length) TimelineStore.saveAll(filtered, targetServico.id);
+        }
+        if (alterouViats) this.save();
+
+        const postosAll = s.postosServico || [];
+        const postosMap = {};
+        postosAll.forEach(p => { postosMap[p.id] = p; });
+
+        const rotinaTotal = s.rotinas || [];
+        let rotinaDoServico = rotinaTotal.filter(r => r.servicoId === targetServico.id);
+        if (rotinaDoServico.length === 0 && Array.isArray(s.rotina) && s.rotina.length > 0) {
+          const rotinaBase = s.rotina.filter(r => !r.id?.startsWith('r-oc-') && !r.id?.startsWith('r-desp-') && !r.id?.startsWith('r-ret-') && !r.id?.startsWith('r-ocf-') && !r.id?.startsWith('r-tele-') && r.programa !== 'Ocorrência' && r.programa !== 'Ocorrências' && !r.nome?.includes('🚨'));
+          rotinaDoServico = rotinaBase.map(r => ({ ...r, servicoId: targetServico.id }));
+        }
+        s.rotina = rotinaDoServico;
+
+        const servicosAtivosInfo = activeServices.map(sv => {
+          const p = postosMap[sv.postoId];
+          const ativs = (s.rotinas || []).filter(r => r.servicoId === sv.id);
+          const conc = ativs.filter(r => r.status === 'concluida').length;
+          const emAnd = ativs.find(r => r.status === 'em_andamento');
+          const prox = ativs.find(r => r.status === 'nao_iniciada');
+          const ult = ativs.filter(r => r.status === 'concluida').pop();
+          const ativAtual = emAnd || prox || ult || null;
+          return {
+            id: sv.id,
+            postoId: sv.postoId,
+            postoNome: p ? p.nome : 'Posto',
+            postoTipo: p ? p.tipo : 'POSTO',
+            prontidao: sv.prontidao || 'verde',
+            comandanteNome: sv.comandanteNome || '-',
+            horarioInicio: sv.horarioInicio || '',
+            totalAtividades: ativs.length,
+            totalConcluidas: conc,
+            atividadeAtual: ativAtual ? { nome: ativAtual.nome, horario: ativAtual.horario, status: ativAtual.status, responsavel: ativAtual.responsavel } : null
+          };
+        });
+
+        return {
+          servico: targetServico,
+          servicosAtivos: servicosAtivosInfo,
+          rotina: rotinaDoServico,
+          militares: s.militares,
+          telegrafia: s.telegrafia,
+          telegrafiaVazioDesde: s.telegrafiaVazioDesde,
+          oficiais: s.oficiaisPresentes || [],
+          oficiaisTodos: s.oficiais || [],
+          notificacoes: (s.notificacoes || []).filter(n => n.servicoId === targetServico.id || (!n.servicoId && targetServico.id === 'demo-servico')),
+          extras: (s.extras || []).filter(e => !e.servicoId || e.servicoId === targetServico.id),
+          servicoViaturas: (s.servicoViaturas || []).filter(sv => sv.servicoId === targetServico.id && sv.Status !== 'encerrado'),
+          ocorrencias: (s.ocorrencias || []).filter(oc => oc.servicoId === targetServico.id && oc.Status !== 'removido'),
+          config: s.config || {}
+        };
       }
 
       case 'iniciarServico': {
         if (!data.postoId) return { success: false, error: 'Posto de serviço é obrigatório' };
         
-        // Se já existe um serviço ativo para este posto (ou serviço global ativo anterior), encerra automaticamente conforme regra
-        if (s.servico && s.servico.Status === 'ativo') {
-          (s.oficiaisPresentes || []).forEach(o => {
-            if (!s.oficiaisHistorico) s.oficiaisHistorico = [];
-            s.oficiaisHistorico.push({ oficialId: o.id, nome: o.nome, horarioEntrada: o.horarioEntrada, horarioSaida: now(), anunciado: o.anunciado });
-          });
-          s.servico.oficiaisHistorico = s.oficiaisHistorico || [];
-          s.servico.Status = 'encerrado';
-          s.servico.horarioFim = now();
-          (s.servicoViaturas || []).filter(sv => sv.servicoId === s.servico.id && sv.Status === 'ativo').forEach(sv => {
-            sv.Status = 'encerrado';
-            sv.status = 'encerrada';
-            sv.horarioRetorno = now();
-          });
-        }
-        if (s.servicos && Array.isArray(s.servicos)) {
-          s.servicos.filter(sv => (sv.postoId === data.postoId || sv.id === (s.servico && s.servico.id)) && sv.Status === 'ativo').forEach(sv => {
-            sv.Status = 'encerrado';
-            sv.horarioFim = now();
-          });
-        }
-        s.oficiaisPresentes = [];
+        if (!s.servicos) s.servicos = [];
+        if (!s.rotinas) s.rotinas = [];
         const dataStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
-        s.servico = { id: 'demo-' + Date.now(), data: dataStr, inicio: new Date().toISOString(), prontidao: data.prontidao, comandanteId: data.comandanteId, comandanteNome: data.comandanteNome, postoId: data.postoId, equipe: data.equipe || [], horarioInicio: now(), observacoes: data.observacoes || '', telegrafistaId: data.telegrafistaId || '', Status: 'ativo' };
+
+        // Permite apenas um serviço por posto de serviço no mesmo dia
+        const existingForPosto = s.servicos.find(sv => sv.postoId === data.postoId && (sv.data === dataStr || sv.Status === 'ativo'));
+        if (existingForPosto) {
+          return { success: false, error: 'Já existe um serviço iniciado para este posto hoje. Permitido apenas um serviço por posto por dia.' };
+        }
+
+        // Usuários que já estão empenhados em outros postos ativos não devem aparecer nem ser iniciados
+        const servicosOutrosAtivos = (s.servicos || []).filter(sv => sv.Status === 'ativo' && sv.postoId !== data.postoId);
+        const empenhadosSet = new Set();
+        servicosOutrosAtivos.forEach(sv => {
+          if (sv.comandanteId) empenhadosSet.add(String(sv.comandanteId));
+          if (sv.telegrafistaId) empenhadosSet.add(String(sv.telegrafistaId));
+          let eq = [];
+          try { eq = Array.isArray(sv.equipe) ? sv.equipe : JSON.parse(sv.equipe || '[]'); } catch(e) {}
+          eq.forEach(m => {
+            if (m && (m.id || m.usuarioId)) empenhadosSet.add(String(m.id || m.usuarioId));
+          });
+        });
+        const equipeTentada = Array.isArray(data.equipe) ? [...data.equipe] : [];
+        if (data.comandanteId) equipeTentada.push({ id: data.comandanteId, nome: data.comandanteNome || 'Comandante' });
+        if (data.telegrafistaId) equipeTentada.push({ id: data.telegrafistaId, nome: 'Telegrafista' });
+        for (const m of equipeTentada) {
+          if (m && m.id && empenhadosSet.has(String(m.id))) {
+            return { success: false, error: `O integrante "${m.nome || m.id}" já está empenhado em outro posto ativo.` };
+          }
+        }
+
+        const newId = 'demo-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+        const agoraHora = now();
+        const novoServico = {
+          id: newId,
+          data: dataStr,
+          inicio: new Date().toISOString(),
+          prontidao: data.prontidao || 'verde',
+          comandanteId: data.comandanteId,
+          comandanteNome: data.comandanteNome,
+          postoId: data.postoId,
+          equipe: data.equipe || [],
+          horarioInicio: agoraHora,
+          observacoes: data.observacoes || '',
+          telegrafistaId: data.telegrafistaId || '',
+          Status: 'ativo'
+        };
+
+        s.servicos.push(novoServico);
+        s.servico = novoServico;
 
         const rotinaFonte = (s.rotinaPersonalizada || []).filter(r => r.postoId === data.postoId && r.Status !== 'removido' && r.ativo !== false);
+        let novasAtividades = [];
         if (rotinaFonte.length > 0) {
           rotinaFonte.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
-          s.rotina = rotinaFonte.map(a => ({
+          novasAtividades = rotinaFonte.map(a => ({
             id: 'rot-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            servicoId: newId,
             horario: a.horario, nome: a.nome, programa: a.programa || '',
             responsavel: a.responsavel_padrao || '', responsavelId: '',
             status: 'nao_iniciada', observacoes: a.observacoes || '', origem: 'personalizada'
@@ -2273,15 +3771,51 @@ const DemoData = {
         } else {
           const padrao = (s.atividadesPadrao || []).filter(a => a.Status !== 'removido' && (!a.postoId || a.postoId === data.postoId));
           padrao.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
-          s.rotina = padrao.map(a => ({
+          novasAtividades = padrao.map(a => ({
             id: 'rot-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            servicoId: newId,
             horario: a.horario, nome: a.nome, programa: a.programa || '',
             responsavel: a.responsavel_padrao || '', responsavelId: '',
             status: 'nao_iniciada', observacoes: a.observacoes || '', origem: 'padrao'
           }));
         }
 
-        this.save();
+        s.rotinas.push(...novasAtividades);
+        s.rotina = novasAtividades;
+
+        // Inicia a linha do tempo zerada com o evento inicial do novo serviço
+        const cmtNome = data.comandanteNome || 'Comandante';
+        const prontidaoStr = (data.prontidao || 'verde').toUpperCase();
+        const evtInicio = {
+          id: 'r-act-inicio-' + newId,
+          servicoId: newId,
+          horario: agoraHora,
+          nome: `🏁 Serviço iniciado — Prontidão ${prontidaoStr}`,
+          programa: 'Passagem de serviço',
+          responsavel: cmtNome,
+          status: 'concluida',
+          concluidoPor: cmtNome,
+          horaConclusao: agoraHora
+        };
+        if (typeof TimelineStore !== 'undefined') {
+          TimelineStore.initForService(newId, [evtInicio]);
+        }
+
+        // Inicia as notificações zeradas com a notificação de início do serviço
+        const notifInicio = {
+          id: 'n-' + Date.now(),
+          servicoId: newId,
+          mensagem: `Serviço iniciado às ${agoraHora} — Prontidão ${prontidaoStr}`,
+          tipo: 'info',
+          horario: agoraHora,
+          lida: false
+        };
+        if (!s.notificacoes) s.notificacoes = [];
+        s.notificacoes.forEach(n => {
+          if (!n.servicoId) n.servicoId = 'anterior';
+        });
+        s.notificacoes = s.notificacoes.filter(n => n.servicoId !== newId);
+        s.notificacoes.unshift(notifInicio);
 
         if (!s.usuariosPostos) s.usuariosPostos = [];
         const teamIds = (data.equipe || []).map(e => e.id).filter(Boolean);
@@ -2292,43 +3826,41 @@ const DemoData = {
           if (!exists) s.usuariosPostos.push({ id: 'up-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4), usuarioId: uid, postoId: data.postoId, papel: 'operador', dataVinculo: new Date().toISOString(), Status: 'ativo' });
         });
 
-        return { success: true, servicoId: s.servico.id };
+        this.save();
+        return { success: true, servicoId: newId };
       }
 
       case 'encerrarServico': {
         const idTarget = data.servicoId || data.postoId || data.id;
         const agoraFim = now();
-        let encerrou = false;
+        if (!s.servicos) s.servicos = [];
 
-        if (s.servico && (!idTarget || s.servico.id === idTarget || s.servico.postoId === idTarget)) {
+        const targetSv = s.servicos.find(sv => (!idTarget || sv.id === idTarget || sv.postoId === idTarget) && sv.Status === 'ativo');
+        if (targetSv) {
+          targetSv.Status = 'encerrado';
+          targetSv.horarioFim = agoraFim;
+
           (s.oficiaisPresentes || []).forEach(o => {
             if (!s.oficiaisHistorico) s.oficiaisHistorico = [];
-            s.oficiaisHistorico.push({ oficialId: o.id, nome: o.nome, horarioEntrada: o.horarioEntrada, horarioSaida: agoraFim, anunciado: o.anunciado });
+            s.oficiaisHistorico.push({ servicoId: targetSv.id, oficialId: o.id, nome: o.nome, horarioEntrada: o.horarioEntrada, horarioSaida: agoraFim, anunciado: o.anunciado });
           });
-          s.servico.oficiaisHistorico = s.oficiaisHistorico || [];
-          s.servico.Status = 'encerrado';
-          s.servico.horarioFim = agoraFim;
-          (s.servicoViaturas || []).filter(sv => sv.servicoId === s.servico.id && sv.Status === 'ativo').forEach(sv => {
+
+          (s.servicoViaturas || []).filter(sv => sv.servicoId === targetSv.id && sv.Status === 'ativo').forEach(sv => {
             sv.Status = 'encerrado';
             sv.status = 'encerrada';
             sv.horarioRetorno = agoraFim;
           });
-          const active = (s.servicos || []).find(sv => sv.id === s.servico.id);
-          if (active) { active.Status = 'encerrado'; active.horarioFim = agoraFim; }
-          s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Serviço encerrado', tipo: 'info', horario: agoraFim, lida: false });
-          s.servico = null;
+        }
+
+        if (s.servico && (!idTarget || s.servico.id === idTarget || s.servico.postoId === idTarget)) {
+          s.servico.Status = 'encerrado';
+          s.servico.horarioFim = agoraFim;
+          const outroAtivo = s.servicos.find(sv => sv.Status === 'ativo');
+          s.servico = outroAtivo || null;
           s.oficiaisPresentes = [];
-          encerrou = true;
         }
 
-        if (s.servicos && Array.isArray(s.servicos)) {
-          s.servicos.filter(sv => (!idTarget || sv.id === idTarget || sv.postoId === idTarget) && sv.Status === 'ativo').forEach(sv => {
-            sv.Status = 'encerrado';
-            sv.horarioFim = agoraFim;
-            encerrou = true;
-          });
-        }
-
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Serviço encerrado', tipo: 'info', horario: agoraFim, lida: false });
         this.save();
         return { success: true };
       }
@@ -2394,8 +3926,19 @@ const DemoData = {
         return { success: true, fonte: 'padrao', itens: padrao };
       }
 
+      case 'getRotina': {
+        const reqServicoId = data.servicoId || s.servico?.id;
+        const rotinaTotal = s.rotinas || [];
+        let itens = rotinaTotal.filter(r => r.servicoId === reqServicoId);
+        if (itens.length === 0 && Array.isArray(s.rotina) && s.rotina.length > 0) {
+          itens = s.rotina;
+        }
+        return { success: true, rotina: itens };
+      }
+
       case 'updateAtividade': {
-        const a = s.rotina.find(x => x.id === data.atividadeId);
+        if (!s.rotinas) s.rotinas = [];
+        const a = (s.rotinas || []).find(x => x.id === data.atividadeId) || (s.rotina || []).find(x => x.id === data.atividadeId);
         if (a) {
           a.status = data.status;
           if (data.concluidoPor) a.concluidoPor = data.concluidoPor;
@@ -2403,6 +3946,10 @@ const DemoData = {
           if (data.horaInicio !== undefined) a.horaInicio = data.horaInicio;
           if (data.horaAtualizacao) a.horaAtualizacao = data.horaAtualizacao;
           if (data.observacoes !== undefined) a.observacoes = data.observacoes;
+          if (s.rotina) {
+            const inLocal = s.rotina.find(x => x.id === data.atividadeId);
+            if (inLocal) Object.assign(inLocal, a);
+          }
           const msgStatus = {
             concluida: `Rotina cumprida: ${a.nome}${a.horaConclusao ? ' às ' + a.horaConclusao : ''}`,
             em_andamento: `Rotina iniciada: ${a.nome}`,
@@ -2412,11 +3959,15 @@ const DemoData = {
           if (msgStatus) {
             s.notificacoes.unshift({
               id: 'n-' + Date.now(),
+              servicoId: a.servicoId || data.servicoId || s.servico?.id,
               mensagem: msgStatus,
               tipo: data.status === 'concluida' ? 'sucesso' : (data.status === 'nao_realizada' ? 'warning' : (data.status === 'cancelada' ? 'danger' : 'info')),
               horario: now(),
               lida: false
             });
+          }
+          if (typeof TimelineStore !== 'undefined') {
+            TimelineStore.add(a, a.servicoId || data.servicoId || s.servico?.id);
           }
         }
         this.save();
@@ -2424,11 +3975,22 @@ const DemoData = {
       }
 
       case 'criarAtividadeExtra': {
-        const ext = { id: 'ext-' + Date.now(), nome: data.nome, horario: data.horario, responsavel: data.responsavel, observacoes: data.observacoes, criadoPor: data.criadoPor, status: 'nao_iniciada' };
+        const targetSid = data.servicoId || s.servico?.id;
+        const ext = { id: 'ext-' + Date.now(), servicoId: targetSid, nome: data.nome, horario: data.horario, responsavel: data.responsavel, observacoes: data.observacoes, criadoPor: data.criadoPor, status: 'nao_iniciada' };
+        if (!s.extras) s.extras = [];
+        if (!s.rotinas) s.rotinas = [];
+        if (!s.rotina) s.rotina = [];
         s.extras.push(ext);
-        s.rotina.push({ id: ext.id, horario: data.horario, nome: data.nome, programa: data.programa || '', responsavel: data.responsavel, responsavelId: data.responsavelId || '', status: 'nao_iniciada', observacoes: data.observacoes, criadoPor: data.criadoPor, origem: 'extra' });
-        s.rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Nova atividade extra: ' + data.nome, tipo: 'info', horario: now(), lida: false });
+        const itemRot = { id: ext.id, servicoId: targetSid, horario: data.horario, nome: data.nome, programa: data.programa || '', responsavel: data.responsavel, responsavelId: data.responsavelId || '', status: 'nao_iniciada', observacoes: data.observacoes, criadoPor: data.criadoPor, origem: 'extra' };
+        s.rotinas.push(itemRot);
+        if (!s.servico || s.servico.id === targetSid) {
+          s.rotina.push(itemRot);
+          s.rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
+        }
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: targetSid, mensagem: 'Nova atividade extra: ' + data.nome, tipo: 'info', horario: now(), lida: false });
+        if (typeof TimelineStore !== 'undefined') {
+          TimelineStore.add(itemRot, targetSid);
+        }
         this.save();
         return { success: true, id: ext.id };
       }
@@ -2436,8 +3998,10 @@ const DemoData = {
       case 'adicionarAtividadeFixa': {
         const padrao = s.atividadesPadrao.find(a => a.id === data.atividadeFixaId);
         if (!padrao) return { success: false, error: 'Atividade padrão não encontrada' };
+        const targetSid = data.servicoId || s.servico?.id;
         const nova = {
           id: 'rot-' + Date.now(),
+          servicoId: targetSid,
           horario: data.horario || padrao.horario,
           nome: data.nome || padrao.nome,
           programa: data.programa || padrao.programa,
@@ -2448,15 +4012,24 @@ const DemoData = {
           origem: 'padrao',
           atividadePadraoId: padrao.id
         };
-        s.rotina.push(nova);
-        s.rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Atividade fixa adicionada: ' + nova.nome, tipo: 'info', horario: now(), lida: false });
+        if (!s.rotinas) s.rotinas = [];
+        if (!s.rotina) s.rotina = [];
+        s.rotinas.push(nova);
+        if (!s.servico || s.servico.id === targetSid) {
+          s.rotina.push(nova);
+          s.rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
+        }
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: targetSid, mensagem: 'Atividade fixa adicionada: ' + nova.nome, tipo: 'info', horario: now(), lida: false });
+        if (typeof TimelineStore !== 'undefined') {
+          TimelineStore.add(nova, targetSid);
+        }
         this.save();
         return { success: true, id: nova.id };
       }
 
       case 'editarAtividadeRotina': {
-        const a = s.rotina.find(x => x.id === data.atividadeId);
+        if (!s.rotinas) s.rotinas = [];
+        const a = (s.rotinas || []).find(x => x.id === data.atividadeId) || (s.rotina || []).find(x => x.id === data.atividadeId);
         if (!a) return { success: false, error: 'Atividade não encontrada' };
         if (data.horario !== undefined) a.horario = data.horario;
         if (data.nome !== undefined) a.nome = data.nome;
@@ -2464,9 +4037,15 @@ const DemoData = {
         if (data.responsavel !== undefined) a.responsavel = data.responsavel;
         if (data.responsavelId !== undefined) a.responsavelId = data.responsavelId;
         if (data.observacoes !== undefined) a.observacoes = data.observacoes;
+        if (s.rotina) {
+          const inLocal = s.rotina.find(x => x.id === data.atividadeId);
+          if (inLocal) Object.assign(inLocal, a);
+        }
         const agoraE = now();
-        s.rotina.push({
+        const targetSid = a.servicoId || data.servicoId || s.servico?.id;
+        const evtEd = {
           id: 'r-act-' + Date.now(),
+          servicoId: targetSid,
           horario: agoraE,
           nome: `✏️ Atividade editada: ${a.nome}`,
           programa: 'Rotina',
@@ -2474,20 +4053,33 @@ const DemoData = {
           status: 'concluida',
           concluidoPor: 'Sistema',
           horaConclusao: agoraE
-        });
-        s.rotina.sort((x, y) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(x.horario) - getMin(y.horario); });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Atividade editada: ' + a.nome, tipo: 'info', horario: agoraE, lida: false });
+        };
+        s.rotinas.push(evtEd);
+        if (s.rotina) s.rotina.push(evtEd);
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: targetSid, mensagem: 'Atividade editada: ' + a.nome, tipo: 'info', horario: agoraE, lida: false });
+        if (typeof TimelineStore !== 'undefined') {
+          TimelineStore.add(evtEd, targetSid);
+          TimelineStore.add(a, targetSid);
+        }
         this.save();
         return { success: true };
       }
 
       case 'excluirAtividadeRotina': {
-        const idx = s.rotina.findIndex(x => x.id === data.atividadeId);
-        if (idx === -1) return { success: false, error: 'Atividade não encontrada' };
-        const alvo = s.rotina.splice(idx, 1)[0];
+        if (!s.rotinas) s.rotinas = [];
+        const rIdx = s.rotinas.findIndex(x => x.id === data.atividadeId);
+        let alvo = null;
+        if (rIdx !== -1) alvo = s.rotinas.splice(rIdx, 1)[0];
+        if (s.rotina) {
+          const idx = s.rotina.findIndex(x => x.id === data.atividadeId);
+          if (idx !== -1) alvo = s.rotina.splice(idx, 1)[0] || alvo;
+        }
+        if (!alvo) return { success: false, error: 'Atividade não encontrada' };
         const agoraX = now();
-        s.rotina.push({
+        const targetSid = alvo.servicoId || data.servicoId || s.servico?.id;
+        const evtEx = {
           id: 'r-act-' + Date.now(),
+          servicoId: targetSid,
           horario: agoraX,
           nome: `🗑️ Atividade excluída: ${alvo.nome}`,
           programa: 'Rotina',
@@ -2495,17 +4087,42 @@ const DemoData = {
           status: 'concluida',
           concluidoPor: 'Sistema',
           horaConclusao: agoraX
-        });
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: 'Atividade removida: ' + alvo.nome, tipo: 'warning', horario: agoraX, lida: false });
+        };
+        s.rotinas.push(evtEx);
+        if (s.rotina) s.rotina.push(evtEx);
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: targetSid, mensagem: 'Atividade removida: ' + alvo.nome, tipo: 'warning', horario: agoraX, lida: false });
+        if (typeof TimelineStore !== 'undefined') {
+          TimelineStore.add(evtEx, targetSid);
+        }
         this.save();
         return { success: true };
       }
 
       case 'registrarTelegrafia': {
         const agora = now();
+        if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
         if (s.telegrafia) {
-          if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
-          s.telegrafiaHistorico.push({ ...s.telegrafia, horarioSaida: agora });
+          let durCalc = '0h 00m';
+          let minCalc = 0;
+          if (s.telegrafia.horario) {
+            try {
+              const pI = String(s.telegrafia.horario).split(':');
+              const pF = String(agora).split(':');
+              let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
+              if (diff < 0) diff += 1440;
+              minCalc = diff;
+              const h = Math.floor(diff / 60);
+              const m = diff % 60;
+              durCalc = `${h}h ${String(m).padStart(2, '0')}m`;
+            } catch(e) {}
+          }
+          s.telegrafiaHistorico.push({
+            ...s.telegrafia,
+            horarioSaida: agora,
+            fim: agora,
+            duracao: durCalc,
+            minutos: minCalc
+          });
         }
         if (!data.militarId || data.militarId === '__VAZIA__' || data.vazia) {
           s.telegrafia = null;
@@ -2651,7 +4268,11 @@ const DemoData = {
         return { success: true };
       }
 
-      case 'getNotificacoes': return s.notificacoes || [];
+      case 'getNotificacoes': {
+        const sid = data?.servicoId || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null) || s.servico?.id;
+        if (!sid) return s.notificacoes || [];
+        return (s.notificacoes || []).filter(n => n.servicoId === sid || (!n.servicoId && sid === 'demo-servico'));
+      }
 
       case 'marcarLida': {
         const n = s.notificacoes.find(x => x.id === data.notificacaoId);
@@ -2661,30 +4282,128 @@ const DemoData = {
       }
 
       case 'getHistorico': {
-        return { servico: s.servico, rotina: s.rotina, telegrafia: s.telegrafiaHistorico, oficiais: s.oficiais, notificacoes: s.notificacoes, entradas: s.oficiaisPresentes.map(o => ({ oficialId: o.id, tipo: 'entrada', horario: o.horarioEntrada })) };
+        const reqDate = typeof data === 'string' ? data : (data?.data || '');
+        const reqDateNorm = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(reqDate) : reqDate;
+        const reqServicoId = data?.servicoId;
+        const reqPostoId = data?.postoId;
+
+        if (!s.servicos) s.servicos = [];
+        let servicosNaData = s.servicos.filter(sv => {
+          if (!sv) return false;
+          if (reqDateNorm) {
+            const svNorm = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(sv.data) : sv.data;
+            return svNorm === reqDateNorm;
+          }
+          return true;
+        });
+        if (servicosNaData.length === 0 && s.servico) {
+          const svNorm = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(s.servico.data) : s.servico.data;
+          if (!reqDateNorm || svNorm === reqDateNorm) {
+            servicosNaData = [s.servico];
+          }
+        }
+        if (reqServicoId && (!servicosNaData || servicosNaData.length === 0)) {
+          const svById = s.servicos.find(sv => sv.id === reqServicoId) || (s.servico && s.servico.id === reqServicoId ? s.servico : null);
+          if (svById) servicosNaData = [svById];
+        }
+
+        if (servicosNaData.length === 0) {
+          return { servico: null, servicos: [], rotina: [], telegrafia: [], oficiais: [], notificacoes: [], ocorrencias: [] };
+        }
+
+        let target = null;
+        if (reqServicoId) {
+          target = servicosNaData.find(sv => sv.id === reqServicoId);
+        }
+        if (!target && reqPostoId) {
+          target = servicosNaData.find(sv => sv.postoId === reqPostoId);
+        }
+        if (!target) {
+          target = servicosNaData[0];
+        }
+
+        const rotinaTotal = s.rotinas || [];
+        const rotinaDoServico = rotinaTotal.filter(r => r.servicoId === target.id);
+        const rotinaFinal = rotinaDoServico.length > 0 ? rotinaDoServico : (s.rotina || []);
+        const ocorrenciasDoServico = (s.ocorrencias || []).filter(o => o.servicoId === target.id && o.Status !== 'removido');
+
+        const postosAll = s.postosServico || [];
+        const postosMap = {};
+        postosAll.forEach(p => { postosMap[p.id] = p; });
+
+        const servicosInfo = servicosNaData.map(sv => {
+          const p = postosMap[sv.postoId];
+          return {
+            id: sv.id,
+            postoId: sv.postoId,
+            postoNome: p ? p.nome : 'Posto',
+            postoTipo: p ? p.tipo : 'POSTO',
+            prontidao: sv.prontidao || 'verde',
+            comandanteNome: sv.comandanteNome || '-',
+            horarioInicio: sv.horarioInicio || '',
+            horarioFim: sv.horarioFim || '-',
+            Status: sv.Status || 'encerrado'
+          };
+        });
+
+        return {
+          servico: target,
+          servicos: servicosInfo,
+          rotina: rotinaFinal,
+          telegrafia: (s.telegrafiaHistorico || []).filter(t => !t.servicoId || t.servicoId === target.id),
+          oficiais: s.oficiais || [],
+          notificacoes: (s.notificacoes || []).filter(n => !n.servicoId || n.servicoId === target.id),
+          ocorrencias: ocorrenciasDoServico,
+          entradas: (s.oficiaisHistorico || []).filter(e => !e.servicoId || e.servicoId === target.id).map(o => ({ oficialId: o.oficialId, tipo: 'entrada', horario: o.horarioEntrada, horarioSaida: o.horarioSaida }))
+        };
       }
 
       case 'getRelatorio': {
         const tipo = data.tipo || 'resumo';
-        const base = { servico: s.servico ? { id: s.servico.id, data: s.servico.data, prontidao: s.servico.prontidao, comandante: s.servico.comandanteNome, postoId: s.servico.postoId, horarioInicio: s.servico.horarioInicio, horarioFim: s.servico.horarioFim || '-' } : null };
-        if (!base.servico) return { ...base, itens: [] };
+        const reqDate = data.data;
+        const reqServicoId = data.servicoId;
+        const reqPostoId = data.postoId;
 
-        const rotina = s.rotina || [];
-        const ocorrencias = (s.ocorrencias || []).filter(o => o.Status !== 'removido');
-        const historicoTel = s.telegrafiaHistorico || [];
-        const historicoOf = s.oficiaisHistorico || [];
+        const hist = this.handle('getHistorico', { data: reqDate, servicoId: reqServicoId, postoId: reqPostoId });
+        if (!hist.servico) return { servico: null, servicos: hist.servicos || [], itens: [] };
+
+        const target = hist.servico;
+        const postosAll = s.postosServico || [];
+        const posto = postosAll.find(p => p.id === target.postoId);
+
+        const base = {
+          servico: {
+            id: target.id,
+            data: target.data,
+            prontidao: target.prontidao,
+            comandante: target.comandanteNome || target.comandante,
+            postoId: target.postoId,
+            postoNome: posto ? posto.nome : '',
+            horarioInicio: target.horarioInicio || '-',
+            horarioFim: target.horarioFim || '-'
+          },
+          servicos: hist.servicos || []
+        };
+
+        const rotina = hist.rotina || [];
+        const ocorrencias = (s.ocorrencias || []).filter(o => o.servicoId === target.id && o.Status !== 'removido');
+        const historicoTel = (s.telegrafiaHistorico || []).filter(t => !t.servicoId || t.servicoId === target.id);
+        const historicoOf = (s.oficiaisHistorico || []).filter(o => !o.servicoId || o.servicoId === target.id);
+        const servViats = (s.servicoViaturas || []).filter(v => v.servicoId === target.id && v.Status !== 'removido');
 
         if (tipo === 'resumo') {
           const total = rotina.length;
           const concluidas = rotina.filter(r => r.status === 'concluida').length;
-          return { ...base, stats: { total, concluidas, emAndamento: rotina.filter(r => r.status === 'em_andamento').length, naoIniciadas: rotina.filter(r => r.status === 'nao_iniciada').length, atrasadas: rotina.filter(r => r.status === 'atrasada').length, canceladas: rotina.filter(r => r.status === 'cancelada').length, extras: rotina.filter(r => r.origem === 'extra').length, totalOcorrencias: ocorrencias.length, ocorrenciasFinalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, viaturasDespachadas: (s.servicoViaturas || []).length },
+          return { ...base, stats: { total, concluidas, emAndamento: rotina.filter(r => r.status === 'em_andamento').length, naoIniciadas: rotina.filter(r => r.status === 'nao_iniciada').length, atrasadas: rotina.filter(r => r.status === 'atrasada').length, canceladas: rotina.filter(r => r.status === 'cancelada').length, extras: rotina.filter(r => r.origem === 'extra').length, totalOcorrencias: ocorrencias.length, ocorrenciasFinalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, viaturasDespachadas: servViats.length },
             itens: rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Responsavel: r.responsavel || '-', Status: r.status, 'Concluido por': r.concluidoPor || '-', 'Hora Conclusao': r.horaConclusao || '-' })) };
         }
 
         if (tipo === 'prontidao') {
+          let equipe = [];
+          try { equipe = Array.isArray(target.equipe) ? target.equipe : JSON.parse(target.equipe || '[]'); } catch(e) {}
           return { ...base,
-            efetivo: { totalEquipe: (s.servico.equipe || []).length, totalMilitares: (s.militares || []).length, telegrafia: s.telegrafia?.operador || 'Sem operador' },
-            viaturas: { totalDespachadas: (s.servicoViaturas || []).length, detalhes: (s.servicoViaturas || []).map(v => ({ nome: v.viaturaNome, tipo: v.viaturaTipo, placa: v.viaturaPlaca })) },
+            efetivo: { totalEquipe: equipe.length, totalMilitares: (s.militares || []).length, telegrafia: s.telegrafia?.operador || 'Sem operador' },
+            viaturas: { totalDespachadas: servViats.length, detalhes: servViats.map(v => ({ nome: v.viaturaNome, tipo: v.viaturaTipo, placa: v.viaturaPlaca })) },
             rotina: { total: rotina.length, concluidas: rotina.filter(r => r.status === 'concluida').length, percentual: rotina.length > 0 ? Math.round((rotina.filter(r => r.status === 'concluida').length / rotina.length) * 100) : 0 },
             ocorrencias: { total: ocorrencias.length, finalizadas: ocorrencias.filter(o => o.status === 'finalizada').length, emAndamento: ocorrencias.filter(o => o.status === 'em_andamento').length },
             oficiais: { presentes: (s.oficiaisPresentes || []).length, historico: historicoOf.map(o => ({ nome: o.nome, tipo: 'entrada', horario: o.horarioEntrada })) } };
@@ -2728,7 +4447,16 @@ const DemoData = {
         }
 
         if (tipo === 'auditoria') {
-          return { ...base, itens: [] };
+          const logs = s.logs || [];
+          return {
+            ...base,
+            itens: logs.map(l => ({
+              Data: Utils.formatDateTime(l.dataHora) || l.dataHora,
+              Acao: l.acao,
+              Usuario: l.usuario || l.usuarioNome || '-',
+              Detalhes: l.detalhes || '-'
+            }))
+          };
         }
 
         return { ...base, itens: rotina.map(r => ({ Horario: r.horario, Atividade: r.nome, Status: r.status })) };
@@ -2892,7 +4620,7 @@ const DemoData = {
         const existente = (s.servicoViaturas || []).find(sv => sv.servicoId === svSid && sv.viaturaId === svVid && sv.Status !== 'removido');
         if (existente) return { success: false, error: 'Viatura já vinculada a este serviço' };
         const nowV = this._now();
-        const novo = { id: 'sv-' + Date.now(), servicoId: svSid, viaturaId: svVid, viaturaNome: svVn || '', motorista: svMot || '', motoristaId: svMid || '', comandante: svCom || '', comandanteId: svCid || '', tripulantes: svTrip || [], horarioSaida: nowV, horarioRetorno: '', status: 'ativa', Status: 'ativo' };
+        const novo = { id: 'sv-' + Date.now(), servicoId: svSid, viaturaId: svVid, viaturaNome: svVn || '', motorista: svMot || '', motoristaId: svMid || '', comandante: svCom || '', comandanteId: svCid || '', tripulantes: svTrip || [], horarioSaida: '', horarioRetorno: '', status: 'ativa', Status: 'ativo' };
         s.servicoViaturas = s.servicoViaturas || [];
         s.servicoViaturas.push(novo);
         s.rotina.push({ id: 'r-sva-' + Date.now(), horario: nowV, nome: `🚒 Viatura vinculada: ${svVn || svVid}`, programa: 'Viaturas', responsavel: svMot || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: nowV });
@@ -2977,9 +4705,10 @@ const DemoData = {
         s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${sv.viaturaNome} despachada para ocorrência`, tipo: 'alerta', horario: now2, lida: false });
         const num = data.ocorrenciaNumero || '';
         const titulo = data.ocorrenciaTitulo || '';
-        const evtDesp = { id: 'r-desp-' + Date.now(), horario: now2, nome: `🚨 Despacho: ${sv.viaturaNome}${num ? ' — #'+num+' '+titulo : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || sv.comandante || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now2 };
+        const srvId = sv.servicoId || s.servico?.id || '';
+        const evtDesp = { id: 'r-desp-' + Date.now(), servicoId: srvId, horario: now2, nome: `🚨 Despacho: ${sv.viaturaNome}${num ? ' — #'+num+' '+titulo : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || sv.comandante || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now2 };
         s.rotina.push(evtDesp);
-        TimelineStore.add(evtDesp, s.servico?.id);
+        TimelineStore.add(evtDesp, srvId);
         this.save();
         return { success: true };
       }
@@ -2988,6 +4717,7 @@ const DemoData = {
         const svr = (s.servicoViaturas || []).find(x => x.id === (data.servicoViaturaId || data.id));
         if (!svr) return { success: false, error: 'Viatura não encontrada' };
         const agora = data.horarioRetorno || this._now();
+        const srvId = svr.servicoId || s.servico?.id || '';
         svr.horarioRetorno = agora;
         svr.status = data.destinoStatus || data.status || 'ativa';
         const ocFinalizar = (s.ocorrencias || []).find(oc => oc.servicoId === svr.servicoId && (oc.viaturaIds || []).includes(svr.viaturaId) && oc.status !== 'finalizada' && oc.status !== 'cancelada');
@@ -2996,82 +4726,71 @@ const DemoData = {
           if (outrasViaturas.length === 0) {
             ocFinalizar.horaRetorno = agora;
             ocFinalizar.status = 'finalizada';
-            const evtOcf = { id: 'r-ocf-' + Date.now(), horario: agora, nome: '✅ Ocorrência #' + (ocFinalizar.numero || '') + ' finalizada — viatura(s) retornou à base', programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agora };
+            const evtOcf = { id: 'r-ocf-' + Date.now(), servicoId: srvId, horario: agora, nome: '✅ Ocorrência #' + (ocFinalizar.numero || '') + ' finalizada — viatura(s) retornou à base', programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agora };
             s.rotina.push(evtOcf);
-            TimelineStore.add(evtOcf, s.servico?.id);
+            TimelineStore.add(evtOcf, srvId);
           }
         }
-        const evtRet = { id: 'r-ret-' + Date.now(), horario: agora, nome: `🏠 Retorno à base: ${svr.viaturaNome}`, programa: 'Ocorrências', responsavel: svr.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agora };
+        const rotMsg = svr.status === 'retornando' ? `🏠 Em retorno ao quartel: ${svr.viaturaNome}` : `🏠 Retorno à base: ${svr.viaturaNome} (disponível na base)`;
+        const evtRet = { id: 'r-ret-' + Date.now(), servicoId: srvId, horario: agora, nome: rotMsg, programa: 'Viaturas', responsavel: svr.motorista || svr.comandante || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: agora };
         s.rotina.push(evtRet);
-        TimelineStore.add(evtRet, s.servico?.id);
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${svr.viaturaNome} retornou à base`, tipo: 'info', horario: agora, lida: false });
+        TimelineStore.add(evtRet, srvId);
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: srvId, mensagem: `Viatura ${svr.viaturaNome} retornou à base`, tipo: 'info', horario: agora, lida: false });
 
-        // Se a telegrafia estava desocupada (vazia), alguém da composição da viatura assume a telegrafia
-        const isVazia = !s.telegrafia || !s.telegrafia.militarId || s.telegrafia.militarId === '__VAZIA__' || !s.telegrafia.operador || s.telegrafia.operador === '---';
-        if (isVazia) {
-          let militarIdTele = data.novoTelegrafistaId;
-          let militarNomeTele = data.novoTelegrafistaNome;
-          if (!militarIdTele) {
-            if (svr.tripulantes && svr.tripulantes.length > 0 && svr.tripulantes[0]?.id) {
-              militarIdTele = svr.tripulantes[0].id;
-              militarNomeTele = svr.tripulantes[0].nome;
-            } else if (svr.motoristaId) {
-              militarIdTele = svr.motoristaId;
-              militarNomeTele = svr.motorista;
-            } else if (svr.comandanteId) {
-              militarIdTele = svr.comandanteId;
-              militarNomeTele = svr.comandante;
-            }
+        // Apenas altera a telegrafia se o usuário selecionou explicitamente um novo telegrafista no retorno
+        if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
+          const militarIdTele = data.novoTelegrafistaId;
+          const milObj = (s.militares || []).find(m => m.id === militarIdTele);
+          const militarNomeTele = data.novoTelegrafistaNome || (milObj ? milObj.nome : 'Militar');
+          const iniVazia = s.telegrafiaVazioDesde || agora;
+          let duracaoStr = data.tempoVazia || '';
+          if (s.telegrafiaVazioDesde && !duracaoStr) {
+            try {
+              const pI = String(iniVazia).split(':');
+              const pF = String(agora).split(':');
+              let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
+              if (diff < 0) diff += 1440;
+              const h = Math.floor(diff / 60);
+              const m = diff % 60;
+              duracaoStr = h > 0 ? `${h}h ${m}min` : `${m} min`;
+            } catch(e) {}
           }
-          if (militarIdTele) {
-            if (!militarNomeTele) {
-              const milObj = (s.militares || []).find(m => m.id === militarIdTele);
-              militarNomeTele = milObj ? milObj.nome : 'Militar';
-            }
-            const iniVazia = s.telegrafiaVazioDesde || agora;
-            let duracaoStr = data.tempoVazia || '';
-            if (!duracaoStr) {
-              try {
-                const pI = String(iniVazia).split(':');
-                const pF = String(agora).split(':');
-                let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
-                if (diff < 0) diff += 1440;
-                const h = Math.floor(diff / 60);
-                const m = diff % 60;
-                duracaoStr = h > 0 ? `${h}h ${m}min` : (diff === 0 ? 'menos de 1 min' : `${m} min`);
-              } catch(e) { duracaoStr = '1 min'; }
-            }
-            if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
-            s.telegrafiaHistorico.push({ operador: '---', inicio: iniVazia, fim: agora, duracao: duracaoStr });
-            s.telegrafia = { operador: militarNomeTele, militarId: militarIdTele, horario: agora };
-            s.telegrafiaVazioDesde = null;
+          if (!s.telegrafiaHistorico) s.telegrafiaHistorico = [];
+          if (s.telegrafiaVazioDesde) {
+            s.telegrafiaHistorico.push({ operador: '---', inicio: iniVazia, fim: agora, duracao: duracaoStr || '1 min' });
+          }
+          s.telegrafia = { operador: militarNomeTele, militarId: militarIdTele, horario: agora };
+          s.telegrafiaVazioDesde = null;
 
-            const evtTeleAuto = {
-              id: 'r-tele-' + Date.now(),
-              horario: agora,
-              nome: `📡 ${militarNomeTele} assumiu a telegrafia após retorno da viatura ${svr.viaturaNome} (telegrafia esteve vazia por ${duracaoStr})`,
-              programa: 'Telegrafia',
-              responsavel: militarNomeTele,
-              status: 'concluida',
-              concluidoPor: 'Sistema',
-              horaConclusao: agora
-            };
-            s.rotina.push(evtTeleAuto);
-            TimelineStore.add(evtTeleAuto, s.servico?.id);
-          }
+          const evtTele = {
+            id: 'r-tele-' + Date.now(),
+            servicoId: srvId,
+            horario: agora,
+            nome: `📡 ${militarNomeTele} assumiu a telegrafia`,
+            programa: 'Telegrafia',
+            responsavel: militarNomeTele,
+            status: 'concluida',
+            concluidoPor: 'Sistema',
+            horaConclusao: agora
+          };
+          TimelineStore.add(evtTele, srvId);
+        } else if (data.novoTelegrafistaId === '__VAZIA__') {
+          s.telegrafia = null;
+          if (!s.telegrafiaVazioDesde) s.telegrafiaVazioDesde = agora;
         }
         this.save();
         return { success: true };
       }
 
       case 'criarOcorrencia': {
-        const existentes = (s.ocorrencias || []).filter(o => o.servicoId === data.servicoId && o.Status !== 'removido');
+        const srvId = data.servicoId || s.servico?.id || '';
+        const existentes = (s.ocorrencias || []).filter(o => o.servicoId === srvId && o.Status !== 'removido');
         const num = String(existentes.length + 1).padStart(3, '0');
         const now3 = data.horaAcionamento || data.horaOcorrencia || this._now();
         const oc = {
           id: 'oc-' + Date.now(),
           numero: num,
-          servicoId: data.servicoId,
+          servicoId: srvId,
           titulo: data.titulo,
           natureza: data.natureza || '',
           endereco: data.endereco || '',
@@ -3099,9 +4818,9 @@ const DemoData = {
                 s.telegrafia = null;
                 s.telegrafiaVazioDesde = now3;
               }
-              const evtDesp = { id: 'r-desp-' + Date.now() + Math.random(), horario: now3, nome: `🚨 Despacho/Empenho: ${sv.viaturaNome} — #${num} ${data.titulo}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
+              const evtDesp = { id: 'r-desp-' + Date.now() + Math.random(), servicoId: srvId, horario: now3, nome: `🚨 Despacho/Empenho: ${sv.viaturaNome} — #${num} ${data.titulo}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
               s.rotina.push(evtDesp);
-              TimelineStore.add(evtDesp, s.servico?.id);
+              TimelineStore.add(evtDesp, srvId);
             }
           });
         }
@@ -3109,22 +4828,22 @@ const DemoData = {
         if (data.telegrafiaVazia || data.novoTelegrafistaId === '__VAZIA__') {
           s.telegrafia = null;
           s.telegrafiaVazioDesde = now3;
-          const evtTeleVazia = { id: 'r-tele-' + Date.now(), horario: now3, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
+          const evtTeleVazia = { id: 'r-tele-' + Date.now(), servicoId: srvId, horario: now3, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
           s.rotina.push(evtTeleVazia);
-          TimelineStore.add(evtTeleVazia, s.servico?.id);
+          TimelineStore.add(evtTeleVazia, srvId);
         } else if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
           const mNovo = (s.militares || []).find(x => x.id === data.novoTelegrafistaId);
           const nomeNovo = mNovo ? mNovo.nome : 'Novo militar';
           s.telegrafia = { operador: nomeNovo, militarId: data.novoTelegrafistaId, horario: now3 };
-          const evtTeleNovo = { id: 'r-tele-' + Date.now(), horario: now3, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
+          const evtTeleNovo = { id: 'r-tele-' + Date.now(), servicoId: srvId, horario: now3, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
           s.rotina.push(evtTeleNovo);
-          TimelineStore.add(evtTeleNovo, s.servico?.id);
+          TimelineStore.add(evtTeleNovo, srvId);
         }
 
-        const evtOc = { id: 'r-oc-' + Date.now(), horario: now3, nome: `🚨 Ocorrência #${num}: ${data.titulo}${data.endereco ? ' (' + data.endereco + ')' : ''}`, programa: 'Ocorrências', responsavel: data.efetivo?.[0] || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
+        const evtOc = { id: 'r-oc-' + Date.now(), servicoId: srvId, horario: now3, nome: `🚨 Ocorrência #${num}: ${data.titulo}${data.endereco ? ' (' + data.endereco + ')' : ''}`, programa: 'Ocorrências', responsavel: data.efetivo?.[0] || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now3 };
         s.rotina.push(evtOc);
-        TimelineStore.add(evtOc, s.servico?.id);
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Nova ocorrência #${num}: ${data.titulo}`, tipo: 'urgente', horario: now3, lida: false });
+        TimelineStore.add(evtOc, srvId);
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: srvId, mensagem: `Nova ocorrência #${num}: ${data.titulo}`, tipo: 'urgente', horario: now3, lida: false });
         this.save();
         return { success: true, id: oc.id, numero: num };
       }
@@ -3144,6 +4863,7 @@ const DemoData = {
         const ocr = (s.ocorrencias || []).find(x => x.id === data.ocorrenciaId);
         if (!ocr) return { success: false, error: 'Ocorrência não encontrada' };
         const now = data.horario || this._now();
+        const srvId = ocr.servicoId || s.servico?.id || '';
         const svIds = data.servicoViaturaIds || [];
         if (!svIds.length) return { success: false, error: 'Nenhuma viatura informada' };
 
@@ -3166,26 +4886,26 @@ const DemoData = {
               s.telegrafiaVazioDesde = now;
             }
 
-            const evtApoio = { id: 'r-desp-' + Date.now() + Math.random(), horario: now, nome: `🚨 Apoio/Empenho: ${sv.viaturaNome} despachada para Ocorrência #${ocr.numero}${data.motivoApoio ? ' (' + data.motivoApoio + ')' : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+            const evtApoio = { id: 'r-desp-' + Date.now() + Math.random(), servicoId: srvId, horario: now, nome: `🚨 Apoio/Empenho: ${sv.viaturaNome} despachada para Ocorrência #${ocr.numero}${data.motivoApoio ? ' (' + data.motivoApoio + ')' : ''}`, programa: 'Ocorrência', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
             s.rotina.push(evtApoio);
-            TimelineStore.add(evtApoio, s.servico?.id);
-            s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${sv.viaturaNome} despachada em apoio à ocorrência #${ocr.numero}`, tipo: 'alerta', horario: now, lida: false });
+            TimelineStore.add(evtApoio, srvId);
+            s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: srvId, mensagem: `Viatura ${sv.viaturaNome} despachada em apoio à ocorrência #${ocr.numero}`, tipo: 'alerta', horario: now, lida: false });
           }
         });
 
         if (data.telegrafiaVazia || data.novoTelegrafistaId === '__VAZIA__') {
           s.telegrafia = null;
           s.telegrafiaVazioDesde = now;
-          const evtTeleVazia = { id: 'r-tele-' + Date.now(), horario: now, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+          const evtTeleVazia = { id: 'r-tele-' + Date.now(), servicoId: srvId, horario: now, nome: '📡 Telegrafia vazia — sem operador disponível no quartel', programa: 'Telegrafia', responsavel: 'Telegrafia', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
           s.rotina.push(evtTeleVazia);
-          TimelineStore.add(evtTeleVazia, s.servico?.id);
+          TimelineStore.add(evtTeleVazia, srvId);
         } else if (data.novoTelegrafistaId && data.novoTelegrafistaId !== '__VAZIA__') {
           const mNovo = (s.militares || []).find(x => x.id === data.novoTelegrafistaId);
           const nomeNovo = mNovo ? mNovo.nome : 'Novo militar';
           s.telegrafia = { operador: nomeNovo, militarId: data.novoTelegrafistaId, horario: now };
-          const evtTeleNovo = { id: 'r-tele-' + Date.now(), horario: now, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+          const evtTeleNovo = { id: 'r-tele-' + Date.now(), servicoId: srvId, horario: now, nome: `📡 ${nomeNovo} assumiu a telegrafia`, programa: 'Telegrafia', responsavel: nomeNovo, status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
           s.rotina.push(evtTeleNovo);
-          TimelineStore.add(evtTeleNovo, s.servico?.id);
+          TimelineStore.add(evtTeleNovo, srvId);
         }
 
         this.save();
@@ -3196,6 +4916,7 @@ const DemoData = {
         const ocf = (s.ocorrencias || []).find(x => x.id === (data.id || data.ocorrenciaId));
         if (!ocf) return { success: false, error: 'Ocorrência não encontrada' };
         const now = data.horaRetorno || this._now();
+        const srvId = ocf.servicoId || s.servico?.id || '';
 
         // Caso seja liberação parcial de apenas uma viatura
         if (data.liberarApenasServicoViaturaId) {
@@ -3206,10 +4927,10 @@ const DemoData = {
             ocf.viaturaIds = (ocf.viaturaIds || []).filter(vid => vid !== sv.viaturaId);
             if (!ocf.viaturasLiberadas) ocf.viaturasLiberadas = [];
             ocf.viaturasLiberadas.push({ viaturaId: sv.viaturaId, viaturaNome: sv.viaturaNome, horaRetorno: now, status: sv.status });
-            const evtDesemp = { id: 'r-ret-' + Date.now(), horario: now, nome: `🏠 Desempenho: ${sv.viaturaNome} liberada da Ocorrência #${ocf.numero} (${sv.status === 'retornando' ? 'retornando' : 'disponível na base'})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+            const evtDesemp = { id: 'r-ret-' + Date.now(), servicoId: srvId, horario: now, nome: `🏠 Desempenho: ${sv.viaturaNome} liberada da Ocorrência #${ocf.numero} (${sv.status === 'retornando' ? 'retornando' : 'disponível na base'})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
             s.rotina.push(evtDesemp);
-            TimelineStore.add(evtDesemp, s.servico?.id);
-            s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Viatura ${sv.viaturaNome} liberada da ocorrência #${ocf.numero}`, tipo: 'info', horario: now, lida: false });
+            TimelineStore.add(evtDesemp, srvId);
+            s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: srvId, mensagem: `Viatura ${sv.viaturaNome} liberada da ocorrência #${ocf.numero}`, tipo: 'info', horario: now, lida: false });
           }
           this.save();
           return { success: true };
@@ -3226,16 +4947,16 @@ const DemoData = {
           sv.horarioRetorno = now;
           sv.status = data.destinoStatus || 'ativa';
           const msgStatus = sv.status === 'retornando' ? 'em trânsito para o quartel' : 'disponível na base';
-          const evtRetV = { id: 'r-ret-' + Date.now() + Math.random(), horario: now, nome: `🏠 ${sv.status === 'retornando' ? 'Em retorno' : 'Retorno à base'}: ${sv.viaturaNome} (${msgStatus})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+          const evtRetV = { id: 'r-ret-' + Date.now() + Math.random(), servicoId: srvId, horario: now, nome: `🏠 ${sv.status === 'retornando' ? 'Em retorno' : 'Retorno à base'}: ${sv.viaturaNome} (${msgStatus})`, programa: 'Ocorrências', responsavel: sv.motorista || '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
           s.rotina.push(evtRetV);
-          TimelineStore.add(evtRetV, s.servico?.id);
+          TimelineStore.add(evtRetV, srvId);
         });
 
         const statusTexto = ocf.status === 'cancelada' ? 'cancelada' : (ocf.status === 'trote' ? 'trote confirmado' : 'finalizada');
-        const evtOcf = { id: 'r-ocf-' + Date.now(), horario: now, nome: `✅ Ocorrência #${ocf.numero || ''} ${statusTexto}${data.desfecho ? ' — ' + data.desfecho : ''}`, programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
+        const evtOcf = { id: 'r-ocf-' + Date.now(), servicoId: srvId, horario: now, nome: `✅ Ocorrência #${ocf.numero || ''} ${statusTexto}${data.desfecho ? ' — ' + data.desfecho : ''}`, programa: 'Ocorrências', responsavel: '-', status: 'concluida', concluidoPor: 'Sistema', horaConclusao: now };
         s.rotina.push(evtOcf);
-        TimelineStore.add(evtOcf, s.servico?.id);
-        s.notificacoes.unshift({ id: 'n-' + Date.now(), mensagem: `Ocorrência #${ocf.numero || ''} ${statusTexto}${viaturasDaOcorr.length ? ' — viatura(s) liberada(s)' : ''}`, tipo: 'info', horario: now, lida: false });
+        TimelineStore.add(evtOcf, srvId);
+        s.notificacoes.unshift({ id: 'n-' + Date.now(), servicoId: srvId, mensagem: `Ocorrência #${ocf.numero || ''} ${statusTexto}${viaturasDaOcorr.length ? ' — viatura(s) liberada(s)' : ''}`, tipo: 'info', horario: now, lida: false });
         this.save();
         return { success: true };
       }
@@ -3324,9 +5045,13 @@ const DemoData = {
         postosAll.forEach(p => { postosMap[p.id] = p; });
         return servicos.map(sv => {
           const posto = postosMap[sv.postoId];
-          const rotina = s.rotina || [];
+          const rotina = s.rotinas || s.rotina || [];
           const atividades = rotina.filter(a => a.servicoId === sv.id);
           const concluidas = atividades.filter(a => a.status === 'concluida').length;
+          const emAnd = atividades.find(r => r.status === 'em_andamento');
+          const prox = atividades.find(r => r.status === 'nao_iniciada');
+          const ult = atividades.filter(r => r.status === 'concluida').pop();
+          const ativAtual = emAnd || prox || ult || null;
           let equipe = [];
           try { equipe = Array.isArray(sv.equipe) ? sv.equipe : JSON.parse(sv.equipe || '[]'); } catch(e) {}
           return {
@@ -3337,6 +5062,7 @@ const DemoData = {
             postoTipo: posto ? posto.tipo : '', equipe: equipe,
             totalAtividades: atividades.length || sv.totalAtividades || 0,
             totalConcluidas: concluidas || sv.totalConcluidas || 0,
+            atividadeAtual: ativAtual ? { nome: ativAtual.nome, horario: ativAtual.horario, status: ativAtual.status, responsavel: ativAtual.responsavel } : null,
             Status: sv.Status || 'ativo', observacoes: sv.observacoes || ''
           };
         });
@@ -3360,7 +5086,7 @@ const DemoData = {
 
       case 'registrarLog': {
         if (!s.logs) s.logs = [];
-        s.logs.unshift({ id: 'log-' + Date.now(), dataHora: new Date().toISOString(), acao: data.acao || 'acao', usuario: Auth.userName || 'sistema', detalhes: data.detalhes || '', modulo: data.modulo || '' });
+        s.logs.unshift({ id: 'log-' + Date.now(), dataHora: Utils.formatDateTime(new Date()), acao: data.acao || 'acao', usuario: Auth.userName || 'sistema', detalhes: data.detalhes || '', modulo: data.modulo || '' });
         if (s.logs.length > 500) s.logs = s.logs.slice(0, 500);
         this.save();
         return { success: true };
@@ -3392,3 +5118,18 @@ const DemoData = {
     }
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.API = API;
+  window.DemoData = DemoData;
+  window.SyncQueue = SyncQueue;
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => SyncQueue.init());
+  } else {
+    SyncQueue.init();
+  }
+}
+

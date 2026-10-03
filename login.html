@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Login</title>
+  <meta name="description" content="Acesso ao Sistema de Gestão de Postos e Ocorrências">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/login.css">
+</head>
+<body class="login-page">
+  <div class="login-bg"></div>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logos">
+        <div class="login-logo-bombeiros">
+          <img src="/assets/logos/bombeiros.svg" alt="Corpo de Bombeiros" onerror="this.parentElement.innerHTML='<span style=font-size:2.5rem>🚒</span>'">
+        </div>
+        <div class="login-divider"></div>
+        <div class="login-logo-prontidao">
+          <img src="/assets/logos/sgpo.svg" alt="SGPO" onerror="this.parentElement.innerHTML='<span style=font-weight:800;color:var(--prontidao-color,#00c853);font-size:1.4rem>SGPO</span>'">
+        </div>
+      </div>
+      
+      <h1 class="login-title">SGPO</h1>
+      <p class="login-subtitle">Sistema de Gestão da Prontidão Operacional</p>
+
+      <form id="loginForm" class="login-form">
+        <div class="input-group">
+          <label class="input-label" for="usuario">Usuário ou CPF</label>
+          <input type="text" id="usuario" class="input" placeholder="Digite seu usuário ou CPF" autocomplete="username" required>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label" for="senha">Senha</label>
+          <input type="password" id="senha" class="input" placeholder="Digite sua senha" autocomplete="current-password" required>
+        </div>
+
+        <div id="loginError" class="login-error"></div>
+
+        <button type="submit" id="loginBtn" class="btn btn-primary">Entrar no Sistema</button>
+      </form>
+
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-color,#334155);font-size:0.8rem;color:var(--text-secondary)">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="entrarModoDemo()" style="font-size:0.78rem;color:var(--text-muted);text-decoration:underline">
+          Acesso Rápido de Demonstração
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/login.js"></script>
+  <script>
+    async function entrarModoDemo() {
+      if (typeof API !== 'undefined' && API.enableDemo) {
+        API.enableDemo();
+      } else {
+        localStorage.setItem('sgpo_demo', 'true');
+      }
+      document.getElementById('usuario').value = 'admin';
+      document.getElementById('senha').value = 'admin';
+      const form = document.getElementById('loginForm');
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
+  </script>
+</body>
+</html>

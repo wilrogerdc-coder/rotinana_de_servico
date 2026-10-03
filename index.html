@@ -1,196 +1,284 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-prontidao="verde">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0a0a0f">
-  <meta name="description" content="SGPO - Sistema de Gestão da Prontidão Operacional">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="manifest" href="manifest.json">
-  <title>SGPO - Login</title>
-  <link rel="stylesheet" href="css/base.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/login.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGPO - Sistema de Gestão de Postos e Ocorrências</title>
+  <meta name="description" content="Sistema de gestão operacional para controle de plantão, rotina, viaturas e ocorrências.">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div class="login-page">
-    <div class="login-bg"></div>
-    <div class="login-container">
-      <div class="login-card">
-        <div class="login-logos">
-          <div class="login-logo-bombeiros">
-            <img src="assets/logos/bombeiros.svg" alt="CBPMESP" onerror="this.style.display='none'">
+  <header id="mainHeader"></header>
+
+  <main class="main-content">
+    <div class="action-bar">
+      <div class="action-bar-left">
+        <h1 class="page-title">Painel Operacional</h1>
+        <div id="countdownTime" style="font-size:0.85rem;color:var(--text-secondary);font-weight:600"></div>
+      </div>
+      <div class="action-bar-right">
+        <button class="btn btn-sm" id="btnEncerrarOcorrenciaTopo" onclick="Dashboard.abrirEncerrarOcorrenciaDireto()" style="font-size:0.75rem;padding:4px 12px;background:#00c853;border-color:#00c853;color:#fff;font-weight:700;display:none" title="Encerrar ocorrência diretamente e liberar viaturas para Disponível">🏁 Encerrar Ocorrência</button>
+        <button class="btn btn-secondary" id="btnEditarServico" style="display:none" onclick="Dashboard.showEditarServicoModal()">⚙️ Editar Serviço</button>
+        <button class="btn btn-secondary" id="btnSolicitacoes" style="display:none" onclick="Dashboard.showSolicitacoesModal()">🔔 Solicitações</button>
+        <button class="btn btn-primary" id="btnNovaOcorrencia" onclick="Dashboard.showEmpenharModal()">🚨 Ocorrência</button>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- BLOCO: VIATURAS -->
+      <div class="dash-card" data-block="viaturas">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>🚒</span> Viaturas do Plantão
           </div>
-          <div class="login-divider"></div>
-          <div class="login-logo-prontidao">
-            <img src="assets/logos/prontidao-verde.svg" alt="Prontidão" id="logoProntidao" onerror="this.style.display='none'">
+          <span class="dash-card-badge" id="viaturasBadge" style="display:none">0</span>
+        </div>
+        <div id="viaturasContainer">
+          <div class="empty-state"><p>Carregando viaturas...</p></div>
+        </div>
+      </div>
+
+      <!-- BLOCO: TELEGRAFIA -->
+      <div class="dash-card" data-block="telegrafia">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>📻</span> Telegrafia / Rádio
+          </div>
+          <span class="dash-card-badge" id="telegrafiaBadge">Ativa</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-color);border-radius:10px;border:1px solid var(--border-color);margin-bottom:12px">
+          <span id="telegrafiaAvatar" class="user-avatar" style="width:40px;height:40px;font-size:1rem;background:var(--prontidao-color)">OP</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.95rem;color:var(--text-primary)" id="telegrafiaNome">Operador</div>
+            <div style="font-size:0.75rem;color:var(--text-muted)" id="telegrafiaInicio">Assunção: --:--</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:0.7rem;color:var(--text-muted)">Tempo no posto</div>
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text-secondary)" id="telegrafiaTempo">--</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-secondary" style="flex:1" onclick="Dashboard.mostrarSelecaoTelegrafia()">Trocar Operador</button>
+          <button class="btn btn-sm btn-ghost" onclick="Dashboard.limparTelegrafia()" title="Deixar vazia">Deixar Vazia</button>
+        </div>
+      </div>
+
+      <!-- BLOCO: ROTINA DO PLANTÃO -->
+      <div class="dash-card" data-block="rotina">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>📋</span> Rotina Operacional
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:0.75rem;color:var(--text-muted)"><strong id="concluidasCount">0</strong> / <span id="atividadesCount">0</span> concluídas</span>
+            <div style="width:70px;height:8px;background:var(--bg-tertiary);border-radius:4px;overflow:hidden">
+              <div id="progressFill" style="width:0%;height:100%;background:var(--accent-green);transition:width 0.3s ease"></div>
+            </div>
+            <span id="progressPercent" style="font-size:0.75rem;font-weight:700;color:var(--accent-green)">0%</span>
           </div>
         </div>
 
-        <h1 class="login-title" id="loginTitle">SGPO</h1>
-        <p class="login-subtitle" id="loginSubtitle">Sistema de Gestão da Prontidão Operacional</p>
-
-        <form class="login-form" id="loginForm">
-          <div class="input-group">
-            <label class="input-label" for="usuario">CPF</label>
-            <input class="input" type="text" id="usuario" placeholder="Digite seu CPF" autocomplete="username" required inputmode="numeric">
+        <div id="atividadeAtualCard" style="display:none;background:rgba(30,136,229,0.08);border:1px solid rgba(30,136,229,0.3);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+          <div style="font-size:0.7rem;text-transform:uppercase;color:var(--accent-blue);font-weight:700">Atividade Atual</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px">
+            <div>
+              <span id="atividadeAtualHorario" style="font-weight:700;font-size:0.85rem;margin-right:6px"></span>
+              <span id="atividadeAtualNome" style="font-weight:600;font-size:0.9rem"></span>
+            </div>
+            <span id="atividadeStatus" class="dash-card-badge">Em Andamento</span>
           </div>
+          <div id="atividadeAtualResp" style="font-size:0.75rem;color:var(--text-secondary);margin-top:2px"></div>
+        </div>
 
-          <div class="input-group">
-            <label class="input-label" for="senha">Senha</label>
-            <input class="input" type="password" id="senha" placeholder="Digite sua senha" autocomplete="current-password" required>
+        <div id="rotinaList" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding-right:4px">
+          <div class="empty-state"><p>Carregando rotina...</p></div>
+        </div>
+      </div>
+
+      <!-- BLOCO: TIMELINE -->
+      <div class="dash-card" data-block="timeline">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>⏱️</span> Linha do Tempo
           </div>
+        </div>
+        <div id="timeline" style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;padding-right:4px">
+          <div class="empty-state"><p>Nenhum evento registrado</p></div>
+        </div>
+      </div>
 
-          <div class="login-error" id="loginError"></div>
+      <!-- BLOCO: OFICIAIS DE DIA -->
+      <div class="dash-card" data-block="oficiais">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>⭐</span> Oficiais do Serviço
+          </div>
+          <span class="dash-card-badge" id="oficiaisCount">0</span>
+        </div>
+        <div id="oficiaisList" style="display:flex;flex-direction:column;gap:8px">
+          <div class="empty-state"><p>Carregando oficiais...</p></div>
+        </div>
+      </div>
 
-          <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Entrar</button>
-        </form>
-
-
-
-        <div class="login-footer">
-          SGPO v1.0 - Corpo de Bombeiros PMESP
+      <!-- BLOCO: NOTIFICAÇÕES -->
+      <div class="dash-card" data-block="notificacoes">
+        <div class="dash-card-header">
+          <div class="dash-card-title">
+            <span>🔔</span> Avisos e Notificações
+          </div>
+        </div>
+        <div id="notificacoesList" style="display:flex;flex-direction:column;gap:8px">
+          <div class="empty-state"><p>Nenhum aviso no momento</p></div>
         </div>
       </div>
     </div>
-  </div>
+  </main>
 
-  <div class="modal-overlay" id="apiModal" style="display:none">
+  <!-- MODAL GENÉRICO PADRÃO SGPO -->
+  <div id="modalOverlay" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <h3 class="modal-title">Configurar API</h3>
-        <button class="btn btn-ghost btn-icon" onclick="closeApiConfig()">✕</button>
+        <h3 class="modal-title" id="modalTitle">Modal</h3>
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.closeModal()">✕</button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="input-group">
-          <label class="input-label">URL do Google Apps Script (Web App)</label>
-          <input class="input" type="url" id="apiUrlInput" placeholder="https://script.google.com/macros/s/SEU_ID/exec">
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <!-- MODAL EDITAR SERVIÇO -->
+  <div id="editarServicoModal" class="modal-overlay">
+    <div class="modal" style="max-width:700px">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Editar Serviço Operacional</h3>
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.closeEditarServico()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <div class="input-group" style="flex:1">
+            <label class="input-label">Comandante do Serviço</label>
+            <select class="input select" id="editServicoComandante"></select>
+          </div>
+          <div class="input-group" style="width:160px">
+            <label class="input-label">Prontidão</label>
+            <select class="input select" id="editServicoProntidao">
+              <option value="verde">Verde (Normal)</option>
+              <option value="amarela">Amarela (Alerta)</option>
+              <option value="vermelha">Vermelha (Crítica)</option>
+            </select>
+          </div>
         </div>
-        <p style="font-size:0.8rem;color:var(--text-muted)">
-          Cole a URL do Web App publicado no Google Apps Script.<br>
-          O Apps Script deve estar configurado como "Executar como mim" e "Qualquer pessoa pode acessar".
+        <div class="input-group" style="margin-bottom:14px">
+          <label class="input-label">Observações Gerais do Plantão</label>
+          <textarea class="input" id="editServicoObs" rows="2"></textarea>
+        </div>
+        <div class="input-group" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="input-label" style="font-weight:700">Viaturas Escaladas</label>
+            <button class="btn btn-sm btn-secondary" onclick="Dashboard.showAdicionarViaturaEdicao()">+ Adicionar Viatura</button>
+          </div>
+          <div id="editServicoViaturasList" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div class="input-group">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="input-label" style="font-weight:700">Militares da Escala</label>
+            <button class="btn btn-sm btn-secondary" onclick="Dashboard.showAdicionarEquipeEdicao()">+ Adicionar Militar</button>
+          </div>
+          <div id="editServicoEquipeList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Dashboard.closeEditarServico()">Cancelar</button>
+        <button class="btn btn-primary" onclick="Dashboard.salvarEdicaoServico()">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBMODAL DE EDIÇÃO -->
+  <div id="editSubModal" class="modal-overlay">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <h4 class="modal-title" id="editSubModalTitle">Submodal</h4>
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.closeEditSubModal()">✕</button>
+      </div>
+      <div class="modal-body" id="editSubModalBody"></div>
+      <div class="modal-footer" id="editSubModalFooter"></div>
+    </div>
+  </div>
+
+  <!-- MODAL DE ATIVIDADES / ROTINA DETALHADA -->
+  <div id="atividadesIniciadasModal" class="modal-overlay">
+    <div class="modal" style="max-width:800px">
+      <div class="modal-header">
+        <h3 class="modal-title" id="atividadesModalTitle">Atividades da Rotina</h3>
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.fecharAtividadesModal()">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;gap:16px;min-height:380px">
+        <div id="atividadesListPanel" style="flex:1;max-height:480px;overflow-y:auto"></div>
+        <div id="atividadesDetailPanel" style="flex:1;background:var(--surface-color);padding:14px;border-radius:10px;border:1px solid var(--border-color);display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Dashboard.fecharAtividadesModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SEM SERVIÇO ATIVO -->
+  <div id="noServiceModal" class="modal-overlay">
+    <div class="modal" style="max-width:440px;text-align:center">
+      <div class="modal-body" style="padding:32px 20px">
+        <div style="font-size:3rem;margin-bottom:12px">🚒</div>
+        <h3 style="font-size:1.25rem;font-weight:700;margin-bottom:8px">Nenhum Serviço Ativo</h3>
+        <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:20px">
+          Não há plantão operacional ativo selecionado para hoje.
         </p>
-        <div id="loginConnResult" style="display:none;padding:10px;border-radius:8px;font-size:0.8rem"></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" style="flex:1" onclick="saveApiConfig()">Salvar e Conectar</button>
-          <button class="btn btn-secondary" onclick="testLoginConnection()">Testar</button>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="window.location.href='servicos.html'">📋 Selecionar Serviço</button>
+          <button class="btn btn-secondary" onclick="window.location.href='rotina.html?action=iniciar'">➕ Iniciar Novo</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="js/utils.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/auth.js"></script>
+  <!-- MODAL DE ACESSO -->
+  <div id="acessoModal" class="modal-overlay">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header">
+        <h3 class="modal-title">Solicitação de Acesso</h3>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:12px" id="acessoMotivo">
+          Você não faz parte da equipe deste serviço. Solicite autorização ao comandante do plantão.
+        </p>
+        <div class="input-group">
+          <label class="input-label">Tipo de Permissão</label>
+          <select class="input select" id="acessoTipo">
+            <option value="leitura">Visualização (Leitura)</option>
+            <option value="operador">Operador (Edição Operacional)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:space-between">
+        <button class="btn btn-ghost" onclick="window.location.href='servicos.html'">Voltar aos Serviços</button>
+        <button class="btn btn-primary" onclick="Dashboard.enviarSolicitacaoAcesso()">Solicitar Acesso</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container de Toasts -->
+  <div id="toastContainer"></div>
+
+  <!-- SCRIPTS DO FRONTEND SGPO -->
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/sync.js"></script>
+  <script src="/js/dashboard.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
-      if (config.nomeSistema) document.getElementById('loginTitle').textContent = config.nomeSistema;
-      if (config.subtituloSistema) document.getElementById('loginSubtitle').textContent = config.subtituloSistema;
-      document.getElementById('loginTitle').classList.add('fade-in');
-
-      const campanhaId = config.campanhaAuto !== false ? Utils.autoDetectCampanha() : (config.campanha || 'nenhuma');
-      Utils.applyCampanha(campanhaId);
-
-      if (Auth.isLoggedIn) {
-        window.location.href = 'dashboard.html';
-        return;
-      }
-
-      if (!API.BASE_URL) {
-        document.getElementById('loginError').textContent = 'API não configurada. Clique em "Configurar API".';
-        document.getElementById('loginError').classList.add('visible');
-      }
-
-      document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const usuario = document.getElementById('usuario').value.trim();
-        const senha = document.getElementById('senha').value.trim();
-        const errorEl = document.getElementById('loginError');
-        const btn = document.getElementById('loginBtn');
-
-        if (!usuario || !senha) {
-          errorEl.textContent = 'Preencha todos os campos';
-          errorEl.classList.add('visible');
-          return;
-        }
-
-        if (!API.BASE_URL) {
-          errorEl.textContent = 'Configure a API antes de fazer login.';
-          errorEl.classList.add('visible');
-          btn.disabled = false;
-          btn.textContent = 'Entrar';
-          return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Entrando...';
-        errorEl.classList.remove('visible');
-
-        const result = await Auth.login(usuario, senha);
-
-        if (result.success) {
-          window.location.href = 'dashboard.html';
-        } else {
-          errorEl.textContent = result.error;
-          errorEl.classList.add('visible');
-          btn.disabled = false;
-          btn.textContent = 'Entrar';
-        }
-      });
+      Dashboard.init();
     });
-
-    function showApiConfig() {
-      const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
-      document.getElementById('apiUrlInput').value = config.apiUrl || API.DEFAULT_URL || '';
-      document.getElementById('apiModal').style.display = 'flex';
-    }
-
-    function closeApiConfig() {
-      document.getElementById('apiModal').style.display = 'none';
-    }
-
-    function saveApiConfig() {
-      const url = document.getElementById('apiUrlInput').value.trim();
-      if (!url) { Utils.showToast('Digite a URL da API', 'warning'); return; }
-      API.init(url);
-      Utils.showToast('API configurada com sucesso!', 'success');
-      closeApiConfig();
-    }
-
-    async function testLoginConnection() {
-      const url = document.getElementById('apiUrlInput').value.trim();
-      const result = document.getElementById('loginConnResult');
-      if (!url) { result.style.display = 'block'; result.style.background = 'var(--accent-red-dim, #f4433633)'; result.style.color = 'var(--accent-red, #f44336)'; result.textContent = 'Digite uma URL primeiro'; return; }
-      API.init(url);
-      result.style.display = 'block';
-      result.style.background = 'var(--accent-yellow-dim, #ffd60033)';
-      result.style.color = 'var(--accent-yellow, #ffd600)';
-      result.textContent = 'Testando conexão...';
-      try {
-        const res = await API.testConnection();
-        if (res.success) {
-          result.style.background = 'var(--accent-green-dim, #00c85333)';
-          result.style.color = 'var(--accent-green, #00c853)';
-          result.textContent = `✓ Conectado — ${res.sheets} abas — ${res.latency}ms — v${res.version}`;
-        } else {
-          result.style.background = 'var(--accent-red-dim, #f4433633)';
-          result.style.color = 'var(--accent-red, #f44336)';
-          result.textContent = '✗ Falha: ' + (res.error || 'Erro desconhecido');
-        }
-      } catch (e) {
-        result.style.background = 'var(--accent-red-dim, #f4433633)';
-        result.style.color = 'var(--accent-red, #f44336)';
-        result.textContent = '✗ Erro: ' + e.message;
-      }
-    }
-
-    API.getConfig();
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
   </script>
 </body>
 </html>

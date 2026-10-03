@@ -5,7 +5,7 @@ const Servicos = {
 
   init() {
     NAV.init('servicos');
-    if (!Auth.isLoggedIn) { window.location.href = 'index.html'; return; }
+    if (!Auth.requireAuth()) return;
     this.activeServicoId = localStorage.getItem('sgpo_active_servico_id') || null;
     this.loadServicos();
   },
@@ -18,9 +18,17 @@ const Servicos = {
       this.renderList();
       this.updateSubtitle();
     } catch (e) {
-      console.error('Erro ao carregar serviços:', e);
-      Utils.showToast('Erro ao carregar serviços', 'error');
-      document.getElementById('servicosList').innerHTML = '<div class="empty-state"><p>Erro ao carregar serviços</p></div>';
+      console.warn('Erro ao carregar serviços:', e);
+      let localFallback = [];
+      if (typeof DemoData !== 'undefined') {
+        try {
+          localFallback = DemoData.handle('getServicosAtivos', { usuarioId: Auth.userId }) || [];
+        } catch(err) {}
+      }
+      this.servicos = Array.isArray(localFallback) ? localFallback : [];
+      this.renderStats();
+      this.renderList();
+      this.updateSubtitle();
     }
   },
 
@@ -62,12 +70,37 @@ const Servicos = {
     return list;
   },
 
+  isHabilitado(s) {
+    if (!s) return false;
+    const role = (Auth.userRole || '').toLowerCase();
+    const nivel = (Auth.nivelPermissao || '').toUpperCase();
+    if (role === 'admin' || role === 'superadmin' || nivel === 'GB' || Auth.userId === '_superuser_') return true;
+    if (s.comandanteId && String(s.comandanteId) === String(Auth.userId)) return true;
+    const equipe = s.equipe || [];
+    if (equipe.some(m => (m.id && String(m.id) === String(Auth.userId)) || (m.re && m.re === Auth.user?.re) || (m.reCpf && m.reCpf === Auth.user?.cpf))) return true;
+    if (s.postoId && (Auth.canAbrirPosto(s.postoId) || Auth.canVisualizarPosto(s.postoId))) return true;
+    const userPostos = Auth.postos || [];
+    if (s.postoId && userPostos.includes(s.postoId)) return true;
+    return false;
+  },
+
   renderList() {
     const el = document.getElementById('servicosList');
     const list = this.getFiltered();
 
     if (list.length === 0) {
-      el.innerHTML = '<div class="empty-state"><p>Nenhum serviço encontrado</p></div>';
+      el.innerHTML = `
+        <div class="empty-state" style="padding:40px 20px;text-align:center">
+          <div style="font-size:2.8rem;margin-bottom:12px">📋🚒</div>
+          <h3 style="font-weight:700;margin-bottom:8px">Nenhum Serviço Ativo Encontrado</h3>
+          <p style="color:var(--text-secondary);font-size:0.9rem;max-width:480px;margin:0 auto 20px auto">
+            Não há nenhum plantão operacional ativo para os seus postos no momento. Você pode iniciar um novo serviço agora mesmo.
+          </p>
+          <button class="btn btn-primary" onclick="Servicos.showNovoServico()" style="font-size:0.95rem;padding:8px 20px">
+            ➕ Iniciar Novo Serviço
+          </button>
+        </div>
+      `;
       return;
     }
 
@@ -92,6 +125,10 @@ const Servicos = {
           </div>
 
           <div class="svc-card-info">
+            <div class="svc-info-item">
+              <span class="svc-info-label">Data</span>
+              <span class="svc-info-value" style="font-family:var(--font-mono)">${Utils.formatDate(s.data)}</span>
+            </div>
             <div class="svc-info-item">
               <span class="svc-info-label">Comandante</span>
               <span class="svc-info-value">${Utils.escapeHtml(s.comandanteNome || '-')}</span>
@@ -128,8 +165,15 @@ const Servicos = {
             ${isActive
               ? `<span style="font-size:0.8rem;color:var(--prontidao-color);font-weight:600">✓ Serviço Atual</span>
                  <button class="btn btn-ghost btn-sm" onclick="Servicos.showDetail('${s.id}')">Detalhes</button>`
-              : `<button class="btn btn-primary btn-sm" onclick="Servicos.switchTo('${s.id}')">Entrar</button>
-                 <button class="btn btn-ghost btn-sm" onclick="Servicos.showDetail('${s.id}')">Detalhes</button>`
+              : (s.Status === 'ativo'
+                  ? (this.isHabilitado(s)
+                      ? `<button class="btn btn-primary btn-sm" onclick="Servicos.switchTo('${s.id}')">Entrar</button>
+                         <button class="btn btn-ghost btn-sm" onclick="Servicos.showDetail('${s.id}')">Detalhes</button>`
+                      : `<button class="btn btn-warning btn-sm" onclick="Servicos.pedirPermissao('${s.id}')" style="background:#f57c00;border-color:#f57c00;color:#fff">🔑 Pedir Permissão</button>
+                         <button class="btn btn-ghost btn-sm" onclick="Servicos.showDetail('${s.id}')">Detalhes</button>`
+                    )
+                  : `<button class="btn btn-ghost btn-sm" onclick="Servicos.showDetail('${s.id}')">Detalhes</button>`
+                )
             }
           </div>
         </div>
@@ -182,11 +226,11 @@ const Servicos = {
           </div>
           <div class="detail-field">
             <span class="detail-label">Data</span>
-            <span class="detail-value">${s.data || '-'}</span>
+            <span class="detail-value" style="font-family:var(--font-mono)">${Utils.formatDate(s.data)}</span>
           </div>
           <div class="detail-field">
             <span class="detail-label">Status</span>
-            <span class="detail-value">${s.Status === 'ativo' ? '🟢 Ativo' : s.Status}</span>
+            <span class="detail-value">${s.Status === 'ativo' ? '🟢 Ativo' : (s.Status === 'encerrado' ? '🔴 Encerrado' : s.Status)}</span>
           </div>
         </div>
       </div>
@@ -224,6 +268,7 @@ const Servicos = {
     `;
 
     let footerHtml = '';
+    const habilitado = this.isHabilitado(s);
     if (isActive) {
       footerHtml = `
         <button class="btn btn-ghost" onclick="Servicos.closeDetail()">Fechar</button>
@@ -232,13 +277,74 @@ const Servicos = {
     } else {
       footerHtml = `
         <button class="btn btn-ghost" onclick="Servicos.closeDetail()">Fechar</button>
-        ${s.Status === 'ativo' ? `<button class="btn btn-primary" onclick="Servicos.closeDetail();Servicos.switchTo('${s.id}')">Entrar Neste Serviço</button>` : ''}
-        ${(Auth.userRole === 'admin' || Auth.userRole === 'superadmin' || Auth.userId === '_superuser_') ? `<button class="btn btn-danger btn-sm" onclick="Servicos.encerrarServico('${s.id}')">Encerrar</button>` : ''}
+        ${s.Status === 'ativo'
+          ? (habilitado
+              ? `<button class="btn btn-primary" onclick="Servicos.closeDetail();Servicos.switchTo('${s.id}')">Entrar Neste Serviço</button>`
+              : `<button class="btn btn-warning" style="background:#f57c00;border-color:#f57c00;color:#fff" onclick="Servicos.closeDetail();Servicos.pedirPermissao('${s.id}')">🔑 Pedir Permissão de Acesso</button>`
+            )
+          : `
+            <button class="btn btn-primary" style="background:#1565c0;border-color:#1565c0" onclick="Servicos.abrirNoDashboard('${s.id}')">👁️ Abrir no Dashboard</button>
+            <button class="btn btn-secondary" onclick="Servicos.abrirRelatorio('${s.id}', '${s.data || ''}', '${s.postoId || ''}')">📄 Gerar Relatórios</button>
+          `
+        }
+        ${(Auth.userRole === 'admin' || Auth.userRole === 'superadmin' || Auth.userId === '_superuser_') && s.Status === 'ativo' ? `<button class="btn btn-danger btn-sm" onclick="Servicos.encerrarServico('${s.id}')">Encerrar</button>` : ''}
       `;
     }
     footer.innerHTML = footerHtml;
 
     modal.style.display = 'flex';
+  },
+
+  pedirPermissao(servicoId) {
+    const s = this.servicos.find(sv => sv.id === servicoId);
+    if (!s) return;
+    this._solicitandoServicoId = servicoId;
+    const desc = document.getElementById('pedirPermissaoDesc');
+    if (desc) {
+      desc.innerHTML = `Solicitar autorização de acesso ao serviço de <strong>${Utils.escapeHtml(s.postoNome || 'Posto')}</strong> comandado por <strong>${Utils.escapeHtml(s.comandanteNome || '-')}</strong>.`;
+    }
+    const modal = document.getElementById('pedirPermissaoModal');
+    if (modal) modal.style.display = 'flex';
+  },
+
+  closePedirPermissao() {
+    const modal = document.getElementById('pedirPermissaoModal');
+    if (modal) modal.style.display = 'none';
+    this._solicitandoServicoId = null;
+  },
+
+  async enviarPermissao() {
+    const sId = this._solicitandoServicoId;
+    if (!sId) return;
+    const tipo = document.getElementById('pedirPermissaoTipo')?.value || 'operador';
+    const motivo = (document.getElementById('pedirPermissaoMotivo')?.value || '').trim() || 'Acesso solicitado via Gerenciador de Serviços';
+    const btn = document.getElementById('btnEnviarPermissao');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+      const res = await API.solicitarAcesso(sId, tipo, motivo);
+      if (res && res.success !== false) {
+        Utils.showToast('Solicitação de acesso enviada ao comandante com sucesso!', 'success');
+        this.closePedirPermissao();
+      } else {
+        Utils.showToast(res?.error || 'Erro ao solicitar acesso', 'warning');
+      }
+    } catch(e) {
+      Utils.showToast('Erro ao solicitar permissão: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar Solicitação'; }
+    }
+  },
+
+  abrirNoDashboard(servicoId) {
+    this.closeDetail();
+    localStorage.setItem('sgpo_active_servico_id', servicoId);
+    Utils.showToast('Abrindo serviço...', 'info');
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 300);
+  },
+
+  abrirRelatorio(servicoId, data, postoId) {
+    this.closeDetail();
+    window.location.href = `relatorios.html?data=${encodeURIComponent(data)}&postoId=${encodeURIComponent(postoId)}&servicoId=${encodeURIComponent(servicoId)}`;
   },
 
   closeDetail() {

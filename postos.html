@@ -189,14 +189,18 @@
 
       async load() {
         try {
-          const [postosResult, viaturasResult, tiposResult] = await Promise.allSettled([
+          const [postosResult, viaturasResult, tiposResult, militaresResult, statusHojeResult] = await Promise.allSettled([
             API.getPostosComServico(),
             API.getViaturas(),
-            API.getTiposViatura()
+            API.getTiposViatura(),
+            API.getMilitares(),
+            API.getStatusServicosHoje()
           ]);
           const postosData = postosResult.status === 'fulfilled' && postosResult.value ? postosResult.value : {};
           const viaturasData = viaturasResult.status === 'fulfilled' && Array.isArray(viaturasResult.value) ? viaturasResult.value : [];
           const tiposData = tiposResult.status === 'fulfilled' && Array.isArray(tiposResult.value) ? tiposResult.value : [];
+          this.militares = militaresResult.status === 'fulfilled' && Array.isArray(militaresResult.value) ? militaresResult.value : [];
+          this.statusServicosHoje = statusHojeResult.status === 'fulfilled' ? statusHojeResult.value : (await API.getStatusServicosHoje().catch(() => null));
 
           this.postos = Array.isArray(postosData.postos) ? postosData.postos : [];
           this.viaturas = (viaturasData || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
@@ -310,12 +314,19 @@
                 ${viaturasHtml}
               </div>
               <div style="display:flex;gap:6px">
+                ${temServico ? `
+                  <button class="btn btn-secondary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.acessarPosto('${posto.id}','${posto.servico?.id || ''}')">Acessar</button>
+                ` : ''}
                 ${temServico && podeEditar ? `
                   <button class="btn btn-primary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.openEdit('${posto.id}')">Editar</button>
                   <button class="btn btn-danger btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.encerrarServico('${posto.id}','${Utils.escapeHtml(posto.nome).replace(/'/g, "\\'")}')">Encerrar</button>
                 ` : ''}
                 ${!temServico && podeEditar ? `
-                  <button class="btn btn-primary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.openIniciar('${posto.id}','${Utils.escapeHtml(posto.nome).replace(/'/g, "\\'")}')">Iniciar</button>
+                  ${(this.statusServicosHoje?.postosComServicoHoje?.has(String(posto.id))) ? `
+                    <span style="font-size:.75rem;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,0.06);color:var(--text-muted);font-weight:600" title="Apenas um serviço por posto de serviço no mesmo dia">Serviço já realizado hoje</span>
+                  ` : `
+                    <button class="btn btn-primary btn-sm" style="font-size:.78rem;padding:4px 12px" onclick="PostosPage.openIniciar('${posto.id}','${Utils.escapeHtml(posto.nome).replace(/'/g, "\\'")}')">Iniciar</button>
+                  `}
                 ` : ''}
               </div>
             </div>
@@ -382,17 +393,31 @@
       async showAddEquipeModal() {
         const militares = await API.getMilitares() || [];
         const existingIds = new Set(this._equipeEdicao.map(m => m.id));
+        const pId = this._selectedPostoId || '';
         const cadastrados = (militares || []).filter(m => m.ativo !== false && m.Status !== 'removido' && !existingIds.has(m.id));
+        cadastrados.sort((a, b) => {
+          const aPosto = pId && String(a.postoServicoId || a.postoId || '') === String(pId);
+          const bPosto = pId && String(b.postoServicoId || b.postoId || '') === String(pId);
+          if (aPosto && !bPosto) return -1;
+          if (!aPosto && bPosto) return 1;
+          return (a.nome || '').localeCompare(b.nome || '');
+        });
         const body = document.getElementById('addEquipeList');
-        body.innerHTML = cadastrados.map(m => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface,#1a1a2e);border-radius:8px;margin-bottom:6px">
+        body.innerHTML = cadastrados.map(m => {
+          const isDoPosto = pId && String(m.postoServicoId || m.postoId || '') === String(pId);
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface,#1a1a2e);border-radius:8px;margin-bottom:6px;${isDoPosto ? 'border-left:3px solid var(--prontidao-color,#00c853);' : ''}">
             <div>
-              <div style="font-size:.88rem;color:var(--text-primary);font-weight:500">${Utils.escapeHtml(m.nome)}</div>
+              <div style="font-size:.88rem;color:var(--text-primary);font-weight:500;display:flex;align-items:center;gap:6px">
+                <span>${Utils.escapeHtml(m.nome)}</span>
+                ${isDoPosto ? '<span style="font-size:0.7rem;padding:1px 6px;border-radius:10px;background:rgba(0,200,83,0.15);color:#00c853;font-weight:700">Deste Posto</span>' : ''}
+              </div>
               <div style="font-size:.75rem;color:var(--text-secondary)">${Utils.escapeHtml(m.posto || m.graduacao || '')}</div>
             </div>
             <button class="btn btn-primary btn-sm" style="font-size:.75rem;padding:4px 10px" onclick="PostosPage._addMembro('${m.id}','${m.nome.replace(/'/g, "\\'")}','${(m.posto||m.graduacao||'').replace(/'/g, "\\'")}')">+ Adicionar</button>
           </div>
-        `).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhum militar disponível para adicionar</p>';
+        `;
+        }).join('') || '<p style="color:var(--text-secondary);padding:16px;text-align:center">Nenhum militar disponível para adicionar</p>';
         const modal = document.getElementById('addEquipeModal');
         modal.style.display = 'flex';
         modal.style.zIndex = '10000';
@@ -484,8 +509,9 @@
           <div class="input-group">
             <label class="input-label">Situação / Status</label>
             <select class="input select" id="postEditViaturaStatus">
-              <option value="ativa" ${(!v.status || v.status === 'ativa') ? 'selected' : ''}>Em atendimento (Ativa)</option>
-              <option value="retornando" ${v.status === 'retornando' ? 'selected' : ''}>Retornando</option>
+              <option value="ativa" ${(!v.status || v.status === 'ativa') ? 'selected' : ''}>Disponível na Base (Pronta)</option>
+              <option value="em_ocorrencia" ${v.status === 'em_ocorrencia' ? 'selected' : ''}>Em atendimento (Ocorrência)</option>
+              <option value="retornando" ${v.status === 'retornando' ? 'selected' : ''}>Retornando ao Quartel</option>
               <option value="encerrada" ${(v.status === 'encerrada' || v.status === 'reserva') ? 'selected' : ''}>Encerrada (Reserva)</option>
             </select>
           </div>
@@ -728,6 +754,11 @@
       /* ═══ INICIAR SERVIÇO ═══ */
 
       openIniciar(postoId, postoNome) {
+        if (this.statusServicosHoje?.postosComServicoHoje?.has(String(postoId))) {
+          Utils.showToast('Este posto já possui serviço iniciado hoje. Permitido apenas um serviço por posto por dia.', 'warning');
+          return;
+        }
+
         this._iniciarPostoId = postoId;
         this._iniciarViaturas = [];
         document.getElementById('iniciarPostoLabel').textContent = 'Iniciar serviço para: ' + postoNome;
@@ -735,8 +766,10 @@
         const sel = document.getElementById('iniciarComandante');
         sel.innerHTML = '<option value="">Selecionar comandante</option>';
         const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
-        const militares = state.militares || [];
-        militares.forEach(m => {
+        const militares = (this.militares && this.militares.length > 0) ? this.militares : (state.militares || []);
+        // Usuários que já estão empenhados em outros postos ativos não devem aparecer na lista de seleção ao iniciar um serviço
+        const disponiveis = militares.filter(m => !API.isMilitarEmpenhado(m, this.statusServicosHoje));
+        disponiveis.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m.id;
           opt.textContent = m.nome + (m.posto ? ' - ' + m.posto : '');
@@ -785,13 +818,25 @@
 
       async confirmarIniciar() {
         if (!this._iniciarPostoId) return;
+
+        if (this.statusServicosHoje?.postosComServicoHoje?.has(String(this._iniciarPostoId))) {
+          Utils.showToast('Este posto já possui serviço iniciado hoje. Permitido apenas um serviço por posto por dia.', 'error');
+          return;
+        }
+
         const prontidao = document.getElementById('iniciarProntidao').value;
         const comandanteId = document.getElementById('iniciarComandante').value;
         const observacoes = document.getElementById('iniciarObs').value;
 
         const state = JSON.parse(localStorage.getItem('sgpo_state') || '{}');
-        const militares = state.militares || [];
+        const militares = (this.militares && this.militares.length > 0) ? this.militares : (state.militares || []);
         const cmd = militares.find(m => m.id === comandanteId);
+
+        if (cmd && API.isMilitarEmpenhado(cmd, this.statusServicosHoje)) {
+          Utils.showToast('O comandante selecionado já está empenhado em outro posto de serviço ativo.', 'error');
+          return;
+        }
+
         const comandanteNome = cmd ? cmd.nome : '';
         const equipe = comandanteId ? [{ id: comandanteId, nome: comandanteNome, posto: cmd ? cmd.posto : '' }] : [];
 
@@ -802,6 +847,16 @@
             viaturas: this._iniciarViaturas
           });
           if (result.success) {
+            localStorage.setItem('sgpo_service_version', Date.now());
+            localStorage.setItem('sgpo_active_servico_id', result.servicoId);
+            localStorage.setItem('sgpo_active_posto_id', this._iniciarPostoId);
+            if (typeof TimelineStore !== 'undefined') {
+              TimelineStore.clear(result.servicoId);
+              TimelineStore.clear('current');
+            }
+            localStorage.removeItem('sgpo_cached_servico');
+            localStorage.removeItem('sgpo_cached_postos_com_servico');
+
             for (const v of this._iniciarViaturas) {
               await API.iniciarServicoViatura({
                 servicoId: result.servicoId,
@@ -810,13 +865,27 @@
               }).catch(() => {});
             }
             Utils.log('iniciar_servico', `Serviço iniciado no posto ${this._iniciarPostoId} - Prontidão: ${prontidao}`, 'postos');
-            Utils.showToast('Serviço iniciado com sucesso!', 'success');
+            Utils.showToast('Serviço iniciado com sucesso! Rotinas no formato inicial.', 'success');
+            try {
+              BroadcastChannel && new BroadcastChannel('sgpo').postMessage({
+                type: 'service_started',
+                servicoId: result.servicoId,
+                postoId: this._iniciarPostoId
+              });
+            } catch (e) {}
             this.closeIniciar();
             await this.load();
           } else {
             Utils.showToast(result.error || 'Erro ao iniciar', 'error');
           }
         } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+      },
+
+      acessarPosto(postoId, servicoId) {
+        if (servicoId) localStorage.setItem('sgpo_active_servico_id', servicoId);
+        if (postoId) localStorage.setItem('sgpo_active_posto_id', postoId);
+        localStorage.removeItem('sgpo_cached_servico');
+        window.location.href = `rotina.html?postoId=${encodeURIComponent(postoId)}${servicoId ? `&servicoId=${encodeURIComponent(servicoId)}` : ''}`;
       },
 
       closeIniciar() {

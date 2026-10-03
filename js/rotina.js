@@ -6,6 +6,15 @@ const Rotina = {
     if (!Auth.requireAuth()) return;
     if (!Auth.canTela('rotina', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
     NAV.init('rotina');
+    try {
+      const bc = new BroadcastChannel('sgpo');
+      bc.onmessage = (e) => {
+        if (e.data?.type === 'service_started') {
+          Rotina.reiniciarTela(e.data?.servicoId);
+        }
+      };
+    } catch (e) {}
+
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'iniciar') {
       await this.showIniciarPanel();
@@ -23,14 +32,16 @@ const Rotina = {
     this.viaturasSelecionadas = [];
     this.viaturasDetalhes = {};
     try {
-      const [milResult, postosResult, viatResult, tiposResult] = await Promise.allSettled([
+      const [milResult, postosResult, viatResult, tiposResult, statusHojeResult] = await Promise.allSettled([
         API.getMilitares(),
         API.getPostosServico(),
         API.getViaturas(),
-        API.getTiposViatura()
+        API.getTiposViatura(),
+        API.getStatusServicosHoje()
       ]);
+      this.statusServicosHoje = statusHojeResult.status === 'fulfilled' ? statusHojeResult.value : (await API.getStatusServicosHoje().catch(() => null));
       this.militares = milResult.status === 'fulfilled' && Array.isArray(milResult.value) ? milResult.value : [];
-      this.postos = postosResult.status === 'fulfilled' && Array.isArray(postosResult.value) ? postosResult.value : [];
+      this.postos = (postosResult.status === 'fulfilled' && Array.isArray(postosResult.value) ? postosResult.value : []).filter(p => p && p.id && !String(p.id).startsWith('ps-'));
       const viatList = viatResult.status === 'fulfilled' && Array.isArray(viatResult.value) ? viatResult.value : [];
       const tiposList = tiposResult.status === 'fulfilled' && Array.isArray(tiposResult.value) ? tiposResult.value : [];
       this.viaturasDisponiveis = viatList.filter(v => v && v.ativo !== false && v.Status !== 'removido');
@@ -40,7 +51,7 @@ const Rotina = {
         this.militares = DemoData.getState().militares || [];
       }
       if (this.postos.length === 0 && typeof DemoData !== 'undefined') {
-        this.postos = DemoData.getState().postosServico || [];
+        this.postos = (DemoData.getState().postosServico || []).filter(p => p && p.id && !String(p.id).startsWith('ps-'));
       }
       if (this.viaturasDisponiveis.length === 0 && typeof DemoData !== 'undefined') {
         this.viaturasDisponiveis = (DemoData.getState().viaturas || []).filter(v => v && v.ativo !== false && v.Status !== 'removido');
@@ -54,13 +65,50 @@ const Rotina = {
       this.renderEquipeSelecionados();
       this.updateComandanteSelect();
       this.renderViaturasChecklist();
+
+      // Verifica parâmetro de URL se foi solicitado posto específico
+      const params = new URLSearchParams(window.location.search);
+      const urlPosto = params.get('postoId');
+      if (urlPosto) {
+        if (this.statusServicosHoje?.postosComServicoHoje?.has(String(urlPosto))) {
+          Utils.showToast('O posto solicitado já possui serviço iniciado hoje. Permitido apenas um serviço por posto por dia.', 'warning');
+        } else {
+          const sel = document.getElementById('postoServicoSelect');
+          if (sel) sel.value = urlPosto;
+          await this.selectPostoServico(urlPosto);
+        }
+      }
     } catch (e) { console.warn('showIniciarPanel warn:', e); }
+  },
+
+  isMilitarEmpenhado(m) {
+    if (!m) return false;
+    return API.isMilitarEmpenhado(m, this.statusServicosHoje);
   },
 
   renderPostoSelect() {
     const sel = document.getElementById('postoServicoSelect');
     if (!sel) return;
-    const postos = this.postos.filter(p => p.tipo === 'POSTO');
+    let postos = this.postos.filter(p => p.tipo === 'POSTO');
+    if (postos.length === 0) postos = this.postos;
+    const role = (Auth.userRole || '').toLowerCase();
+    const nivel = (Auth.nivelPermissao || '').toUpperCase();
+    if (role !== 'admin' && role !== 'superadmin' && nivel !== 'GB' && Auth.userId !== '_superuser_') {
+      if (Auth.postosAbrir && Auth.postosAbrir.length > 0) {
+        postos = postos.filter(p => Auth.canAbrirPosto(p.id));
+      }
+    }
+
+    // Não exibir os postos na lista caso já estejam com serviço iniciado no mesmo dia ou ativos
+    const postosComServicoHoje = this.statusServicosHoje?.postosComServicoHoje || new Set();
+    postos = postos.filter(p => !postosComServicoHoje.has(String(p.id)));
+
+    if (postos.length === 0) {
+      sel.innerHTML = '<option value="">Nenhum posto disponível (todos os postos já possuem serviço iniciado hoje)</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
     sel.innerHTML = '<option value="">Selecione o posto de serviço</option>';
     postos.forEach(p => {
       const sgb = this.postos.find(s => s.id === p.postoPaiId);
@@ -72,15 +120,42 @@ const Rotina = {
   async selectPostoServico(postoId) {
     this.selectedPostoId = postoId;
     if (!postoId) return;
+
+    if (this.statusServicosHoje?.postosComServicoHoje?.has(String(postoId))) {
+      Utils.showToast('Este posto já possui serviço iniciado hoje. Permitido apenas um serviço por posto por dia.', 'warning');
+      this.selectedPostoId = '';
+      const sel = document.getElementById('postoServicoSelect');
+      if (sel) sel.value = '';
+      return;
+    }
+
     try {
-      const vinculados = await API.getUsuariosPostos({ postoId });
       const existingIds = new Set(this.equipeSelecionada.filter(e => !e.avulso).map(e => e.id));
-      vinculados.forEach(v => {
-        if (!existingIds.has(v.usuarioId) && v.nome) {
-          this.equipeSelecionada.push({ id: v.usuarioId, nome: v.nome, posto: v.posto || '', reCpf: v.reCpf || '', avulso: false });
+
+      // 1. Traz automaticamente os militares cadastrados vinculados a este posto de serviço (que não estejam empenhados em outro posto ativo)
+      const pertencentesAoPosto = (this.militares || []).filter(m => 
+        String(m.postoServicoId || m.postoId || '') === String(postoId) && !this.isMilitarEmpenhado(m)
+      );
+      pertencentesAoPosto.forEach(m => {
+        if (!existingIds.has(m.id)) {
+          this.equipeSelecionada.push({ id: m.id, nome: m.nome, posto: m.posto || '', reCpf: m.reCpf || '', avulso: false });
+          existingIds.add(m.id);
         }
       });
-    } catch (e) { console.error('Erro ao carregar vinculados:', e); }
+
+      // 2. Compatibilidade com vínculos em usuariosPostos (que não estejam empenhados em outro posto ativo)
+      const vinculados = await API.getUsuariosPostos({ postoId });
+      if (Array.isArray(vinculados)) {
+        vinculados.forEach(v => {
+          if (!existingIds.has(v.usuarioId) && v.nome && !this.isMilitarEmpenhado({ id: v.usuarioId, reCpf: v.reCpf, nome: v.nome })) {
+            this.equipeSelecionada.push({ id: v.usuarioId, nome: v.nome, posto: v.posto || '', reCpf: v.reCpf || '', avulso: false });
+            existingIds.add(v.usuarioId);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Vínculos de usuários/militares não puderam ser carregados:', e.message);
+    }
     this.renderEquipeSelecionados();
     this.updateComandanteSelect();
     const search = document.getElementById('equipeSearch')?.value?.trim() || '';
@@ -90,24 +165,43 @@ const Rotina = {
   renderMilitaresChecklist(filter = '') {
     const el = document.getElementById('militaresChecklist');
     const selectedIds = new Set(this.equipeSelecionada.filter(e => !e.avulso).map(e => e.id));
-    let items = Utils.sortByName(this.militares);
+    // Usuários que já estão empenhados em outros postos ativos não devem aparecer na lista de seleção ao iniciar um serviço
+    let items = (this.militares || []).filter(m => !this.isMilitarEmpenhado(m));
+
+    if (this.selectedPostoId) {
+      items.sort((a, b) => {
+        const aPosto = String(a.postoServicoId || a.postoId || '') === String(this.selectedPostoId);
+        const bPosto = String(b.postoServicoId || b.postoId || '') === String(this.selectedPostoId);
+        if (aPosto && !bPosto) return -1;
+        if (!aPosto && bPosto) return 1;
+        return (a.nome || '').localeCompare(b.nome || '');
+      });
+    } else {
+      items = Utils.sortByName(items);
+    }
+
     if (filter) {
       const f = filter.toLowerCase();
       items = items.filter(m => (m.nome || '').toLowerCase().includes(f) || (m.posto || '').toLowerCase().includes(f) || (m.reCpf || '').includes(f));
     }
 
     if (items.length === 0) {
-      el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">Nenhum militar encontrado</div>';
+      el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">Nenhum militar disponível para seleção</div>';
       return;
     }
 
     el.innerHTML = items.map(m => {
       const checked = selectedIds.has(m.id);
+      const isDoPosto = this.selectedPostoId && String(m.postoServicoId || m.postoId || '') === String(this.selectedPostoId);
+      const pVinculado = (this.postos || []).find(p => p.id === (m.postoServicoId || m.postoId));
       return `
-        <label class="militar-check ${checked ? 'selected' : ''}" data-id="${m.id}">
+        <label class="militar-check ${checked ? 'selected' : ''}" data-id="${m.id}" style="${isDoPosto ? 'border-left:3px solid var(--prontidao-color,#00c853);' : ''}">
           <input type="checkbox" ${checked ? 'checked' : ''} onchange="Rotina.toggleMilitar('${m.id}', this.checked)">
-          <div class="militar-check-info">
-            <div class="militar-check-name">${Utils.escapeHtml(m.nome)}</div>
+          <div class="militar-check-info" style="flex:1">
+            <div class="militar-check-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span>${Utils.escapeHtml(m.nome)}</span>
+              ${isDoPosto ? `<span style="font-size:0.7rem;padding:1px 6px;border-radius:10px;background:rgba(0,200,83,0.15);color:#00c853;font-weight:700">Do Posto</span>` : (pVinculado ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text-muted)">${Utils.escapeHtml(pVinculado.nome)}</span>` : '')}
+            </div>
             <div class="militar-check-detail">${Utils.escapeHtml(m.posto || '')}${m.reCpf ? ' — RE ' + Utils.escapeHtml(m.reCpf) : ''}</div>
           </div>
         </label>
@@ -123,7 +217,7 @@ const Rotina = {
   toggleMilitar(id, checked) {
     if (checked) {
       const m = this.militares.find(x => x.id === id);
-      if (m && !this.equipeSelecionada.find(e => e.id === id)) {
+      if (m && !this.isMilitarEmpenhado(m) && !this.equipeSelecionada.find(e => e.id === id)) {
         this.equipeSelecionada.push({ id: m.id, nome: m.nome, posto: m.posto || '', reCpf: m.reCpf || '', avulso: false });
       }
     } else {
@@ -137,12 +231,13 @@ const Rotina = {
 
   selectAllMilitares() {
     const selectedIds = new Set(this.equipeSelecionada.filter(e => !e.avulso).map(e => e.id));
-    const allSelected = this.militares.every(m => selectedIds.has(m.id));
+    const disponiveis = (this.militares || []).filter(m => !this.isMilitarEmpenhado(m));
+    const allSelected = disponiveis.length > 0 && disponiveis.every(m => selectedIds.has(m.id));
 
     if (allSelected) {
       this.equipeSelecionada = this.equipeSelecionada.filter(e => e.avulso);
     } else {
-      this.militares.forEach(m => {
+      disponiveis.forEach(m => {
         if (!selectedIds.has(m.id)) {
           this.equipeSelecionada.push({ id: m.id, nome: m.nome, posto: m.posto || '', reCpf: m.reCpf || '', avulso: false });
         }
@@ -160,6 +255,12 @@ const Rotina = {
     if (!nome) { Utils.showToast('Digite o nome do integrante', 'warning'); return; }
     const posto = document.getElementById('avulsoPosto').value.trim();
     const re = document.getElementById('avulsoRe').value.trim();
+
+    if (this.isMilitarEmpenhado({ nome, reCpf: re })) {
+      Utils.showToast('Este integrante já está empenhado em outro posto ativo.', 'warning');
+      return;
+    }
+
     const id = 'avulso-' + Date.now();
 
     this.equipeSelecionada.push({ id, nome, posto, reCpf: re, avulso: true });
@@ -453,7 +554,23 @@ const Rotina = {
 
   async confirmarInicio() {
     if (!this.selectedPostoId) { Utils.showToast('Selecione o posto de serviço', 'warning'); return; }
+
+    // Validação estrita: apenas um serviço por posto no mesmo dia
+    if (this.statusServicosHoje?.postosComServicoHoje?.has(String(this.selectedPostoId))) {
+      Utils.showToast('Este posto já possui serviço iniciado hoje. Permitido apenas um serviço por posto por dia.', 'error');
+      return;
+    }
+
     if (this.equipeSelecionada.length === 0) { Utils.showToast('Selecione pelo menos um integrante', 'warning'); return; }
+
+    // Validação estrita: integrantes não podem estar empenhados em outros postos ativos
+    for (const m of this.equipeSelecionada) {
+      if (this.isMilitarEmpenhado(m)) {
+        Utils.showToast(`O integrante "${m.nome}" já está empenhado em outro posto ativo.`, 'error');
+        return;
+      }
+    }
+
     const comandanteId = document.getElementById('comandanteSelect').value;
     if (!comandanteId) { Utils.showToast('Selecione o comandante', 'warning'); return; }
     const comandante = this.equipeSelecionada.find(m => m.id === comandanteId);
@@ -533,19 +650,44 @@ const Rotina = {
             tripulantes
           });
         }
-        if (telegrafistaId) {
-          await API.registrarTelegrafia(servicoId, telegrafistaId);
-        }
-        Utils.showToast('Serviço iniciado!', 'success');
+        Utils.showToast('Serviço iniciado com sucesso!', 'success');
         Utils.playSound('aviso');
         localStorage.setItem('sgpo_service_version', Date.now());
         localStorage.setItem('sgpo_active_servico_id', servicoId);
-        try { BroadcastChannel && new BroadcastChannel('sgpo').postMessage({ type: 'service_started' }); } catch (e) {}
-        window.location.href = 'dashboard.html';
+        localStorage.removeItem('sgpo_cached_servico');
+        try {
+          const bc = new BroadcastChannel('sgpo');
+          bc.postMessage({ type: 'service_started', servicoId });
+        } catch (e) {}
+        // Reinicia a tela de rotina para exibir a nova rotina do serviço criado
+        await this.reiniciarTela(servicoId);
       } else {
         Utils.showToast(result.error || 'Erro', 'error');
       }
     } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
+  },
+
+  async reiniciarTela(servicoId) {
+    if (servicoId) {
+      localStorage.setItem('sgpo_active_servico_id', servicoId);
+    }
+    localStorage.removeItem('sgpo_cached_servico');
+    this.currentFilter = 'todos';
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.f === 'todos'));
+
+    const iniciarPanel = document.getElementById('iniciarPanel');
+    const rotinaView = document.getElementById('rotinaView');
+    if (iniciarPanel) iniciarPanel.style.display = 'none';
+    if (rotinaView) rotinaView.style.display = 'block';
+
+    if (window.location.search) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    this.closeModal();
+    this.closeExtraModal();
+
+    await this.loadRotina();
   },
 
   async loadRotina() {
@@ -553,12 +695,44 @@ const Rotina = {
       const data = await API.getServicoAtual(Auth.userId);
       if (!data?.servico) { await this.showIniciarPanel(); return; }
       this.servico = data.servico;
-      this.rotina = data.rotina || [];
+      const sId = data.servico.id;
+      const isOutroServicoOc = (a) => {
+        if (!a) return true;
+        if (sId && a.servicoId && a.servicoId !== sId) return true;
+        const isOc = a.id?.startsWith('r-oc-') || a.id?.startsWith('r-desp-') || a.id?.startsWith('r-ret-') || a.id?.startsWith('r-ocf-') || a.programa === 'Ocorrências' || a.programa === 'Ocorrência' || a.nome?.includes('🚨');
+        if (isOc && (!sId || !a.servicoId || a.servicoId !== sId)) return true;
+        return false;
+      };
+      // Filtra estritamente eventos operacionais de outros serviços e telegrafia
+      this.rotina = (data.rotina || []).filter(a => !isOutroServicoOc(a) && !a.id?.startsWith('r-tele-') && a.programa !== 'Telegrafia' && !a.nome?.includes('assumiu a telegrafia') && !a.nome?.includes('Telegrafia vazia'));
       this.militares = data.militares || [];
       this.equipeSelecionada = data.servico.equipe || [];
       NAV.updateProntidao(data.servico.prontidao);
       const postos = await API.getPostosServico();
       NAV.updateServiceInfo(data.servico, postos);
+      const postoAtual = (postos || []).find(p => p.id === data.servico.postoId);
+
+      const pBadge = document.getElementById('rotinaPostoBadge');
+      if (pBadge && postoAtual) {
+        pBadge.style.display = 'inline-block';
+        pBadge.textContent = '🏛️ ' + postoAtual.nome;
+      }
+
+      // Render post switcher if multiple active services
+      const servicosAtivos = data.servicosAtivos && data.servicosAtivos.length > 0 ? data.servicosAtivos : await API.getServicosAtivos().catch(() => []);
+      const selWrapper = document.getElementById('rotinaPostoSelectorWrapper');
+      const selPosto = document.getElementById('rotinaPostoSelect');
+      if (selWrapper && selPosto && servicosAtivos && servicosAtivos.length > 1) {
+        selWrapper.style.display = 'flex';
+        selPosto.innerHTML = servicosAtivos.map(sv => `
+          <option value="${sv.id}" ${sv.id === data.servico.id ? 'selected' : ''}>
+            ${Utils.escapeHtml(sv.postoNome || 'Posto')} (${sv.prontidao || 'verde'})
+          </option>
+        `).join('');
+      } else if (selWrapper) {
+        selWrapper.style.display = 'none';
+      }
+
       document.getElementById('iniciarPanel').style.display = 'none';
       document.getElementById('rotinaView').style.display = 'block';
       document.getElementById('rotinaDate').textContent = Utils.formatDate(new Date());
@@ -568,15 +742,39 @@ const Rotina = {
 
       this.renderRotina();
       API.registrarHeartbeat().catch(() => {});
-      Sync.on('rotina_updated', (r) => { this.rotina = r; this.renderRotina(); });
+      Sync.on('rotina_updated', (r) => {
+        const sid = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+        const isOutroServicoOc = (a) => {
+          if (!a) return true;
+          if (sid && a.servicoId && a.servicoId !== sid) return true;
+          const isOc = a.id?.startsWith('r-oc-') || a.id?.startsWith('r-desp-') || a.id?.startsWith('r-ret-') || a.id?.startsWith('r-ocf-') || a.programa === 'Ocorrências' || a.programa === 'Ocorrência' || a.nome?.includes('🚨');
+          if (isOc && (!sid || !a.servicoId || a.servicoId !== sid)) return true;
+          return false;
+        };
+        this.rotina = (r || []).filter(a => !isOutroServicoOc(a) && !a.id?.startsWith('r-tele-') && a.programa !== 'Telegrafia' && !a.nome?.includes('assumiu a telegrafia') && !a.nome?.includes('Telegrafia vazia'));
+        this.renderRotina();
+      });
       const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
       const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
       Sync.start(this.servico.id, syncInterval);
       try {
         const bc = new BroadcastChannel('sgpo');
-        bc.onmessage = (e) => { if (e.data?.type === 'service_started') window.location.reload(); };
+        bc.onmessage = (e) => {
+          if (e.data?.type === 'service_started') {
+            Rotina.reiniciarTela(e.data?.servicoId);
+          }
+        };
       } catch (e) {}
     } catch (e) { Utils.showToast('Erro ao carregar: ' + e.message, 'error'); }
+  },
+
+  async switchPostoServico(servicoId) {
+    if (!servicoId || this.servico?.id === servicoId) return;
+    localStorage.setItem('sgpo_active_servico_id', servicoId);
+    localStorage.removeItem('sgpo_cached_servico');
+    Sync.stop();
+    await this.loadRotina();
+    Utils.showToast('Visualizando rotina do posto selecionado', 'info');
   },
 
   async loadAtividadesPadrao() {
@@ -594,7 +792,16 @@ const Rotina = {
 
   renderRotina() {
     const el = document.getElementById('rotinaList');
-    let items = [...this.rotina];
+    // A tela de rotinas é exclusiva para a rotina diária de atividades do serviço.
+    const sid = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+    const isOutroServicoOc = (a) => {
+      if (!a) return true;
+      if (sid && a.servicoId && a.servicoId !== sid) return true;
+      const isOc = a.id?.startsWith('r-oc-') || a.id?.startsWith('r-desp-') || a.id?.startsWith('r-ret-') || a.id?.startsWith('r-ocf-') || a.programa === 'Ocorrências' || a.programa === 'Ocorrência' || a.nome?.includes('🚨');
+      if (isOc && (!sid || !a.servicoId || a.servicoId !== sid)) return true;
+      return false;
+    };
+    let items = (this.rotina || []).filter(a => !isOutroServicoOc(a) && !a.id?.startsWith('r-tele-') && a.programa !== 'Telegrafia' && !a.nome?.includes('assumiu a telegrafia') && !a.nome?.includes('Telegrafia vazia'));
     if (this.currentFilter === 'pendente') items = items.filter(a => a.status !== 'concluida' && a.status !== 'cancelada');
     if (this.currentFilter === 'concluida') items = items.filter(a => a.status === 'concluida');
     if (this.currentFilter === 'prejudicada') items = items.filter(a => a.status === 'nao_realizada');

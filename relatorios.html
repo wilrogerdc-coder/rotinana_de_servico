@@ -39,9 +39,22 @@
     <div class="no-print">
       <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:var(--spacing-xl)">Relatórios</h2>
       <div class="report-date-selector">
-        <div class="input-group"><label class="input-label">Data</label><input class="input" type="date" id="reportDate"></div>
+        <div class="input-group">
+          <label class="input-label">Posto de Bombeiros</label>
+          <select class="input select" id="reportPosto" style="min-width:200px"></select>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Data do Serviço (DD/MM/AAAA)</label>
+          <input class="input" type="date" id="reportDate">
+        </div>
         <button class="btn btn-primary btn-sm" id="loadBtn" style="margin-top:auto">Carregar Dados</button>
         <button class="btn btn-secondary btn-sm" id="printBtn" style="margin-top:auto;display:none" onclick="window.print()">Imprimir</button>
+      </div>
+
+      <!-- Barra de dias com dados gravados -->
+      <div id="reportRecordedBox" style="margin-bottom:var(--spacing-md);display:none;background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 14px;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:0.8rem;font-weight:600;color:var(--text-muted);white-space:nowrap">📅 Dias com dados gravados:</span>
+        <div id="reportQuickDates" style="display:flex;gap:6px;flex-wrap:wrap"></div>
       </div>
       <div class="report-grid" id="reportGrid">
         <div class="report-card" data-tipo="resumo">
@@ -104,22 +117,121 @@
   <script src="js/sync.js"></script>
   <script src="js/nav.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       if (!Auth.requireAuth()) return;
       if (!Auth.canTela('relatorios', 'ver')) { Utils.showToast('Acesso negado', 'error'); location.href = 'dashboard.html'; return; }
       NAV.init('relatorios');
 
       const reportDate = document.getElementById('reportDate');
+      const reportPosto = document.getElementById('reportPosto');
       const loadBtn = document.getElementById('loadBtn');
       const printBtn = document.getElementById('printBtn');
       const preview = document.getElementById('reportPreview');
       const content = document.getElementById('reportContent');
       const printHeader = document.getElementById('printHeader');
 
-      reportDate.value = new Date().toISOString().split('T')[0];
+      let currentTipo = 'resumo';
+      let postosList = [];
+      const postosMap = new Map();
+      let recordedData = { dates: [], map: {}, items: [] };
+
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlDate = searchParams.get('data');
+      const urlPosto = searchParams.get('postoId');
+      const urlServicoId = searchParams.get('servicoId');
+
+      reportDate.value = urlDate || new Date().toISOString().split('T')[0];
+
+      window.selectReportDate = function(d) {
+        reportDate.value = d;
+        refreshRecordedDatesUI();
+        generate(currentTipo);
+      };
+
+      async function refreshRecordedDates() {
+        const pId = reportPosto?.value || '';
+        try {
+          recordedData = await API.getDatasComServico(pId);
+        } catch(e) {
+          console.warn('[SGPO] Erro ao carregar datas para relatórios:', e);
+        }
+        refreshRecordedDatesUI();
+      }
+
+      function refreshRecordedDatesUI() {
+        const box = document.getElementById('reportRecordedBox');
+        const chipsContainer = document.getElementById('reportQuickDates');
+        if (!box || !chipsContainer) return;
+
+        const dates = recordedData.dates || [];
+        if (dates.length === 0) {
+          box.style.display = 'none';
+          return;
+        }
+
+        box.style.display = 'flex';
+        const curDate = reportDate.value;
+        chipsContainer.innerHTML = dates.slice(0, 10).map(d => {
+          const recs = recordedData.map[d] || [];
+          const pront = recs[0]?.prontidao || 'verde';
+          const isAct = d === curDate;
+          const cor = pront === 'verde' ? '#00c853' : (pront === 'amarela' ? '#ffd600' : '#ff1744');
+          return `
+            <button type="button" class="btn btn-sm ${isAct ? 'btn-primary' : 'btn-secondary'}" style="font-size:0.75rem;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px" onclick="selectReportDate('${d}')">
+              <span style="width:7px;height:7px;border-radius:50%;background:${cor};display:inline-block"></span>
+              <span>${Utils.formatDate(d)}</span>
+              ${recs[0]?.comandante ? `<span style="opacity:0.7">(${Utils.escapeHtml(recs[0].comandante.split(' ')[0])})</span>` : ''}
+            </button>
+          `;
+        }).join('');
+      }
+
+      // Carrega postos respeitando hierarquia e permissões
+      try {
+        const list = await API.getPostosServico();
+        postosList = Array.isArray(list) ? list.filter(p => p.Status !== 'removido') : [];
+        postosList.forEach(p => postosMap.set(p.id, p.nome));
+
+        let userPostos = Auth.userPostos || [];
+        let userPostoIds = userPostos.map(p => p.id || p.postoId);
+        const isGB = Auth.nivelPermissao === 'GB' || Auth.userRole === 'admin' || Auth.userRole === 'superadmin' || Auth.userId === '_superuser_';
+
+        let postosDisponiveis = postosList;
+        if (!isGB && userPostoIds.length > 0) {
+          postosDisponiveis = postosList.filter(p => userPostoIds.includes(p.id));
+        }
+        if (postosDisponiveis.length === 0) postosDisponiveis = postosList;
+
+        if (reportPosto) {
+          reportPosto.innerHTML = postosDisponiveis.map(p => `
+            <option value="${p.id}">${Utils.escapeHtml(p.nome)} (${p.tipo || 'POSTO'})</option>
+          `).join('');
+
+          if (urlPosto && postosDisponiveis.some(p => p.id === urlPosto)) {
+            reportPosto.value = urlPosto;
+          } else if (postosDisponiveis.length > 0) {
+            reportPosto.value = postosDisponiveis[0].id;
+          }
+
+          reportPosto.addEventListener('change', async () => {
+            await refreshRecordedDates();
+            generate(currentTipo);
+          });
+        }
+      } catch(e) {
+        console.error('Erro ao carregar postos:', e);
+      }
+
+      await refreshRecordedDates();
 
       loadBtn.addEventListener('click', () => {
-        generate(reportDate.value);
+        refreshRecordedDatesUI();
+        generate(currentTipo);
+      });
+
+      reportDate.addEventListener('change', () => {
+        refreshRecordedDatesUI();
+        generate(currentTipo);
       });
 
       document.querySelectorAll('.report-card').forEach(card => {
@@ -127,6 +239,7 @@
           document.querySelectorAll('.report-card').forEach(c => c.classList.remove('active'));
           card.classList.add('active');
           const tipo = card.dataset.tipo;
+          currentTipo = tipo;
           if (tipo === 'pdf') {
             generatePDF();
           } else {
@@ -135,13 +248,31 @@
         });
       });
 
-      async function generate(tipo) {
+      async function generate(tipo = currentTipo) {
+        currentTipo = tipo || 'resumo';
         preview.style.display = 'block';
         content.innerHTML = '<div class="skeleton" style="height:200px"></div>';
 
+        const rawD = reportDate.value;
+        const normD = (typeof Utils !== 'undefined' && Utils.normalizeDate) ? Utils.normalizeDate(rawD) : rawD;
+        const pId = reportPosto?.value || '';
+
+        // Tenta descobrir o servicoId gravado para essa data & posto
+        let servId = urlServicoId;
+        if (!servId && recordedData.map && recordedData.map[normD]) {
+          const recs = recordedData.map[normD];
+          const matched = recs.find(r => !pId || r.postoId === pId) || recs[0];
+          if (matched) servId = matched.id;
+        }
+
         try {
-          const data = await API.getRelatorio(tipo, { data: reportDate.value });
-          content.innerHTML = renderReport(tipo, data);
+          const params = {
+            data: normD,
+            postoId: pId,
+            ...(servId ? { servicoId: servId } : {})
+          };
+          const data = await API.getRelatorio(currentTipo, params);
+          content.innerHTML = renderReport(currentTipo, data);
           printBtn.style.display = 'inline-block';
           preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (e) {
@@ -150,8 +281,18 @@
       }
 
       function renderReport(tipo, data) {
-        if (!data) return '<div class="empty-state"><p>Sem dados para esta data</p></div>';
-        if (!data.servico) return '<div class="empty-state"><p>Nenhum serviço registrado para ' + (reportDate.value || 'esta data') + '</p></div>';
+        if (!data || !data.servico) {
+          const dVal = reportDate.value;
+          const latestRecorded = (recordedData.dates && recordedData.dates.length > 0) ? recordedData.dates[0] : null;
+          let msg = '<div class="empty-state">';
+          msg += '<p style="font-size:1.05rem;color:var(--text-muted);margin-bottom:12px">Nenhum serviço registrado para ' + Utils.formatDate(dVal) + ' neste posto.</p>';
+          if (latestRecorded && latestRecorded !== dVal) {
+            msg += '<p style="font-size:0.85rem;color:var(--text-muted)">Dia com serviço gravado disponível:</p>';
+            msg += '<button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="selectReportDate(\'' + latestRecorded + '\')">📅 Carregar relatório de ' + Utils.formatDate(latestRecorded) + '</button>';
+          }
+          msg += '</div>';
+          return msg;
+        }
 
         const titles = {
           resumo: 'Resumo do Dia', prontidao: 'Resumo da Prontidão', historico: 'Histórico Completo',
@@ -160,12 +301,14 @@
         };
 
         const s = data.servico;
+        const postoNome = postosMap.get(s.postoId) || (reportPosto ? reportPosto.options[reportPosto.selectedIndex]?.text : s.postoId) || '-';
         let html = '<h3 style="margin-bottom:var(--spacing-sm)">' + (titles[tipo] || tipo) + '</h3>';
         html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);margin-bottom:var(--spacing-lg)">';
-        html += '<span>📅 ' + (s.data || '-') + '</span>';
-        html += '<span>🎯 Prontidão: ' + (s.prontidao || '-').toUpperCase() + '</span>';
-        html += '<span>👨‍✈️ ' + (s.comandante || '-') + '</span>';
-        if (s.horarioInicio) html += '<span>🕐 ' + s.horarioInicio + (s.horarioFim !== '-' ? ' às ' + s.horarioFim : '') + '</span>';
+        html += '<span>🏢 <strong>Posto:</strong> ' + Utils.escapeHtml(postoNome) + '</span>';
+        html += '<span>📅 <strong>Data:</strong> ' + Utils.formatDate(s.data) + '</span>';
+        html += '<span>🎯 <strong>Prontidão:</strong> ' + (s.prontidao || '-').toUpperCase() + '</span>';
+        html += '<span>👨‍✈️ <strong>Comandante:</strong> ' + Utils.escapeHtml(s.comandante || '-') + '</span>';
+        if (s.horarioInicio) html += '<span>🕐 ' + s.horarioInicio + (s.horarioFim && s.horarioFim !== '-' ? ' às ' + s.horarioFim : '') + '</span>';
         html += '</div>';
 
         if (tipo === 'resumo' && data.stats) {
@@ -389,21 +532,30 @@
         try {
           const tipos = ['resumo', 'prontidao', 'historico', 'timeline', 'telegrafia', 'oficiais', 'ocorrencias', 'auditoria'];
           let fullHtml = '';
+          const params = {
+            data: reportDate.value,
+            postoId: reportPosto?.value || '',
+            ...(urlServicoId ? { servicoId: urlServicoId } : {})
+          };
           for (const tipo of tipos) {
-            const data = await API.getRelatorio(tipo, { data: reportDate.value });
+            const data = await API.getRelatorio(tipo, params);
             if (data && data.servico) {
               fullHtml += '<div style="page-break-before:always" class="report-section">';
               fullHtml += renderReport(tipo, data);
               fullHtml += '</div>';
             }
           }
-          content.innerHTML = fullHtml || '<div class="empty-state"><p>Nenhum dado encontrado para esta data</p></div>';
-          document.getElementById('printHeader').innerHTML = '<h2 style="text-align:center;margin-bottom:8px">RELATÓRIO COMPLETO — ' + (reportDate.value || '-') + '</h2><p style="text-align:center;color:var(--text-secondary);margin-bottom:16px">SGPO — Sistema de Gestão da Prontidão Operacional</p>';
+          content.innerHTML = fullHtml || '<div class="empty-state"><p>Nenhum dado encontrado para este posto nesta data (' + Utils.formatDate(reportDate.value) + ')</p></div>';
+          document.getElementById('printHeader').innerHTML = '<h2 style="text-align:center;margin-bottom:8px">RELATÓRIO COMPLETO — ' + Utils.formatDate(reportDate.value) + '</h2><p style="text-align:center;color:var(--text-secondary);margin-bottom:16px">SGPO — Sistema de Gestão da Prontidão Operacional</p>';
 
           setTimeout(() => { window.print(); }, 500);
         } catch (e) {
           content.innerHTML = '<div class="empty-state"><p>Erro ao gerar relatório: ' + Utils.escapeHtml(e.message) + '</p></div>';
         }
+      }
+
+      if (urlDate || urlPosto || urlServicoId) {
+        generate('resumo');
       }
     });
   </script>

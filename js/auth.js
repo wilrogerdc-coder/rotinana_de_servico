@@ -1,197 +1,220 @@
+/**
+ * Módulo de Autenticação do SGPO
+ */
 const Auth = {
-  SESSION_KEY: 'sgpo_session',
-
-  get currentUser() {
-    const session = sessionStorage.getItem(this.SESSION_KEY);
-    return session ? JSON.parse(session) : null;
-  },
-
   get user() {
-    return this.currentUser;
-  },
-
-  set user(userData) {
-    sessionStorage.setItem(this.SESSION_KEY, JSON.stringify(userData));
+    try {
+      if (sessionStorage.getItem('sgpo_logged_out') === 'true' || localStorage.getItem('sgpo_logged_out') === 'true') return null;
+      if (!sessionStorage.getItem('sgpo_session_active')) return null;
+      const stored = sessionStorage.getItem('sgpo_user') || localStorage.getItem('sgpo_user');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return null;
   },
 
   get isLoggedIn() {
-    return !!this.currentUser;
-  },
-
-  get userRole() {
-    return this.currentUser?.perfil || 'operador';
-  },
-
-  get userName() {
-    return this.currentUser?.nome || '';
+    try {
+      if (sessionStorage.getItem('sgpo_logged_out') === 'true' || localStorage.getItem('sgpo_logged_out') === 'true') return false;
+      if (!sessionStorage.getItem('sgpo_session_active')) return false;
+      const stored = sessionStorage.getItem('sgpo_user') || localStorage.getItem('sgpo_user');
+      return !!stored;
+    } catch(e) {
+      return false;
+    }
   },
 
   get userId() {
-    return this.currentUser?.id || '';
+    return this.user?.id || '';
+  },
+
+  get userName() {
+    return this.user?.nome || this.user?.guerra || 'Usuário';
+  },
+
+  get userRole() {
+    return this.user?.role || this.user?.perfil || 'operador';
   },
 
   get nivelPermissao() {
-    return this.currentUser?.nivelPermissao || 'POSTO';
+    return this.user?.nivelPermissao || 'POSTO';
   },
 
   get postos() {
-    return this.currentUser?.postos || [];
+    return this.user?.postos || [];
   },
 
-  get permissoesTela() {
-    return this.currentUser?.permissoesTela || [];
+  get postosAbrir() {
+    const list = this.user?.postosAbrir;
+    if (Array.isArray(list)) return list.map(String);
+    if (typeof list === 'string') {
+      try { return JSON.parse(list).map(String); } catch(e) { return list.split(',').map(s => s.trim()).filter(Boolean); }
+    }
+    return [];
   },
 
-  can(action) {
-    const permissions = {
-      superadmin: ['all'],
-      admin: ['all'],
-      comandante: ['all', 'iniciar_servico', 'encerrar_servico', 'equipe', 'telegrafia', 'oficiais', 'extras', 'update_atividade', 'editar_atividade', 'excluir_atividade', 'adicionar_fixa'],
-      operador: ['view', 'update_atividade', 'telegrafia', 'oficiais', 'extras', 'editar_atividade', 'excluir_atividade', 'adicionar_fixa'],
-      visualizador: ['view']
-    };
-    const role = this.userRole;
-    if (permissions[role]?.includes('all')) return true;
-    return permissions[role]?.includes(action) || false;
+  get postosVisualizar() {
+    const list = this.user?.postosVisualizar;
+    if (Array.isArray(list)) return list.map(String);
+    if (typeof list === 'string') {
+      try { return JSON.parse(list).map(String); } catch(e) { return list.split(',').map(s => s.trim()).filter(Boolean); }
+    }
+    return [];
   },
 
-  canTela(tela, acao) {
-    if (this.userRole === 'superadmin' || this.userRole === 'admin') return true;
-    const perm = this.permissoesTela.find(p => p.tela === tela);
-    if (!perm) return false;
-    if (perm.acoes.includes('all')) return true;
-    return perm.acoes.includes(acao);
+  canAbrirPosto(postoId) {
+    if (!postoId) return false;
+    const role = (this.userRole || '').toLowerCase();
+    const nivel = (this.nivelPermissao || '').toUpperCase();
+    if (role === 'admin' || role === 'superadmin' || nivel === 'GB' || this.userId === '_superuser_') return true;
+    const list = this.postosAbrir;
+    if (list.length > 0) return list.includes(String(postoId));
+    // Fallback: se não houver postosAbrir parametrizado, verifica postos gerais
+    return (this.postos || []).some(p => (typeof p === 'object' && p ? String(p.id || p.postoId) : String(p)) === String(postoId));
   },
 
-  hasNivel(nivelRequerido) {
-    const ordem = { 'GB': 3, 'SGB': 2, 'POSTO': 1 };
-    return (ordem[this.nivelPermissao] || 0) >= (ordem[nivelRequerido] || 0);
+  canVisualizarPosto(postoId) {
+    if (!postoId) return false;
+    const role = (this.userRole || '').toLowerCase();
+    const nivel = (this.nivelPermissao || '').toUpperCase();
+    if (role === 'admin' || role === 'superadmin' || nivel === 'GB' || this.userId === '_superuser_') return true;
+    const visList = this.postosVisualizar;
+    if (visList.length > 0 && visList.includes(String(postoId))) return true;
+    const abrirList = this.postosAbrir;
+    if (abrirList.length > 0 && abrirList.includes(String(postoId))) return true;
+    return (this.postos || []).some(p => (typeof p === 'object' && p ? String(p.id || p.postoId) : String(p)) === String(postoId));
   },
 
-  get userPostoIds() {
-    return (this.postos || []).map(p => p.id);
+  get postoDefaultId() {
+    return this.user?.postoDefaultId || '';
   },
 
-  get isGB() { return this.nivelPermissao === 'GB'; },
-  get isSGB() { return this.nivelPermissao === 'SGB'; },
-  get isPOSTO() { return this.nivelPermissao === 'POSTO'; },
-  get postoDefaultId() { return this.currentUser?.postoDefaultId || ''; },
-  get mustChangePassword() { return this.currentUser?.mustChangePassword === true; },
+  async login(usuario, senha) {
+    try {
+      if (typeof API !== 'undefined' && API.login) {
+        const res = await API.login(usuario, senha);
+        if (res && res.success && res.user) {
+          try {
+            sessionStorage.removeItem('sgpo_logged_out');
+            localStorage.removeItem('sgpo_logged_out');
+            sessionStorage.setItem('sgpo_session_active', 'true');
+            sessionStorage.setItem('sgpo_user', JSON.stringify(res.user));
+            localStorage.setItem('sgpo_user', JSON.stringify(res.user));
+          } catch(e) {}
+          if (typeof SyncQueue !== 'undefined') {
+            SyncQueue._authError = false;
+            if (SyncQueue.queue.length > 0) {
+              setTimeout(() => SyncQueue.sync(), 200);
+            }
+          }
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res?.error || 'Usuário ou senha incorretos' };
+      }
+      return { success: false, error: 'Módulo de API indisponível' };
+    } catch (e) {
+      return { success: false, error: e.message || 'Erro durante login' };
+    }
+  },
 
-  requireAuth() {
-    if (!this.isLoggedIn) {
-      const path = window.location.pathname;
-      if (!path.endsWith('index.html') && path !== '/' && path !== '') {
-        window.location.href = 'index.html';
+  can(permission) {
+    if (!permission) return true;
+    const role = (this.userRole || '').toLowerCase();
+    const nivel = (this.nivelPermissao || '').toUpperCase();
+    if (role === 'admin' || role === 'superadmin' || nivel === 'GB' || this.userId === '_superuser_') return true;
+    const perms = this.user?.permissions || [];
+    return perms.includes('all') || perms.includes('*') || perms.includes(permission);
+  },
+
+  canTela(tela, acao = 'ver') {
+    if (!tela) return true;
+    const user = this.user;
+    if (!user) return false;
+
+    // Administradores e nível GB têm acesso irrestrito
+    const role = (user.role || user.perfil || this.userRole || '').toLowerCase();
+    const nivel = (user.nivelPermissao || this.nivelPermissao || '').toUpperCase();
+    if (role === 'admin' || role === 'superadmin' || nivel === 'GB' || user.id === '_superuser_' || this.userId === '_superuser_') {
+      return true;
+    }
+
+    const perms = user.permissions || [];
+    if (perms.includes('all') || perms.includes('*')) {
+      return true;
+    }
+
+    const permissoesTela = user.permissoesTela;
+    if (Array.isArray(permissoesTela) && permissoesTela.length > 0) {
+      const telaClean = tela.toLowerCase();
+      const permItem = permissoesTela.find(p => (p.tela || '').toLowerCase() === telaClean);
+      if (!permItem) {
+        if (telaClean === 'dashboard' || telaClean === 'ajuda') return true;
+        return false;
+      }
+
+      let acoes = permItem.acoes;
+      if (typeof acoes === 'string') {
+        try {
+          acoes = JSON.parse(acoes);
+        } catch (e) {
+          acoes = acoes.split(',').map(s => s.trim());
+        }
+      }
+      if (!Array.isArray(acoes)) acoes = [acoes];
+
+      const acaoClean = (acao || 'ver').toLowerCase();
+      if (acoes.includes('all') || acoes.includes('*') || acoes.includes(acaoClean)) {
+        return true;
+      }
+      // Equivalência para aba de oficiais no painel admin
+      if (acaoClean === 'oficiais_a' && acoes.includes('oficiais')) {
+        return true;
       }
       return false;
     }
-    return true;
+
+    // Telas padrão permitidas se não houver restrição configurada
+    const telasPadrao = ['dashboard', 'rotina', 'telegrafia', 'oficiais', 'extras', 'relatorios', 'historico', 'servicos', 'postos', 'ajuda'];
+    if (telasPadrao.includes(tela.toLowerCase()) && acao === 'ver') {
+      return true;
+    }
+
+    return this.can(acao);
   },
 
-  requireRole(roles) {
-    if (!this.can(roles)) {
-      Utils.showToast('Acesso negado', 'error');
-      return false;
+  requireAuth() {
+    if (!this.isLoggedIn) {
+      if (typeof window !== 'undefined' && !window.location.pathname.endsWith('login.html')) {
+        window.location.href = 'login.html';
+        return false;
+      }
     }
     return true;
   },
 
   logout() {
-    if (window._isLoggingOut) return;
-    window._isLoggingOut = true;
-    const userName = this.userName;
-    if (typeof Sync !== 'undefined') Sync.stop();
-    sessionStorage.removeItem(this.SESSION_KEY);
-    try { Utils.log('logout', `${userName} saiu do sistema`, 'auth'); } catch (e) {}
-    window.location.href = 'index.html';
-  },
-
-  async requestNotificationPermission() {
-    if (!('Notification' in window)) return 'unsupported';
-    if (Notification.permission === 'granted') return 'granted';
-    if (Notification.permission === 'denied') return 'denied';
     try {
-      const result = await Notification.requestPermission();
-      return result;
-    } catch (e) {
-      return 'denied';
-    }
-  },
-
-  async login(usuario, senha) {
+      sessionStorage.removeItem('sgpo_session_active');
+      sessionStorage.removeItem('sgpo_user');
+      sessionStorage.setItem('sgpo_logged_out', 'true');
+      localStorage.removeItem('sgpo_user');
+      localStorage.removeItem('sgpo_demo');
+      localStorage.removeItem('sgpo_cached_servico');
+      localStorage.removeItem('sgpo_active_servico_id');
+      localStorage.removeItem('sgpo_cached_postos_com_servico');
+      localStorage.setItem('sgpo_logged_out', 'true');
+    } catch(e) {}
     try {
-      API.getConfig();
-      if (!API.BASE_URL) {
-        return { success: false, error: 'API não configurada. Configure a API primeiro.' };
+      if (typeof BroadcastChannel !== 'undefined') {
+        new BroadcastChannel('sgpo').postMessage({ type: 'logout' });
       }
-      const result = await API.login(usuario, senha);
-      if (result.success && result.user) {
-        this.user = result.user;
-        this._postLogin();
-        Utils.log('login', `${result.user.nome} fez login (${result.user.perfil})`, 'auth');
-        return { success: true, user: result.user };
-      }
-      return { success: false, error: result.error || 'Credenciais inválidas' };
-    } catch (err) {
-      return { success: false, error: err.message || 'Erro de conexão com o servidor' };
+    } catch(e) {}
+    try {
+      window.location.href = 'login.html';
+    } catch(e) {
+      window.location.replace('login.html');
     }
-  },
-
-  _postLogin() {
-    setTimeout(() => {
-      this.requestNotificationPermission();
-      Utils.preloadSounds();
-      if (this.mustChangePassword) {
-        this._showPasswordChangeModal();
-      }
-    }, 500);
-  },
-
-  _showPasswordChangeModal() {
-    const existing = document.getElementById('forcePasswordModal');
-    if (existing) existing.remove();
-
-    const modal = document.createElement('div');
-    modal.id = 'forcePasswordModal';
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:420px;width:90%;background:var(--surface,#1e1e2e);border-radius:16px;padding:28px;color:var(--text,#e0e0e0);box-shadow:0 20px 60px rgba(0,0,0,.5);">
-        <h2 style="margin:0 0 8px;font-size:1.2rem;color:var(--text,#e0e0e0);">Alterar Senha Obrigatória</h2>
-        <p style="margin:0 0 20px;font-size:.88rem;color:var(--text-secondary,#999);">Sua senha padrão deve ser alterada para continuar.</p>
-        <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:.8rem;color:var(--text-secondary,#999);margin-bottom:4px;">Nova Senha</label>
-          <input type="password" id="fpc_senha1" placeholder="Mínimo 4 caracteres" style="width:100%;padding:10px 12px;border:1px solid var(--border,#333);border-radius:8px;background:var(--bg,#12121e);color:var(--text,#e0e0e0);font-size:.9rem;box-sizing:border-box;" />
-        </div>
-        <div style="margin-bottom:20px;">
-          <label style="display:block;font-size:.8rem;color:var(--text-secondary,#999);margin-bottom:4px;">Confirmar Senha</label>
-          <input type="password" id="fpc_senha2" placeholder="Repita a nova senha" style="width:100%;padding:10px 12px;border:1px solid var(--border,#333);border-radius:8px;background:var(--bg,#12121e);color:var(--text,#e0e0e0);font-size:.9rem;box-sizing:border-box;" />
-        </div>
-        <div id="fpc_error" style="color:#e53935;font-size:.82rem;margin-bottom:12px;display:none;"></div>
-        <button id="fpc_confirm" style="width:100%;padding:10px;background:var(--primary,#7c5cfc);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer;font-weight:600;">Alterar Senha</button>
-      </div>`;
-
-    document.body.appendChild(modal);
-    document.getElementById('fpc_senha1').focus();
-
-    document.getElementById('fpc_confirm').onclick = async () => {
-      const s1 = document.getElementById('fpc_senha1').value.trim();
-      const s2 = document.getElementById('fpc_senha2').value.trim();
-      const errEl = document.getElementById('fpc_error');
-      if (s1.length < 4) { errEl.textContent = 'Senha deve ter pelo menos 4 caracteres'; errEl.style.display = 'block'; return; }
-      if (s1 !== s2) { errEl.textContent = 'As senhas não coincidem'; errEl.style.display = 'block'; return; }
-      const r = await API.alterarMinhaSenha(this.userId, s1);
-      if (r.success) {
-        const u = this.user;
-        u.mustChangePassword = false;
-        this.user = u;
-        modal.remove();
-        Utils.showToast('Senha alterada com sucesso!', 'success');
-      } else {
-        errEl.textContent = r.error || 'Erro ao alterar senha';
-        errEl.style.display = 'block';
-      }
-    };
   }
 };
+
+if (typeof window !== 'undefined') window.Auth = Auth;
+if (typeof module !== 'undefined' && module.exports) module.exports = Auth;

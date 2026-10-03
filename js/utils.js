@@ -1,62 +1,84 @@
 const Utils = {
   formatTime(date) {
-    if (!date) return '';
-    const d = date instanceof Date ? date : new Date(date);
+    if (!date) return '--:--';
+    if (typeof date === 'string' && /^\d{2}:\d{2}/.test(date)) return date.substring(0, 5);
+    const d = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(d.getTime())) return String(date);
-    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   },
 
   formatDateTime(date) {
-    if (!date) return '';
-    if (typeof date === 'string') {
-      const trimmed = date.trim();
-      // Se já está no formato dd/mm/aaaa HH:MM:ss
-      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
-        return trimmed;
-      }
-      // Se está no formato dd/mm/aaaa HH:MM (sem segundos)
-      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}$/.test(trimmed)) {
-        return trimmed + ':00';
-      }
-      // Se é apenas horário HH:mm ou HH:mm:ss
-      if (/^\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
-        const today = this.formatDate(new Date());
-        return `${today} ${trimmed}${trimmed.length === 5 ? ':00' : ''}`;
-      }
+    if (!date) return '-';
+    if (typeof date === 'string' && /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/.test(date)) return date;
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(date)) {
+      const parts = date.split(/[T ]/);
+      const dParts = parts[0].split('-');
+      const tParts = parts[1].substring(0, 5);
+      return `${dParts[2]}/${dParts[1]}/${dParts[0]} ${tParts}`;
     }
-    let d;
-    if (date instanceof Date) {
-      d = date;
-    } else if (typeof date === 'number') {
-      d = new Date(date);
-    } else {
-      d = new Date(date);
-    }
+    const d = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(d.getTime())) return String(date);
-
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     const hours = String(d.getHours()).padStart(2, '0');
     const minutes = String(d.getMinutes()).padStart(2, '0');
-    const seconds = String(d.getSeconds()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-  },
-
-  nowDateTime() {
-    return this.formatDateTime(new Date());
-  },
-
-  formatRegistroDateTime(val) {
-    return this.formatDateTime(val);
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   },
 
   formatDate(date) {
-    const d = typeof date === 'string' ? new Date(date + (date.includes('T') ? '' : 'T00:00:00')) : date;
+    if (!date) return '-';
+    if (typeof date === 'string') {
+      const trimmed = date.trim();
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
+      if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        const datePart = trimmed.split(/[T ]/)[0];
+        const parts = datePart.split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(trimmed)) {
+        return trimmed.substring(0, 10);
+      }
+    }
+    const d = typeof date === 'string' ? new Date(date.includes('T') ? date : (date + 'T12:00:00')) : (date instanceof Date ? date : new Date(date));
+    if (isNaN(d.getTime())) return String(date);
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
+  },
+
+  normalizeDate(val) {
+    if (!val) return '';
+    if (typeof val === 'string') {
+      const s = val.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
+        const parts = s.substring(0, 10).split('/');
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2];
+        return `${year}-${month}-${day}`;
+      }
+    }
+    const d = val instanceof Date ? val : new Date(val);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    return String(val || '').trim();
+  },
+
+  datesMatch(d1, d2) {
+    if (!d1 || !d2) return false;
+    const n1 = this.normalizeDate(d1);
+    const n2 = this.normalizeDate(d2);
+    return Boolean(n1 && n2 && n1 === n2);
   },
 
   formatDuration(ms) {
@@ -266,6 +288,56 @@ const Utils = {
     if (typeof API !== 'undefined' && API.registrarLog) {
       API.registrarLog(acao, detalhes, modulo).catch(() => {});
     }
+  },
+
+  isOcorrenciaAtiva(o) {
+    if (!o || !o.id) return false;
+    if (o.Status === 'removido' || o.status === 'removido' || o.status === 'removida') return false;
+    const st = String(o.status || '').toLowerCase().trim();
+    if (!st) return false;
+    const encerrados = [
+      'finalizada', 'finalizado', 'cancelada', 'cancelado',
+      'trote', 'apoio_desnecessario', 'encerrada', 'encerrado',
+      'concluida', 'concluido', 'concluída', 'concluído',
+      'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'
+    ];
+    if (encerrados.includes(st)) return false;
+    if (o.horaRetorno && String(o.horaRetorno).trim() !== '' && String(o.horaRetorno).trim() !== '--:--') {
+      return false;
+    }
+    return st === 'em_andamento' || st === 'em_atendimento' || st === 'despachada' || st === 'aberta' || st === 'ativa';
+  },
+
+  viaturaPertenceAOcorrencia(o, sv) {
+    if (!o || !sv) return false;
+    if (!this.isOcorrenciaAtiva(o)) return false;
+
+    let vids = [];
+    if (Array.isArray(o.viaturaIds)) {
+      vids = o.viaturaIds;
+    } else if (typeof o.viaturaIds === 'string' && o.viaturaIds.trim()) {
+      try {
+        const parsed = JSON.parse(o.viaturaIds);
+        if (Array.isArray(parsed)) vids = parsed;
+        else if (parsed) vids = [String(parsed).trim()];
+      } catch(e) {
+        vids = o.viaturaIds.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    if (!vids || vids.length === 0) return false;
+
+    const svVid = String(sv.viaturaId || '').trim();
+    const svId = String(sv.id || '').trim();
+    if (!svVid && !svId) return false;
+
+    return vids.some(vid => {
+      if (vid && typeof vid === 'object') {
+        const vidId = String(vid.viaturaId || vid.id || '').trim();
+        return vidId && (vidId === svVid || vidId === svId);
+      }
+      const sVid = String(vid || '').trim();
+      return sVid && (sVid === svVid || sVid === svId);
+    });
   },
 
   initModalListeners() {

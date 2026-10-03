@@ -201,6 +201,7 @@ function getDefinicaoAbas() {
         { nome: 'nome',            largura: 240, tipo: 'texto',     obrigatoria: true },
         { nome: 'posto',           largura: 160, tipo: 'dropdown',  opcoes: POSTOS_MILITAR },
         { nome: 'reCpf',           largura: 130, tipo: 'texto',     descricao: 'RE ou CPF' },
+        { nome: 'postoServicoId',  largura: 130, tipo: 'texto',     descricao: 'ID do Posto de Serviço' },
         { nome: 'dataNascimento',  largura: 130, tipo: 'data' },
         { nome: 'email',           largura: 220, tipo: 'texto' },
         { nome: 'telefone',        largura: 140, tipo: 'texto' },
@@ -806,7 +807,10 @@ const Utils = {
   safeStr(v) {
     if (typeof v === 'string') return v;
     if (v instanceof Date) {
-      return `${String(v.getHours()).padStart(2,'0')}:${String(v.getMinutes()).padStart(2,'0')}`;
+      if (v.getFullYear() < 1970) {
+        return `${String(v.getHours()).padStart(2,'0')}:${String(v.getMinutes()).padStart(2,'0')}`;
+      }
+      return this.formatDateTime(v);
     }
     return String(v || '');
   },
@@ -842,15 +846,37 @@ const Utils = {
   },
 
   formatDateTime(date) {
+    if (!date) return '';
+    if (typeof date === 'string') {
+      const trimmed = date.trim();
+      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed;
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed + ':00';
+      }
+    }
     if (!(date instanceof Date)) date = new Date(date);
+    if (isNaN(date.getTime())) return String(date);
     const d = String(date.getDate()).padStart(2, '0');
     const mo = String(date.getMonth() + 1).padStart(2, '0');
     const y = date.getFullYear();
-    return `${d}/${mo}/${y} ${this.formatTime(date)}`;
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    const s = String(date.getSeconds()).padStart(2, '0');
+    return `${d}/${mo}/${y} ${h}:${m}:${s}`;
   },
 
   formatDate(date) {
+    if (!date) return '';
+    if (typeof date === 'string') {
+      const trimmed = date.trim();
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+        return trimmed;
+      }
+    }
     if (!(date instanceof Date)) date = new Date(date);
+    if (isNaN(date.getTime())) return String(date);
     const d = String(date.getDate()).padStart(2, '0');
     const mo = String(date.getMonth() + 1).padStart(2, '0');
     const y = date.getFullYear();
@@ -1348,8 +1374,8 @@ function configurarAba(ss, sheet, def) {
             cell.setFontColor(val === true ? '#0d652d' : '#c5221f');
             cell.setHorizontalAlignment('center');
           }
-          if (col.tipo === 'data' && val && typeof val === 'string' && val.includes('T')) {
-            cell.setNumberFormat('dd/MM/yyyy HH:mm');
+          if (col.tipo === 'data') {
+            cell.setNumberFormat(col.nome === 'dataNascimento' ? 'dd/MM/yyyy' : 'dd/MM/yyyy HH:mm:ss');
           }
           if (col.tipo === 'numero') {
             cell.setHorizontalAlignment('center');
@@ -1999,6 +2025,10 @@ function getServicosAtivos(data) {
     const posto = postosMap[s.postoId];
     const atividades = findRows('rotina', r => r.servicoId === s.id && r.Status !== 'removido');
     const concluidas = atividades.filter(a => a.status === 'concluida').length;
+    const emAnd = atividades.find(a => a.status === 'em_andamento');
+    const prox = atividades.find(a => a.status === 'nao_iniciada');
+    const ult = atividades.filter(a => a.status === 'concluida').pop();
+    const ativAtual = emAnd || prox || ult || null;
 
     return {
       id: s.id,
@@ -2014,6 +2044,7 @@ function getServicosAtivos(data) {
       equipe: equipe,
       totalAtividades: atividades.length,
       totalConcluidas: concluidas,
+      atividadeAtual: ativAtual ? { nome: ativAtual.nome, horario: ativAtual.horario, status: ativAtual.status, responsavel: ativAtual.responsavel } : null,
       Status: s.Status || 'ativo',
       observacoes: s.observacoes || ''
     };
@@ -2228,12 +2259,13 @@ function retornarViatura(data) {
   const retCol = found.headers.indexOf('horarioRetorno');
   if (retCol !== -1) s.getRange(found.row, retCol + 1).setValue(now);
   const statusCol = found.headers.indexOf('status');
-  const targetStatus = data.destinoStatus || data.status || 'retornando';
+  const targetStatus = data.destinoStatus || data.status || 'ativa';
   if (statusCol !== -1) s.getRange(found.row, statusCol + 1).setValue(targetStatus);
   const vNome = found.data[found.headers.indexOf('viaturaNome')] || 'Viatura';
   const motoristaNome = found.data[found.headers.indexOf('motorista')] || '-';
   const servicoId = found.data[found.headers.indexOf('servicoId')];
-  registrarEventoRotinaTimeline(servicoId, 'r-ret-' + Date.now(), now, '🏠 Retorno à base: ' + vNome, 'Ocorrências', motoristaNome);
+  const rotMsg = targetStatus === 'retornando' ? '🏠 Em retorno ao quartel: ' + vNome : '🏠 Retorno à base: ' + vNome + ' (disponível na base)';
+  registrarEventoRotinaTimeline(servicoId, 'r-ret-' + Date.now(), now, rotMsg, 'Viaturas', motoristaNome);
   logAuditoria('viatura_retorno', (_authUser && _authUser.nome) || 'sistema', `Viatura ${vNome} retornou (${targetStatus})`);
   return { success: true };
 }
@@ -2289,6 +2321,47 @@ function finalizarOcorrencia(data) {
   }
   const numero = found.data[found.headers.indexOf('numero')] || '';
   const servicoId = found.data[found.headers.indexOf('servicoId')];
+
+  // Atualizar viaturas no ServicoViatura para garantir integridade e prontidão na base
+  const destinoVtrStatus = data.destinoStatus || 'ativa';
+  if (data.liberarApenasServicoViaturaId) {
+    const svFound = findRowById('servico_viatura', data.liberarApenasServicoViaturaId);
+    if (svFound) {
+      const svSheet = getSheet('ServicoViatura');
+      const stCol = svFound.headers.indexOf('status');
+      if (stCol !== -1) svSheet.getRange(svFound.row, stCol + 1).setValue(destinoVtrStatus);
+      const retVCol = svFound.headers.indexOf('horarioRetorno');
+      if (retVCol !== -1) svSheet.getRange(svFound.row, retVCol + 1).setValue(now);
+      const vNome = svFound.data[svFound.headers.indexOf('viaturaNome')] || 'Viatura';
+      const mot = svFound.data[svFound.headers.indexOf('motorista')] || '-';
+      const rotMsg = destinoVtrStatus === 'retornando' ? `🏠 Desempenho: ${vNome} liberada da Ocorrência #${numero} (retornando)` : `🏠 Retorno à base: ${vNome} liberada da Ocorrência #${numero} (disponível na base)`;
+      registrarEventoRotinaTimeline(servicoId, 'r-ret-' + Date.now(), now, rotMsg, 'Viaturas', mot);
+    }
+  } else {
+    let viatIds = [];
+    try {
+      const viatRaw = found.data[found.headers.indexOf('viaturaIds')] || '[]';
+      viatIds = JSON.parse(viatRaw);
+    } catch(e) {}
+    if (Array.isArray(viatIds) && viatIds.length > 0) {
+      const svRows = findRows('servico_viatura', r => r.servicoId === servicoId && viatIds.includes(r.viaturaId) && r.Status !== 'removido');
+      const svSheet = getSheet('ServicoViatura');
+      svRows.forEach(sv => {
+        const svFound = findRowById('servico_viatura', sv.id);
+        if (svFound) {
+          const stCol = svFound.headers.indexOf('status');
+          if (stCol !== -1) svSheet.getRange(svFound.row, stCol + 1).setValue(destinoVtrStatus);
+          const retVCol = svFound.headers.indexOf('horarioRetorno');
+          if (retVCol !== -1) svSheet.getRange(svFound.row, retVCol + 1).setValue(now);
+          const vNome = sv.viaturaNome || 'Viatura';
+          const mot = sv.motorista || '-';
+          const rotMsg = destinoVtrStatus === 'retornando' ? `🏠 Em retorno ao quartel: ${vNome}` : `🏠 Retorno à base: ${vNome} (disponível na base)`;
+          registrarEventoRotinaTimeline(servicoId, 'r-ret-' + Date.now() + Math.random(), now, rotMsg, 'Viaturas', mot);
+        }
+      });
+    }
+  }
+
   logAuditoria('ocorrencia_finalizar', (_authUser && _authUser.nome) || 'sistema', `Ocorrência #${numero} finalizada [${targetStatus}]`);
   registrarEventoRotinaTimeline(servicoId, 'r-ocf-' + Date.now(), now, '✅ Ocorrência #' + numero + ' finalizada' + (data.desfecho ? ' — ' + data.desfecho : ''), 'Ocorrências', '-');
   return { success: true };
@@ -2533,7 +2606,7 @@ function logAuditoria(acao, usuario, detalhes) {
     const sheet = getSheet('Auditoria');
     sheet.appendRow([
       generateId(),
-      new Date().toISOString(),
+      Utils.formatDateTime(new Date()),
       '',
       acao,
       '',
@@ -2810,9 +2883,43 @@ function getServicoAtual(data) {
   extras.forEach(e => { if (e.horario) e.horario = Utils.safeStr(e.horario); });
 
   const servicoViaturas = findRows('servico_viatura', (r) => r.servicoId === servico.id && r.Status !== 'removido');
-  servicoViaturas.forEach(sv => { try { sv.tripulantes = JSON.parse(sv.tripulantes || '[]'); } catch(e) { sv.tripulantes = []; } });
-
   const ocorrencias = findRows('ocorrencias', (r) => r.servicoId === servico.id && r.Status !== 'removido');
+  const encStatuses = ['finalizada', 'cancelada', 'trote', 'apoio_desnecessario', 'encerrada', 'concluida', 'arquivada'];
+  const ocorrenciasAtivas = ocorrencias.filter(o => {
+    const st = String(o.status || '').toLowerCase().trim();
+    if (encStatuses.indexOf(st) !== -1) return false;
+    if (o.horaRetorno && String(o.horaRetorno).trim() !== '' && String(o.horaRetorno).trim() !== '--:--') return false;
+    return st === 'em_andamento' || st === 'em_atendimento' || st === 'despachada' || st === 'aberta' || st === 'ativa' || !st;
+  });
+
+  servicoViaturas.forEach(sv => {
+    try { sv.tripulantes = JSON.parse(sv.tripulantes || '[]'); } catch(e) { sv.tripulantes = []; }
+    // Auto-reconciliação defensiva: se a viatura não está empenhada em nenhuma ocorrência ativa, deve estar disponível na base ('ativa')
+    const emOcorr = ocorrenciasAtivas.some(o => {
+      let vids = [];
+      try {
+        vids = Array.isArray(o.viaturaIds) ? o.viaturaIds : JSON.parse(o.viaturaIds || '[]');
+      } catch(e) {
+        vids = String(o.viaturaIds || '').split(',').map(s => s.trim());
+      }
+      const svVid = String(sv.viaturaId || '').trim();
+      const svId = String(sv.id || '').trim();
+      return vids.some(vid => {
+        const sVid = String(vid || '').trim();
+        return sVid && (sVid === svVid || sVid === svId);
+      });
+    });
+    if (!emOcorr && (sv.status === 'retornando' || sv.status === 'em_ocorrencia')) {
+      sv.status = 'ativa';
+      sv.Status = 'ativo';
+      const svFound = findRowById('servico_viatura', sv.id);
+      if (svFound) {
+        const stCol = svFound.headers.indexOf('status');
+        if (stCol !== -1) getSheet('ServicoViatura').getRange(svFound.row, stCol + 1).setValue('ativa');
+      }
+    }
+  });
+
   ocorrencias.forEach(oc => { try { oc.viaturaIds = JSON.parse(oc.viaturaIds || '[]'); } catch(e) { oc.viaturaIds = []; } try { oc.efetivo = JSON.parse(oc.efetivo || '[]'); } catch(e) { oc.efetivo = []; } });
 
   let config = null;
@@ -2850,8 +2957,11 @@ function getServicoAtual(data) {
     }
   } catch(e) {}
 
+  const servicosAtivos = getServicosAtivos({ usuarioId });
+
   return {
     servico,
+    servicosAtivos,
     rotina,
     militares,
     telegrafia: telegrafiaAtual,
@@ -3413,14 +3523,43 @@ function marcarLida(data) {
    ═══════════════════════════════════════════════════════════════════ */
 
 function getHistorico(data) {
-  const { data: date } = data;
+  const { data: date, servicoId, postoId } = data || {};
   const servicos = findRows('servicos', (r) => r.data === date);
 
   if (servicos.length === 0) {
-    return { servico: null, rotina: [], telegrafia: [], oficiais: [], notificacoes: [] };
+    return { servico: null, servicos: [], rotina: [], telegrafia: [], oficiais: [], notificacoes: [] };
   }
 
-  const servico = servicos[0];
+  let servico = null;
+  if (servicoId) {
+    servico = servicos.find(s => s.id === servicoId);
+  }
+  if (!servico && postoId) {
+    servico = servicos.find(s => s.postoId === postoId);
+  }
+  if (!servico) {
+    servico = servicos[0];
+  }
+
+  const postos = findRows('PostosServico', r => r.Status === 'ativo');
+  const postosMap = {};
+  postos.forEach(p => { postosMap[p.id] = p; });
+
+  const servicosInfo = servicos.map(s => {
+    const p = postosMap[s.postoId];
+    return {
+      id: s.id,
+      postoId: s.postoId,
+      postoNome: p ? p.nome : '',
+      postoTipo: p ? p.tipo : 'POSTO',
+      prontidao: s.prontidao || 'verde',
+      comandanteNome: s.comandanteNome || '',
+      horarioInicio: s.horarioInicio || '',
+      horarioFim: s.horarioFim || '-',
+      Status: s.Status || 'encerrado'
+    };
+  });
+
   const rotina = findRows('rotina', (r) => r.servicoId === servico.id);
   rotina.sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(":"); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
   rotina.forEach(r => r.horario = Utils.safeStr(r.horario));
@@ -3432,28 +3571,32 @@ function getHistorico(data) {
 
   const notificacoes = findRows('notificacoes', (r) => r.servicoId === servico.id);
 
-  return { servico, rotina, telegrafia, oficiais, notificacoes, entradas };
+  return { servico, servicos: servicosInfo, rotina, telegrafia, oficiais, notificacoes, entradas };
 }
 
 function getRelatorio(data) {
-  const { tipo, data: date } = data;
-  const historico = getHistorico({ data: date });
+  const { tipo, data: date, servicoId, postoId } = data || {};
+  const historico = getHistorico({ data: date, servicoId, postoId });
 
   if (!historico.servico) {
-    return { servico: null, itens: [] };
+    return { servico: null, servicos: historico.servicos || [], itens: [] };
   }
 
-  const servicoId = historico.servico.id;
+  const servicoIdFinal = historico.servico.id;
+  const postos = findRows('PostosServico', r => r.Status === 'ativo');
+  const posto = postos.find(p => p.id === historico.servico.postoId);
   const base = {
     servico: {
-      id: servicoId,
+      id: servicoIdFinal,
       data: historico.servico.data,
       prontidao: historico.servico.prontidao,
       comandante: historico.servico.comandanteNome,
       postoId: historico.servico.postoId,
+      postoNome: posto ? posto.nome : '',
       horarioInicio: historico.servico.horarioInicio,
       horarioFim: historico.servico.horarioFim || '-'
-    }
+    },
+    servicos: historico.servicos || []
   };
 
   switch (tipo) {
@@ -3614,12 +3757,12 @@ function getRelatorio(data) {
     case 'auditoria': {
       const logs = findRows('auditoria', (r) => true);
       logs.sort((a, b) => Utils.safeStr(b.dataHora).localeCompare(Utils.safeStr(a.dataHora)));
-      const dateFilter = logs.filter(l => l.dataHora && l.dataHora.startsWith(date));
+      const dateFilter = logs.filter(l => l.dataHora && (String(l.dataHora).startsWith(date) || (typeof l.dataHora === 'string' && l.dataHora.includes(date))));
       const alvo = dateFilter.length > 0 ? dateFilter : logs;
       return {
         ...base,
         itens: alvo.slice(0, 200).map(l => ({
-          Data: l.dataHora,
+          Data: Utils.formatDateTime(l.dataHora) || l.dataHora,
           Acao: l.acao,
           Usuario: l.usuarioNome,
           Detalhes: l.detalhes

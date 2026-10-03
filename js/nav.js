@@ -61,7 +61,7 @@ const NAV = {
             ${this.svgIcon(p.icon)}
           </button>
         `).join('')}
-        <button class="sidebar-item" id="logoutBtn" title="Sair">
+        <button class="sidebar-item" id="logoutBtn" title="Sair" onclick="NAV.confirmLogout(event)">
           ${this.svgIcon('<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>')}
         </button>
       </div>
@@ -143,7 +143,8 @@ const NAV = {
       mainContent.insertAdjacentElement('afterbegin', topbar);
     }
 
-    document.getElementById('userNameTop').textContent = Auth.userName;
+    const uTop = document.getElementById('userNameTop');
+    if (uTop) uTop.textContent = Auth.userName;
 
     document.getElementById('menuToggle')?.addEventListener('click', () => {
       document.querySelector('.sidebar').classList.toggle('sidebar-open');
@@ -161,11 +162,79 @@ const NAV = {
   },
 
   setupLogout() {
-    document.getElementById('logoutBtn')?.addEventListener('click', () => {
-      if (confirm('Deseja realmente sair do sistema?')) {
-        Auth.logout();
+    const btn = document.getElementById('logoutBtn');
+    if (btn) {
+      btn.onclick = (e) => {
+        this.confirmLogout(e);
+      };
+    }
+    const uTop = document.getElementById('userNameTop');
+    if (uTop) {
+      uTop.style.cursor = 'pointer';
+      uTop.title = 'Clique para sair do sistema';
+      uTop.onclick = (e) => {
+        this.confirmLogout(e);
+      };
+    }
+  },
+
+  logout() {
+    this.confirmLogout();
+  },
+
+  confirmLogout(e) {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    let modal = document.getElementById('sgpoLogoutModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.id = 'sgpoLogoutModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:999999;backdrop-filter:blur(3px);padding:16px;';
+      modal.innerHTML = `
+        <div class="modal" style="max-width:380px;width:100%;text-align:center;padding:24px;border-radius:12px;background:var(--surface-color,#1e293b);border:1px solid var(--border-color,#334155);box-shadow:0 12px 36px rgba(0,0,0,0.6);margin:0 auto">
+          <div style="font-size:2.5rem;margin-bottom:12px;line-height:1">🚪</div>
+          <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:8px;color:var(--text-primary,#f8fafc)">Sair do Sistema</h3>
+          <p style="color:var(--text-secondary,#94a3b8);font-size:0.9rem;margin-bottom:22px;line-height:1.4">Deseja realmente encerrar sua sessão no SGPO?</p>
+          <div style="display:flex;gap:10px;justify-content:center">
+            <button type="button" class="btn btn-secondary" id="btnCancelLogout" style="min-width:110px;padding:8px 16px;font-weight:600;border-radius:8px">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmLogout" style="min-width:110px;padding:8px 16px;background:#e53935;border-color:#e53935;color:#fff;font-weight:700;border-radius:8px">Sair</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      modal.addEventListener('click', (ev) => {
+        if (ev.target === modal) modal.style.display = 'none';
+      });
+
+      const cancelBtn = modal.querySelector('#btnCancelLogout');
+      if (cancelBtn) {
+        cancelBtn.onclick = () => { modal.style.display = 'none'; };
       }
-    });
+
+      const confirmBtn = modal.querySelector('#btnConfirmLogout');
+      if (confirmBtn) {
+        confirmBtn.onclick = () => {
+          modal.style.display = 'none';
+          Auth.logout();
+        };
+      }
+
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && modal && modal.style.display !== 'none') {
+          modal.style.display = 'none';
+        }
+      });
+    }
+
+    modal.style.display = 'flex';
+    modal.style.visibility = 'visible';
+    modal.style.opacity = '1';
+    const confirmBtn = modal.querySelector('#btnConfirmLogout');
+    if (confirmBtn) confirmBtn.focus();
   },
 
   setupGlobalSearch() {
@@ -301,14 +370,17 @@ const NAV = {
       if (typeof API === 'undefined' || !Auth.isLoggedIn) return;
       let ocs = [];
       let svs = [];
+      const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
 
-      if (typeof Dashboard !== 'undefined' && Dashboard.ocorrencias && Dashboard.servicoViaturas) {
-        ocs = (Dashboard.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+      if (typeof Dashboard !== 'undefined' && Array.isArray(Dashboard.ocorrencias) && Array.isArray(Dashboard.servicoViaturas)) {
+        const sId = Dashboard.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+        ocs = (Dashboard.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : false) && isAtiva(o));
         svs = Dashboard.servicoViaturas || [];
       } else {
         const data = await API.getServicoAtual(Auth.userId).catch(() => null);
         if (data) {
-          ocs = (data.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+          const sId = data.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+          ocs = (data.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : false) && isAtiva(o));
           svs = data.servicoViaturas || [];
         }
       }
@@ -317,14 +389,25 @@ const NAV = {
       this._ocorrenciasAtivasCache = ocs;
       this._servicoViaturasCache = svs;
 
+      const totalAtivas = ocs.length || svsEmOcorr.length;
       const btn = document.getElementById('navBtnEncerrarOcorrencia');
       const badge = document.getElementById('navOcorrenciasBadge');
       if (btn) {
-        if (ocs.length > 0 || svsEmOcorr.length > 0) {
+        if (totalAtivas > 0) {
           btn.style.display = 'inline-flex';
-          if (badge) badge.textContent = ocs.length || svsEmOcorr.length;
+          if (badge) badge.textContent = totalAtivas;
         } else {
           btn.style.display = 'none';
+        }
+      }
+
+      const btnTopo = document.getElementById('btnEncerrarOcorrenciaTopo');
+      if (btnTopo) {
+        if (totalAtivas > 0) {
+          btnTopo.style.display = 'inline-flex';
+          btnTopo.innerHTML = `🏁 Encerrar Ocorrência <span style="background:#fff;color:#00c853;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;font-weight:800">${totalAtivas}</span>`;
+        } else {
+          btnTopo.style.display = 'none';
         }
       }
     } catch(e) {}
@@ -419,7 +502,8 @@ const NAV = {
 
   async abrirModalEncerrarDireto() {
     await this.checkOcorrenciasAtivas();
-    let ocs = (this._ocorrenciasAtivasCache || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+    const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+    let ocs = (this._ocorrenciasAtivasCache || []).filter(isAtiva);
     let svs = this._servicoViaturasCache || [];
     let svsEmOcorr = svs.filter(v => v.status === 'em_ocorrencia');
 
@@ -427,7 +511,8 @@ const NAV = {
       try {
         const data = await API.getServicoAtual(Auth.userId, true);
         if (data) {
-          ocs = (data.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+          const sId = data.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+          ocs = (data.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : false) && isAtiva(o));
           svs = data.servicoViaturas || [];
           svsEmOcorr = svs.filter(v => v.status === 'em_ocorrencia');
           this._ocorrenciasAtivasCache = ocs;

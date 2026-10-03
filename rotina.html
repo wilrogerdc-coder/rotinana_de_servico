@@ -162,8 +162,18 @@
 
     <div id="rotinaView" style="display:none">
       <div class="rotina-toolbar">
-        <div><h2 style="font-size:1.3rem;font-weight:700">Rotina do Dia</h2><p style="color:var(--text-secondary);font-size:0.85rem" id="rotinaDate"></p></div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <h2 style="font-size:1.3rem;font-weight:700">Rotina do Dia</h2>
+            <span id="rotinaPostoBadge" class="badge" style="font-size:0.8rem;background:var(--prontidao-dim);color:var(--prontidao-color);border:1px solid var(--prontidao-color);display:none"></span>
+          </div>
+          <p style="color:var(--text-secondary);font-size:0.85rem" id="rotinaDate"></p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="rotinaPostoSelectorWrapper" style="display:none;align-items:center;gap:6px">
+            <label style="font-size:0.8rem;color:var(--text-secondary);font-weight:600">Posto:</label>
+            <select id="rotinaPostoSelect" class="input select" style="height:34px;padding:2px 10px;font-size:0.82rem;min-width:180px" onchange="Rotina.switchPostoServico(this.value)"></select>
+          </div>
           <div class="rotina-filters">
             <button class="filter-btn active" data-f="todos" onclick="Rotina.filter('todos')">Todos</button>
             <button class="filter-btn" data-f="pendente" onclick="Rotina.filter('pendente')">Pendentes</button>

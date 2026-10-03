@@ -61,6 +61,35 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-overlay" id="pedirPermissaoModal" style="display:none">
+      <div class="modal" style="max-width:440px">
+        <div class="modal-header">
+          <h3 class="modal-title">Pedir Permissão de Acesso</h3>
+          <button class="btn btn-ghost btn-icon" onclick="Servicos.closePedirPermissao()">✕</button>
+        </div>
+        <div class="modal-body" style="padding:16px 0">
+          <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:14px" id="pedirPermissaoDesc">
+            Você não está escalado neste serviço. Envie uma solicitação para o comandante do plantão autorizar seu acesso.
+          </p>
+          <div class="input-group">
+            <label class="input-label">Nível de Permissão Solicitado</label>
+            <select class="input select" id="pedirPermissaoTipo">
+              <option value="operador">Operador (Edição e Operação)</option>
+              <option value="leitura">Visualização (Apenas Consulta)</option>
+            </select>
+          </div>
+          <div class="input-group" style="margin-top:10px">
+            <label class="input-label">Motivo (opcional)</label>
+            <textarea class="input" id="pedirPermissaoMotivo" rows="2" placeholder="Ex: Substituição temporária, apoio operacional..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost" onclick="Servicos.closePedirPermissao()">Cancelar</button>
+          <button class="btn btn-primary" id="btnEnviarPermissao" onclick="Servicos.enviarPermissao()">Enviar Solicitação</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script src="js/utils.js"></script>

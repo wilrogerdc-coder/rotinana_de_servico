@@ -57,7 +57,12 @@
         <h3 style="font-size:1rem;font-weight:600">Militares</h3>
         <button class="btn btn-primary btn-sm" onclick="Admin.showForm('militar')">+ Novo Militar</button>
       </div>
-      <div style="margin-bottom:var(--spacing-md)"><input class="input" type="text" id="searchMilitares" placeholder="Buscar militar por nome, RE, posto..." oninput="Admin.filterMilitares()" style="width:100%"></div>
+      <div style="display:flex;gap:12px;margin-bottom:var(--spacing-md);flex-wrap:wrap">
+        <input class="input" type="text" id="searchMilitares" placeholder="Buscar militar por nome, RE, posto/graduação..." oninput="Admin.filterMilitares()" style="flex:1;min-width:220px">
+        <select class="input select" id="filterMilitaresPosto" onchange="Admin.filterMilitares()" style="width:260px">
+          <option value="">Todos os Postos de Serviço</option>
+        </select>
+      </div>
       <div id="militaresList"></div>
     </div>
 
@@ -272,9 +277,10 @@
           const extract = (r) => r.status === 'fulfilled' ? r.value : null;
           const [usuarios, editaveis, militares, oficiais, atividades, sons, logos, postos, permissoesTela, viaturas, tiposViatura, naturezas] = results.map(extract);
           const users = (editaveis && editaveis.length > 0) ? editaveis : (usuarios || []);
-          this.data = { usuarios: users, allUsuarios: usuarios||[], militares: militares||[], oficiais: oficiais||[], atividades: atividades||[], sons: (sons && sons.length > 0) ? sons : Utils.defaultSounds(), logos: logos||[], postos: Array.isArray(postos) ? postos : (postos?.postos || postos || []), permissoesTela: permissoesTela||[], viaturas: viaturas||[], tiposViatura: tiposViatura||[], naturezas: naturezas||[] };
+          const oficiaisLimpos = Array.isArray(oficiais) ? oficiais.filter(o => !this._isSystemOficial(o)) : [];
+          this.data = { usuarios: users, allUsuarios: usuarios||[], militares: militares||[], oficiais: oficiaisLimpos, atividades: atividades||[], sons: (sons && sons.length > 0) ? sons : Utils.defaultSounds(), logos: logos||[], postos: Array.isArray(postos) ? postos : (postos?.postos || postos || []), permissoesTela: permissoesTela||[], viaturas: viaturas||[], tiposViatura: tiposViatura||[], naturezas: naturezas||[] };
           try { this.renderUsuarios(); } catch(e) { console.error('renderUsuarios:', e); }
-          try { this.renderMilitares(); } catch(e) { console.error('renderMilitares:', e); }
+          try { this.updateMilitaresPostoFilter(); this.renderMilitares(); } catch(e) { console.error('renderMilitares:', e); }
           try { this.renderOficiaisAdmin(); } catch(e) { console.error('renderOficiaisAdmin:', e); }
           try { this.renderAtividades(); } catch(e) { console.error('renderAtividades:', e); }
           try { this.renderSons(); } catch(e) { console.error('renderSons:', e); }
@@ -324,6 +330,7 @@
         const btn = (evt && evt.target) ? (evt.target.closest('.admin-tab') || evt.target) : document.querySelector(`.admin-tab[onclick*="${name}"]`);
         if (btn) btn.classList.add('active');
         document.getElementById('tab-' + name).classList.add('active');
+        if (name === 'militares') { this.updateMilitaresPostoFilter(); }
         if (name === 'conexao') { this.testConnection(); this.loadAtivos(); }
       },
 
@@ -334,9 +341,21 @@
         el.innerHTML = users.map(u => {
           const canDelete = (editorNivel === 'GB') || (editorNivel === 'SGB' && u.nivelPermissao !== 'GB');
           const qraBadge = u.qra ? `<span style="background:var(--prontidao-dim);color:var(--prontidao-color);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;margin-left:6px">${Utils.escapeHtml(u.qra)}</span>` : '';
+          const parseIdsCount = (v) => {
+            if (!v) return 0;
+            if (Array.isArray(v)) return v.length;
+            if (typeof v === 'string') {
+              try { const a = JSON.parse(v); if (Array.isArray(a)) return a.length; } catch(e) {}
+              return v.split(',').filter(Boolean).length;
+            }
+            return 0;
+          };
+          const pAbrir = parseIdsCount(u.postosAbrir);
+          const pVis = parseIdsCount(u.postosVisualizar);
+          const postosTag = (pAbrir > 0 || pVis > 0) ? ` • <span style="color:var(--text-secondary)">Postos: ${pAbrir} abrir / ${pVis} ver</span>` : '';
           return `
           <div class="admin-list-item">
-            <div><div style="font-weight:500">${Utils.escapeHtml(u.nome)}${qraBadge}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.cpf || u.reCpf || '')} — ${u.perfil || 'operador'} — ${u.nivelPermissao || 'POSTO'}${u.mustChangePassword === true || u.mustChangePassword === 'true' ? ' — <span style="color:var(--accent-yellow,#ffc107)">troca pendente</span>' : ''}</div></div>
+            <div><div style="font-weight:500">${Utils.escapeHtml(u.nome)}${qraBadge}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(u.cpf || u.reCpf || '')} — ${u.perfil || 'operador'} — ${u.nivelPermissao || 'POSTO'}${postosTag}${u.mustChangePassword === true || u.mustChangePassword === 'true' ? ' — <span style="color:var(--accent-yellow,#ffc107)">troca pendente</span>' : ''}</div></div>
             <div class="admin-actions">
               <button class="btn btn-secondary btn-sm" onclick="Admin.editUsuario('${u.id}')">Editar</button>
               ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('usuarios','${u.id}','${Utils.escapeHtml(u.nome)}')">Excluir</button>` : ''}
@@ -345,27 +364,49 @@
         }).join('') || '<div class="empty-state"><p>Nenhum usuário cadastrado</p></div>';
       },
 
-      renderMilitares(filter) {
+      updateMilitaresPostoFilter() {
+        const sel = document.getElementById('filterMilitaresPosto');
+        if (!sel) return;
+        const currentVal = sel.value;
+        const postos = this.data.postos || [];
+        sel.innerHTML = '<option value="">Todos os Postos de Serviço</option>' + postos.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${Utils.escapeHtml(p.nome)}</option>`).join('');
+      },
+
+      renderMilitares(filter, postoFilter) {
         const el = document.getElementById('militaresList');
         let items = Utils.sortByName(this.data.militares);
+        if (postoFilter) {
+          items = items.filter(m => String(m.postoServicoId || m.postoId || '') === String(postoFilter));
+        }
         if (filter) {
           const q = filter.toLowerCase();
           items = items.filter(m => (m.nome || '').toLowerCase().includes(q) || (m.reCpf || '').toLowerCase().includes(q) || (m.posto || '').toLowerCase().includes(q) || (m.funcao || '').toLowerCase().includes(q));
         }
-        el.innerHTML = items.map(m => `
+        el.innerHTML = items.map(m => {
+          const p = (this.data.postos || []).find(x => x.id === (m.postoServicoId || m.postoId));
+          const pNome = p ? p.nome : '';
+          return `
           <div class="admin-list-item">
-            <div><div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.reCpf || '')} — ${Utils.escapeHtml(m.posto || '')}${m.funcao ? ' — ' + Utils.escapeHtml(m.funcao) : ''}</div></div>
+            <div>
+              <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span>${Utils.escapeHtml(m.nome)}</span>
+                ${pNome ? `<span style="font-size:0.75rem;padding:2px 8px;border-radius:12px;background:rgba(41,121,255,0.15);color:#2979ff;font-weight:600">🏢 ${Utils.escapeHtml(pNome)}</span>` : ''}
+              </div>
+              <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.reCpf || '')} — ${Utils.escapeHtml(m.posto || '')}${m.funcao ? ' — ' + Utils.escapeHtml(m.funcao) : ''}</div>
+            </div>
             <div class="admin-actions">
               <button class="btn btn-secondary btn-sm" onclick="Admin.editMilitar('${m.id}')">Editar</button>
               <button class="btn btn-danger btn-sm" onclick="Admin.confirmDelete('militares','${m.id}','${Utils.escapeHtml(m.nome)}')">Excluir</button>
             </div>
           </div>
-        `).join('') || '<div class="empty-state"><p>Nenhum militar cadastrado</p></div>';
+        `;
+        }).join('') || '<div class="empty-state"><p>Nenhum militar encontrado</p></div>';
       },
 
       filterMilitares() {
         const q = (document.getElementById('searchMilitares')?.value || '').trim();
-        this.renderMilitares(q);
+        const p = (document.getElementById('filterMilitaresPosto')?.value || '').trim();
+        this.renderMilitares(q, p);
       },
 
       renderViaturas(filter) {
@@ -489,9 +530,20 @@
         } catch (e) { Utils.showToast('Erro: ' + e.message, 'error'); }
       },
 
+      _isSystemOficial(o) {
+        if (!o || !o.id) return true;
+        const idStr = String(o.id).toLowerCase();
+        if (idStr.startsWith('o-00') || idStr.startsWith('o-0') || idStr.startsWith('demo-') || idStr === 'o-1' || idStr === 'o-2' || idStr === 'o-3' || idStr === 'o-4') return true;
+        const nomeStr = String(o.nome || '').toLowerCase().trim();
+        const systemNames = ['rodrigues', 'almeida', 'ferreira', 'santos'];
+        if (systemNames.some(sn => nomeStr.includes(sn))) return true;
+        return false;
+      },
+
       renderOficiaisAdmin() {
         const el = document.getElementById('oficiaisAdminList');
-        el.innerHTML = Utils.sortByAntiguidade(this.data.oficiais).map(o => `
+        const oficiais = (this.data.oficiais || []).filter(o => !this._isSystemOficial(o));
+        el.innerHTML = Utils.sortByAntiguidade(oficiais).map(o => `
           <div class="admin-list-item">
             <div><div style="font-weight:500">${Utils.escapeHtml(o.nome)}</div><div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(o.posto)} - Antiguidade: ${o.antiguidade || '-'} - ${Utils.escapeHtml(o.unidade || '')}</div></div>
             <div class="admin-actions">
@@ -640,6 +692,82 @@
           allowed.map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.tipo} — ${Utils.escapeHtml(p.nome)}</option>`).join('');
       },
 
+      populateUsuarioPostos(userData) {
+        const el = document.getElementById('usuarioPostosList');
+        if (!el) return;
+        const postos = this.data.postos || [];
+        if (postos.length === 0) {
+          el.innerHTML = '<div style="padding:14px;text-align:center;font-size:0.8rem;color:var(--text-muted)">Nenhum posto cadastrado. Os postos são obtidos da planilha.</div>';
+          return;
+        }
+
+        const parseIds = (val) => {
+          if (!val) return [];
+          if (Array.isArray(val)) return val.map(p => (typeof p === 'object' && p ? (p.id || p.postoId || '') : String(p))).filter(Boolean);
+          if (typeof val === 'string') {
+            const trimmed = val.trim();
+            if (trimmed.startsWith('[')) {
+              try { return parseIds(JSON.parse(trimmed)); } catch(e) {}
+            }
+            return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+          }
+          return [];
+        };
+
+        let postosAbrir = parseIds(userData?.postosAbrir);
+        let postosVisualizar = parseIds(userData?.postosVisualizar);
+
+        // Se for edição mas os campos novos ainda não foram salvos, busca do array de postos legado
+        if (userData && postosAbrir.length === 0 && postosVisualizar.length === 0 && userData.postos) {
+          const legado = parseIds(userData.postos);
+          postosAbrir = [...legado];
+          postosVisualizar = [...legado];
+        }
+
+        el.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.04);border-bottom:1px solid var(--border-color);font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase">
+            <span>Posto de Serviço</span>
+            <div style="display:flex;align-items:center;gap:24px;padding-right:8px">
+              <span style="min-width:44px;text-align:center">Abrir</span>
+              <span style="min-width:64px;text-align:center">Visualizar</span>
+            </div>
+          </div>
+          ${postos.map(p => {
+            const canAbrir = postosAbrir.includes(String(p.id));
+            const canVisualizar = postosVisualizar.includes(String(p.id));
+            return `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border-color);gap:10px">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;font-size:0.85rem;color:var(--text-primary)">${Utils.escapeHtml(p.nome || p.id)}</div>
+                  <div style="font-size:0.7rem;color:var(--text-muted)"><span style="display:inline-block;padding:1px 5px;background:rgba(255,255,255,0.06);border-radius:3px">${p.tipo || 'POSTO'}</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:24px;padding-right:8px">
+                  <label style="display:flex;align-items:center;justify-content:center;min-width:44px;cursor:pointer;margin:0" title="Permitir abrir plantão neste posto">
+                    <input type="checkbox" class="cbPostoAbrir" data-posto-id="${p.id}" ${canAbrir ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+                  </label>
+                  <label style="display:flex;align-items:center;justify-content:center;min-width:64px;cursor:pointer;margin:0" title="Permitir visualizar plantão neste posto">
+                    <input type="checkbox" class="cbPostoVisualizar" data-posto-id="${p.id}" ${canVisualizar ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+                  </label>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        `;
+      },
+
+      selecionarTodosPostos(marcarAbrir, marcarVisualizar) {
+        document.querySelectorAll('.cbPostoAbrir').forEach(cb => { cb.checked = !!marcarAbrir; });
+        document.querySelectorAll('.cbPostoVisualizar').forEach(cb => { cb.checked = !!marcarVisualizar; });
+      },
+
+      selecionarTodosColuna(coluna, marcar) {
+        if (coluna === 'abrir') {
+          document.querySelectorAll('.cbPostoAbrir').forEach(cb => { cb.checked = !!marcar; });
+        } else if (coluna === 'visualizar') {
+          document.querySelectorAll('.cbPostoVisualizar').forEach(cb => { cb.checked = !!marcar; });
+        }
+      },
+
       populateUsuariosCustomSelect(selectedId) {
         const el = document.getElementById('formUsuarioCustom');
         if (!el) return;
@@ -697,14 +825,38 @@
             <div class="input-group"><label class="input-label">Perfil</label><select class="input select" id="formPerfil">${selectOpts(PERFIS, isEdit ? data.perfil : 'operador')}</select></div>
             <div class="input-group"><label class="input-label">Nível de Permissão</label><select class="input select" id="formNivelPermissao">${selectOpts(NIVEL_PERMISSAO, isEdit ? data.nivelPermissao : 'POSTO')}</select></div>
             <div class="input-group"><label class="input-label">Posto Padrão</label><select class="input select" id="formPostoDefault"><option value="">Nenhum</option></select></div>
-            <div class="input-group"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
+            <div class="input-group" style="margin-top:10px;border:1px solid var(--border-color,#334155);border-radius:8px;padding:12px;background:rgba(255,255,255,0.02)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+                <div>
+                  <label class="input-label" style="font-weight:700;margin:0;font-size:0.9rem">Postos Permitidos (Abrir e Visualizar)</label>
+                  <div style="font-size:0.75rem;color:var(--text-muted)">Especifique quais postos este usuário pode abrir plantão e/ou visualizar</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="Admin.selecionarTodosPostos(true, true)" style="font-size:0.75rem;padding:3px 8px" title="Selecionar todos os postos para abrir e visualizar">✓ Selecionar Todos</button>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="Admin.selecionarTodosPostos(false, false)" style="font-size:0.75rem;padding:3px 8px" title="Desmarcar todos os postos">✕ Desmarcar</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="Admin.selecionarTodosColuna('abrir', true)" style="font-size:0.75rem;padding:3px 8px">Todos Abrir</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="Admin.selecionarTodosColuna('visualizar', true)" style="font-size:0.75rem;padding:3px 8px">Todos Visualizar</button>
+                </div>
+              </div>
+              <div id="usuarioPostosList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border-color,#334155);border-radius:6px;background:var(--surface-color,#1e293b)">
+                <div style="padding:10px;text-align:center;font-size:0.8rem;color:var(--text-muted)">Carregando postos...</div>
+              </div>
+            </div>
+            <div class="input-group" style="margin-top:12px"><label class="input-label">Email</label><input class="input" type="email" id="formEmail" value="${isEdit ? Utils.escapeHtml(data.email || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Telefone</label><input class="input" id="formTelefone" value="${isEdit ? Utils.escapeHtml(data.telefone || '') : ''}"></div>
             ${isEdit ? '<div class="input-group" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="formMustChangePassword" ' + (data.mustChangePassword === true || data.mustChangePassword === 'true' ? 'checked' : '') + '><label for="formMustChangePassword" style="font-size:0.85rem;cursor:pointer">Forçar troca de senha no próximo login</label></div>' : ''}
             <button class="btn btn-primary btn-block" onclick="Admin.saveUsuario()">${isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
           </div>`,
           militar: `<div class="admin-form">
             <div class="input-group"><label class="input-label">Nome</label><input class="input" id="formNome" value="${isEdit ? Utils.escapeHtml(data.nome) : ''}"></div>
-            <div class="input-group"><label class="input-label">Posto</label><select class="input select" id="formPosto">${selectOpts(POSTOS_MILITAR, isEdit ? data.posto : '')}</select></div>
+            <div class="input-group"><label class="input-label">Posto / Graduação</label><select class="input select" id="formPosto">${selectOpts(POSTOS_MILITAR, isEdit ? data.posto : '')}</select></div>
+            <div class="input-group">
+              <label class="input-label">Posto de Serviço (Lotação / Base)</label>
+              <select class="input select" id="formPostoServico">
+                <option value="">Nenhum / Não vinculado</option>
+                ${(this.data.postos || []).map(p => `<option value="${p.id}" ${isEdit && (data.postoServicoId === p.id || data.postoId === p.id) ? 'selected' : ''}>${Utils.escapeHtml(p.nome)}</option>`).join('')}
+              </select>
+            </div>
             <div class="input-group"><label class="input-label">RE</label><input class="input" id="formReCpf" placeholder="Registro Estatístico" value="${isEdit ? Utils.escapeHtml(data.reCpf || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Função</label><input class="input" id="formFuncao" value="${isEdit ? Utils.escapeHtml(data.funcao || '') : ''}"></div>
             <div class="input-group"><label class="input-label">Especialidade</label><input class="input" id="formEspecialidade" value="${isEdit ? Utils.escapeHtml(data.especialidade || '') : ''}"></div>
@@ -821,6 +973,7 @@
         }
         if (type === 'usuario') {
           this.populatePostoDefaultSelect(isEdit ? data.postoDefaultId : '');
+          this.populateUsuarioPostos(data);
           document.getElementById('formNivelPermissao').addEventListener('change', (e) => {
             this.populatePostoDefaultSelect(isEdit ? data.postoDefaultId : '');
           });
@@ -853,6 +1006,18 @@
       },
 
       async saveUsuario() {
+        const postosAbrir = [];
+        document.querySelectorAll('.cbPostoAbrir:checked').forEach(cb => {
+          const id = cb.getAttribute('data-posto-id');
+          if (id) postosAbrir.push(id);
+        });
+
+        const postosVisualizar = [];
+        document.querySelectorAll('.cbPostoVisualizar:checked').forEach(cb => {
+          const id = cb.getAttribute('data-posto-id');
+          if (id) postosVisualizar.push(id);
+        });
+
         const dados = {
           nome: document.getElementById('formNome').value,
           qra: document.getElementById('formQRA').value,
@@ -862,6 +1027,9 @@
           perfil: document.getElementById('formPerfil').value,
           nivelPermissao: document.getElementById('formNivelPermissao').value,
           postoDefaultId: document.getElementById('formPostoDefault').value,
+          postosAbrir: postosAbrir,
+          postosVisualizar: postosVisualizar,
+          postos: Array.from(new Set([...postosAbrir, ...postosVisualizar])),
           email: document.getElementById('formEmail').value,
           telefone: document.getElementById('formTelefone').value,
           editorId: Auth.userId
@@ -881,7 +1049,17 @@
         try {
           if (this._editingId) {
             await API.update('usuarios', this._editingId, dados);
-            Utils.showToast('Usuário atualizado', 'success');
+            if (String(this._editingId) === String(Auth.userId)) {
+              const u = Auth.user;
+              if (u) {
+                Object.assign(u, dados);
+                try {
+                  localStorage.setItem('sgpo_user', JSON.stringify(u));
+                  sessionStorage.setItem('sgpo_user', JSON.stringify(u));
+                } catch(e) {}
+              }
+            }
+            Utils.showToast('Usuário atualizado com sucesso', 'success');
           } else {
             dados.senha = senha;
             dados.mustChangePassword = true;
@@ -893,9 +1071,12 @@
       },
 
       async saveMilitar() {
+        const pServId = document.getElementById('formPostoServico')?.value || '';
         const dados = {
           nome: document.getElementById('formNome').value,
           posto: document.getElementById('formPosto').value,
+          postoServicoId: pServId,
+          postoId: pServId,
           reCpf: document.getElementById('formReCpf').value,
           funcao: document.getElementById('formFuncao').value,
           especialidade: document.getElementById('formEspecialidade').value,
@@ -1213,7 +1394,7 @@
             dot.style.background = 'var(--accent-green)';
             label.textContent = 'Conectado';
             const mode = result.mode === 'demo' ? ' (modo demonstração)' : '';
-            details.textContent = `Versão ${result.version}${mode} — ${new Date().toLocaleTimeString('pt-BR')}`;
+            details.textContent = `Versão ${result.version}${mode} — ${Utils.formatDateTime(new Date())}`;
             sheetsEl.textContent = result.sheets || '-';
             sheetsEl.style.color = 'var(--accent-green)';
             latencyEl.textContent = result.latency + 'ms';

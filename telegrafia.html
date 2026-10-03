@@ -19,6 +19,9 @@
     .tele-select-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:var(--spacing-md); }
     .tele-militar-card { display:flex; align-items:center; gap:var(--spacing-md); padding:var(--spacing-md); background:var(--bg-card); border:1px solid var(--border-light); border-radius:var(--radius-md); cursor:pointer; transition:all var(--transition-fast); }
     .tele-militar-card:hover { border-color:var(--prontidao-color); background:var(--bg-card-hover); }
+    .tele-militar-card.tele-card-active { border-color:var(--prontidao-color); background:var(--prontidao-dim); box-shadow:0 0 0 1px var(--prontidao-color); }
+    .tele-tempo-total-badge { display:inline-flex; align-items:center; gap:5px; font-family:var(--font-mono); font-size:0.82rem; color:var(--prontidao-color); margin-top:5px; font-weight:600; }
+    .tele-current-total { font-family:var(--font-mono); font-size:0.9rem; color:var(--text-secondary); margin-top:6px; }
     .tele-history { max-height:400px; overflow-y:auto; }
     .tele-history-item { display:grid; grid-template-columns:80px 1fr 80px; gap:var(--spacing-md); padding:var(--spacing-md); border-bottom:1px solid var(--border-light); align-items:center; }
     .tele-history-time { font-family:var(--font-mono); font-weight:600; color:var(--prontidao-color); }
@@ -68,18 +71,19 @@
       </div>
       <div class="tele-current-avatar" id="teleAvatar">--</div>
       <div class="tele-current-name" id="teleNome">Nenhum operador</div>
-      <div style="color:var(--text-muted);font-size:0.85rem">Assumiu as <span id="teleInicio">--:--</span></div>
+      <div style="color:var(--text-muted);font-size:0.85rem">Assumiu às <span id="teleInicio">--:--</span></div>
       <div class="tele-current-time" id="teleTempo">00:00:00</div>
+      <div class="tele-current-total" id="teleTotalCurrent" style="display:none"></div>
     </div>
 
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Selecionar Operador</h3>
     <div class="tele-select-grid" id="militaresGrid"></div>
 
     <div class="tele-stats">
-      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Estatisticas do Servico</h3>
+      <h3 style="font-size:1rem;font-weight:600;margin-bottom:var(--spacing-md)">Estatísticas do Serviço</h3>
       <div class="tele-stats-grid" id="statsGrid"></div>
       <div class="tele-chart-container" id="chartContainer" style="display:none">
-        <div class="tele-chart-title">Horas por Integrante na Telegrafia</div>
+        <div class="tele-chart-title">Total de Horas e Minutos por Integrante na Telegrafia</div>
         <div id="chartBars"></div>
       </div>
     </div>
@@ -131,10 +135,17 @@
           Sync.on('telegrafia_updated', (t) => {
             this.current = t;
             this.render();
+            this.renderGrid();
+            this.renderStats();
           });
           Sync.on('telegrafiavazio_updated', (v) => {
             this.vazioDesde = v;
             this.renderVazioBanner();
+            this.renderGrid();
+            this.renderStats();
+          });
+          Sync.on('servico_updated', async () => {
+            await this.load();
           });
           const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
           const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
@@ -160,13 +171,81 @@
         setInterval(update, 1000);
       },
 
+      _timerInterval: null,
+
+      getHorasPorOperador() {
+        const horasPorOperador = {};
+
+        // 1. Inicializa todos os militares da equipe com 0 minutos
+        (this.militares || []).forEach(m => {
+          if (m && m.nome) horasPorOperador[m.nome] = 0;
+        });
+
+        // 2. Processa o histórico de trocas anteriores
+        (this.history || []).forEach(h => {
+          const nome = h.operador;
+          if (!nome || nome === '---') return;
+          if (horasPorOperador[nome] === undefined) horasPorOperador[nome] = 0;
+
+          if (typeof h.minutos === 'number' && !isNaN(h.minutos)) {
+            horasPorOperador[nome] += h.minutos;
+          } else if (h.duracao) {
+            const match = String(h.duracao).match(/(\d+)h\s*(\d+)m/);
+            if (match) {
+              horasPorOperador[nome] += parseInt(match[1]) * 60 + parseInt(match[2]);
+            } else {
+              const parts = String(h.duracao).split(':');
+              if (parts.length >= 2) {
+                horasPorOperador[nome] += (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+              } else {
+                const matchMin = String(h.duracao).match(/(\d+)\s*min/);
+                if (matchMin) horasPorOperador[nome] += parseInt(matchMin[1]);
+              }
+            }
+          } else if (h.horario && (h.horarioSaida || h.fim)) {
+            try {
+              const pI = String(h.horario).split(':');
+              const pF = String(h.horarioSaida || h.fim).split(':');
+              let diff = ((parseInt(pF[0])||0)*60 + (parseInt(pF[1])||0)) - ((parseInt(pI[0])||0)*60 + (parseInt(pI[1])||0));
+              if (diff < 0) diff += 1440;
+              horasPorOperador[nome] += diff;
+            } catch(e) {}
+          }
+        });
+
+        // 3. Adiciona o tempo decorrido do operador atual que está no posto agora
+        if (this.current && this.current.operador && this.current.horario) {
+          const nome = this.current.operador;
+          if (horasPorOperador[nome] === undefined) horasPorOperador[nome] = 0;
+          try {
+            const [ch, cm] = String(this.current.horario).split(':').map(Number);
+            if (!isNaN(ch) && !isNaN(cm)) {
+              const start = new Date();
+              start.setHours(ch, cm, 0, 0);
+              const elapsedMin = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000));
+              horasPorOperador[nome] += elapsedMin;
+            }
+          } catch(e) {}
+        }
+
+        return horasPorOperador;
+      },
+
       render() {
         this.renderVazioBanner();
+        if (this._timerInterval) {
+          clearInterval(this._timerInterval);
+          this._timerInterval = null;
+        }
+
+        const teleTotalEl = document.getElementById('teleTotalCurrent');
+
         if (!this.current || !this.current.operador) {
           document.getElementById('teleAvatar').textContent = '--';
           document.getElementById('teleNome').textContent = 'Nenhum operador';
           document.getElementById('teleInicio').textContent = '--:--';
           document.getElementById('teleTempo').textContent = '00:00:00';
+          if (teleTotalEl) teleTotalEl.style.display = 'none';
           return;
         }
 
@@ -178,26 +257,61 @@
           const [h, m] = this.current.horario.split(':').map(Number);
           const start = new Date();
           start.setHours(h, m, 0, 0);
+          let secCount = 0;
+
           const update = () => {
             const diff = Date.now() - start.getTime();
-            if (diff > 0) document.getElementById('teleTempo').textContent = Utils.formatDuration(diff).display;
+            if (diff >= 0) {
+              document.getElementById('teleTempo').textContent = Utils.formatDuration(diff).display;
+              const tempoMap = this.getHorasPorOperador();
+              const totalMin = tempoMap[this.current.operador] || 0;
+              const totH = Math.floor(totalMin / 60);
+              const totM = totalMin % 60;
+              if (teleTotalEl) {
+                teleTotalEl.style.display = 'block';
+                teleTotalEl.innerHTML = `Tempo total acumulado: <strong>${totH}h ${String(totM).padStart(2, '0')}m</strong>`;
+              }
+            }
+            secCount++;
+            // A cada 30 segundos, atualiza os badges dos cards e estatísticas com o tempo em tempo real
+            if (secCount % 30 === 0) {
+              this.renderGrid();
+              this.renderStats();
+            }
           };
           update();
-          setInterval(update, 1000);
+          this._timerInterval = setInterval(update, 1000);
         }
       },
 
       renderGrid() {
         const grid = document.getElementById('militaresGrid');
-        grid.innerHTML = this.militares.map(m => `
-          <div class="tele-militar-card" onclick="Telegrafia.trocar('${m.id}')">
-            <div class="avatar">${Utils.getInitials(m.nome)}</div>
-            <div>
-              <div style="font-weight:500">${Utils.escapeHtml(m.nome)}</div>
-              <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.posto || '')}</div>
+        const tempoMap = this.getHorasPorOperador();
+
+        grid.innerHTML = this.militares.map(m => {
+          const isCurrent = this.current && (this.current.militarId === m.id || this.current.operador === m.nome);
+          const totalMin = tempoMap[m.nome] || 0;
+          const h = Math.floor(totalMin / 60);
+          const min = totalMin % 60;
+          const tempoFmt = `${h}h ${String(min).padStart(2, '0')}m`;
+
+          return `
+            <div class="tele-militar-card ${isCurrent ? 'tele-card-active' : ''}" onclick="Telegrafia.trocar('${m.id}')" title="Clique para assumir a telegrafia">
+              <div class="avatar">${Utils.getInitials(m.nome)}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:4px">
+                  <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Utils.escapeHtml(m.nome)}</span>
+                  ${isCurrent ? '<span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:var(--prontidao-dim);color:var(--prontidao-color);font-weight:600">No Posto</span>' : ''}
+                </div>
+                <div style="font-size:0.8rem;color:var(--text-muted)">${Utils.escapeHtml(m.posto || '')}</div>
+                <div class="tele-tempo-total-badge">
+                  <span style="opacity:0.75">⏱️ Total:</span>
+                  <span>${tempoFmt}</span>
+                </div>
+              </div>
             </div>
-          </div>
-        `).join('');
+          `;
+        }).join('') || '<div class="empty-state"><p>Nenhum militar na equipe</p></div>';
       },
 
       renderHistory() {
@@ -216,36 +330,20 @@
       },
 
       renderStats() {
-        const all = [...(this.history || [])];
-        if (this.current && this.current.operador) {
-          all.push({ operador: this.current.operador, militarId: this.current.militarId, horario: this.current.horario, duracao: null });
-        }
-
-        const horasPorOperador = {};
-        all.forEach(h => {
-          const nome = h.operador || 'Desconhecido';
-          if (!horasPorOperador[nome]) horasPorOperador[nome] = 0;
-          if (h.duracao) {
-            const match = h.duracao.match(/(\d+)h\s*(\d+)m/);
-            if (match) horasPorOperador[nome] += parseInt(match[1]) * 60 + parseInt(match[2]);
-            else {
-              const parts = h.duracao.split(':');
-              if (parts.length === 3) horasPorOperador[nome] += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-            }
-          }
-        });
+        const horasPorOperador = this.getHorasPorOperador();
 
         const totalTrocas = this.history ? this.history.length : 0;
         const totalMinutos = Object.values(horasPorOperador).reduce((a, b) => a + b, 0);
-        const operadores = Object.keys(horasPorOperador).length;
-        const mediaMin = operadores > 0 ? Math.round(totalMinutos / operadores) : 0;
+        const operadoresComTempo = Object.values(horasPorOperador).filter(m => m > 0).length;
+        const totalIntegrantes = Object.keys(horasPorOperador).length;
+        const mediaMin = operadoresComTempo > 0 ? Math.round(totalMinutos / operadoresComTempo) : 0;
 
         const statsGrid = document.getElementById('statsGrid');
         statsGrid.innerHTML = `
           <div class="tele-stat-card"><div class="stat-value">${totalTrocas}</div><div class="stat-label">Total de Trocas</div></div>
-          <div class="tele-stat-card"><div class="stat-value">${operadores}</div><div class="stat-label">Integrantes</div></div>
-          <div class="tele-stat-card"><div class="stat-value">${Math.floor(totalMinutos / 60)}h ${totalMinutos % 60}m</div><div class="stat-label">Tempo Total</div></div>
-          <div class="tele-stat-card"><div class="stat-value">${Math.floor(mediaMin / 60)}h ${mediaMin % 60}m</div><div class="stat-label">Media por Integrante</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${operadoresComTempo} / ${totalIntegrantes}</div><div class="stat-label">Integrantes no Serviço</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${Math.floor(totalMinutos / 60)}h ${String(totalMinutos % 60).padStart(2,'0')}m</div><div class="stat-label">Tempo Total na Telegrafia</div></div>
+          <div class="tele-stat-card"><div class="stat-value">${Math.floor(mediaMin / 60)}h ${String(mediaMin % 60).padStart(2,'0')}m</div><div class="stat-label">Média por Integrante Ativo</div></div>
         `;
 
         const chartContainer = document.getElementById('chartContainer');
@@ -256,15 +354,20 @@
         const maxMin = Math.max(...entries.map(e => e[1]), 1);
         const colors = ['#7c5cfc','#4caf50','#ff9800','#e53935','#3b82f6','#e91e63','#00bcd4','#8bc34a'];
         chartBars.innerHTML = entries.map(([nome, min], i) => {
-          const pct = Math.max((min / maxMin) * 100, 5);
+          const pct = maxMin > 0 ? Math.max((min / maxMin) * 100, (min > 0 ? 5 : 0)) : 0;
           const h = Math.floor(min / 60);
           const m = min % 60;
           const color = colors[i % colors.length];
+          const isCurrent = this.current && this.current.operador === nome;
           return `
             <div class="chart-bar-row">
-              <div class="chart-bar-label">${Utils.escapeHtml(nome)}</div>
-              <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${pct}%;background:${color}">${h}h${m > 0 ? m + 'm' : ''}</div></div>
-              <div class="chart-bar-value">${h}h${m > 0 ? ' ' + m + 'm' : ''}</div>
+              <div class="chart-bar-label" title="${Utils.escapeHtml(nome)}">${Utils.escapeHtml(nome)} ${isCurrent ? '⚡' : ''}</div>
+              <div class="chart-bar-track">
+                <div class="chart-bar-fill" style="width:${pct}%;background:${min > 0 ? color : 'var(--border-light)'};color:${min > 0 ? '#fff' : 'var(--text-muted)'}">
+                  ${h}h ${String(m).padStart(2, '0')}m
+                </div>
+              </div>
+              <div class="chart-bar-value">${h}h ${String(m).padStart(2, '0')}m</div>
             </div>
           `;
         }).join('');

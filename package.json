@@ -1,13 +1,11 @@
 {
-  "name": "rotinana-de-servico",
+  "name": "sgpo",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Sistema de Gestão de Postos e Ocorrências",
+  "main": "server.js",
   "scripts": {
-    "dev": "node server.js",
     "start": "node server.js",
-    "build": "echo 'No build step required'"
-  },
-  "dependencies": {
-    "express": "^4.21.0"
+    "dev": "node server.js",
+    "build": "node -c js/auth.js js/api.js js/nav.js js/sync.js js/utils.js js/dashboard.js"
   }
 }

@@ -1,0 +1,7 @@
+{
+  "name": "SGPO - Sistema de Gestão da Prontidão Operacional",
+  "description": "Sistema de Gestão da Prontidão Operacional para Corpos de Bombeiros Militares",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

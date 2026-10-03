@@ -145,12 +145,13 @@
           const data = await API.getServicoAtual(Auth.userId);
           if (!data?.servico) return;
           this.servico = data.servico;
-          this.todos = data.oficiaisTodos || [];
-          this.presentes = data.oficiais || [];
+          const sanitize = (list) => (list || []).filter(o => o && o.id && !String(o.id).startsWith('o-00'));
+          this.todos = sanitize(data.oficiaisTodos);
+          this.presentes = sanitize(data.oficiais);
           NAV.updateProntidao(data.servico.prontidao);
           await this.loadHistorico();
           this.render();
-          Sync.on('oficiais_updated', (o) => { this.presentes = o; this.render(); });
+          Sync.on('oficiais_updated', (o) => { this.presentes = sanitize(o); this.render(); });
           const config = JSON.parse(localStorage.getItem('sgpo_config') || '{}');
           const syncInterval = (parseInt(config.syncIntervalo) || 30) * 1000;
           Sync.start(this.servico.id, syncInterval);
@@ -229,7 +230,7 @@
           return `
             <div class="timeline-item ${tipo}">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span class="tl-horario">${Utils.escapeHtml(h.horario || '--:--')}</span>
+                <span class="tl-horario">${Utils.formatDateTime(h.horario)}</span>
                 <span class="tl-nome">${Utils.escapeHtml(h.nome || '-')}</span>
                 <span class="tl-tipo ${tipo}">${tipo === 'entrada' ? 'ENTRADA' : 'SAIDA'}</span>
                 ${isAnunciado ? '<span style="font-size:0.7rem;padding:1px 6px;border-radius:6px;background:rgba(255,193,7,.15);color:#ffb300">📢 Anunciado</span>' : ''}
@@ -261,7 +262,7 @@
         const ant = (this.historico || []).find(h => h.oficialId === oficialId && (h.observacao || '').toLowerCase().includes('anunciado'));
         if (ant) {
           jaAnunciadoEl.style.display = 'block';
-          jaAnunciadoEl.innerHTML = `<div class="ja-anunciado">📢 Este oficial ja foi anunciado as <strong>${Utils.escapeHtml(ant.horario || '--:--')}</strong>. Entrada sera registrada normalmente.</div>`;
+          jaAnunciadoEl.innerHTML = `<div class="ja-anunciado">📢 Este oficial ja foi anunciado as <strong>${Utils.formatDateTime(ant.horario)}</strong>. Entrada sera registrada normalmente.</div>`;
         }
 
         if (this.presentes.length === 0) {

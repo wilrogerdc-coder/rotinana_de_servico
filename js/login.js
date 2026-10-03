@@ -1,9 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-  if (Auth.isLoggedIn) {
-    window.location.href = 'dashboard.html';
-    return;
-  }
-
   const form = document.getElementById('loginForm');
   const errorEl = document.getElementById('loginError');
   const loginBtn = document.getElementById('loginBtn');
@@ -27,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const result = await Auth.login(usuario, senha);
 
     if (result.success) {
-      window.location.href = 'dashboard.html';
+      window.location.href = 'servicos.html';
     } else {
       errorEl.textContent = result.error;
       errorEl.classList.add('visible');

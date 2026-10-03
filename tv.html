@@ -447,14 +447,32 @@
       updateTimeline() {
         const el = document.getElementById('tvTimeline');
         if (!el) return;
+        const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
         if (typeof TimelineStore !== 'undefined') {
-          const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
           this.rotina = TimelineStore.mergeInto(this.rotina || [], sId);
         }
         const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
         const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
+        const isOc = (a) => {
+          if (!a) return false;
+          const id = String(a.id || '');
+          const prog = String(a.programa || '');
+          const nome = String(a.nome || '');
+          return id.startsWith('r-oc-') || id.startsWith('r-desp-') || id.startsWith('r-ret-') || id.startsWith('r-ocf-') ||
+                 prog === 'Ocorrências' || prog === 'Ocorrência' ||
+                 nome.includes('🚨') || nome.includes('Ocorrência #') || nome.includes('Despacho:');
+        };
         const items = (this.rotina || [])
-          .filter(a => activeStatuses.includes(a.status) || opPrefixes.some(p => (a.id || '').startsWith(p)))
+          .filter(a => {
+            if (!a) return false;
+            if (sId && a.servicoId && a.servicoId !== sId) return false;
+            if (isOc(a)) {
+              if (!sId || !a.servicoId || a.servicoId !== sId) return false;
+            }
+            if (!activeStatuses.includes(a.status) && !opPrefixes.some(p => (a.id || '').startsWith(p))) return false;
+            if (a.id?.startsWith('r-tele-') && (a.nome?.includes('após retorno da viatura') || a.nome?.includes('substituído automaticamente'))) return false;
+            return true;
+          })
           .sort((a, b) => {
             const getMin = (t) => {
               if (!t) return 99999;
@@ -524,7 +542,7 @@
         el.innerHTML = recent.map(n => `
           <div class="tv-alert-item">
             ${Utils.escapeHtml(n.mensagem)}
-            <span class="tv-alert-time">${n.horario || ''}</span>
+            <span class="tv-alert-time">${Utils.formatDateTime(n.horario)}</span>
           </div>
         `).join('');
       },

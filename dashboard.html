@@ -16,12 +16,15 @@
     <div class="dashboard-grid">
       <div class="dash-countdown">
         <div class="dash-countdown-content">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
             <div class="dash-countdown-label">Tempo Restante do Plantão</div>
-            <button class="btn btn-danger btn-sm" onclick="Dashboard.encerrarServico()" style="font-size:0.75rem;padding:4px 12px">Encerrar Serviço</button>
-            <button class="btn btn-primary btn-sm" onclick="Dashboard.showOcorrenciaNova()" id="btnNovaOcorrencia" style="font-size:0.75rem;padding:4px 12px;background:#e53935;border-color:#e53935">🚨 Ocorrência</button>
-            <button class="btn btn-primary btn-sm" onclick="Dashboard.showEditarServico()" id="btnEditarServico" style="font-size:0.75rem;padding:4px 12px;display:none">Editar Serviço</button>
-            <button class="btn btn-secondary btn-sm" onclick="Dashboard.showSolicitacoes()" id="btnSolicitacoes" style="font-size:0.75rem;padding:4px 12px;display:none">Solicitações</button>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-sm" id="btnEncerrarOcorrenciaTopo" onclick="Dashboard.abrirEncerrarOcorrenciaDireto()" style="font-size:0.75rem;padding:4px 12px;background:#00c853;border-color:#00c853;color:#fff;font-weight:700;display:none" title="Encerrar ocorrência diretamente e liberar viaturas para Disponível">🏁 Encerrar Ocorrência</button>
+              <button class="btn btn-danger btn-sm" onclick="Dashboard.encerrarServico()" style="font-size:0.75rem;padding:4px 12px">Encerrar Serviço</button>
+              <button class="btn btn-primary btn-sm" onclick="Dashboard.showOcorrenciaNova()" id="btnNovaOcorrencia" style="font-size:0.75rem;padding:4px 12px;background:#e53935;border-color:#e53935">🚨 Ocorrência</button>
+              <button class="btn btn-primary btn-sm" onclick="Dashboard.showEditarServico()" id="btnEditarServico" style="font-size:0.75rem;padding:4px 12px;display:none">Editar Serviço</button>
+              <button class="btn btn-secondary btn-sm" onclick="Dashboard.showSolicitacoes()" id="btnSolicitacoes" style="font-size:0.75rem;padding:4px 12px;display:none">Solicitações</button>
+            </div>
           </div>
           <div class="dash-countdown-time" id="countdownTime">00:00:00</div>
           <div class="dash-progress">
@@ -93,8 +96,11 @@
   <div class="modal-overlay" id="noServiceModal" style="display:none">
     <div class="modal" style="text-align:center">
       <h3 style="margin-bottom:16px">Nenhum serviço ativo</h3>
-      <p style="color:var(--text-secondary);margin-bottom:24px">Inicie um novo serviço para começar o plantão.</p>
-      <button class="btn btn-primary btn-lg" onclick="location.href='rotina.html?action=iniciar'">Iniciar Serviço</button>
+      <p style="color:var(--text-secondary);margin-bottom:24px">Selecione um serviço ativo ou inicie um novo para começar o plantão.</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="location.href='servicos.html'">📋 Selecionar Serviço</button>
+        <button class="btn btn-secondary" onclick="location.href='rotina.html?action=iniciar'">➕ Iniciar Novo</button>
+      </div>
     </div>
   </div>
 
@@ -104,8 +110,8 @@
       <p style="color:var(--text-secondary);margin-bottom:16px;font-size:0.9rem">Você não está vinculado a este serviço. Solicite acesso ao comandante.</p>
       <div class="input-group"><label class="input-label">Tipo de Acesso</label><select class="input select" id="acessoTipo"><option value="visualizar">Visualizar</option><option value="entrar_equipe">Entrar na Equipe</option></select></div>
       <div class="input-group"><label class="input-label">Motivo</label><textarea class="input" id="acessoMotivo" rows="3" placeholder="Descreva o motivo da solicitação..."></textarea></div>
-      <div style="display:flex;gap:var(--spacing-sm);justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="Dashboard.closeAcessoModal()">Cancelar</button>
+      <div style="display:flex;gap:var(--spacing-sm);justify-content:space-between">
+        <button class="btn btn-secondary" onclick="location.href='servicos.html'">Voltar aos Serviços</button>
         <button class="btn btn-primary" onclick="Dashboard.enviarSolicitacao()">Enviar Solicitação</button>
       </div>
     </div>

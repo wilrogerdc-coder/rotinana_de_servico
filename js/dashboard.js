@@ -9,6 +9,15 @@ const Dashboard = {
   countdownInterval: null,
   teleInterval: null,
 
+  _setOcorrencias(list) {
+    const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
+    if (!sId) {
+      this.ocorrencias = [];
+      return;
+    }
+    this.ocorrencias = (list || []).filter(o => o && o.servicoId === sId && o.Status !== 'removido');
+  },
+
   async init() {
     if (!Auth.requireAuth()) return;
     NAV.init('dashboard');
@@ -111,32 +120,17 @@ const Dashboard = {
           localStorage.removeItem('sgpo_active_servico_id');
           const retry = await API.getServicoAtual(Auth.userId);
           if (retry && retry.servico) {
-            const hojeCheck = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
-            if (retry.servico.data && retry.servico.data < hojeCheck) {
-              await API.encerrarServico(retry.servico.id);
-              Utils.showToast('O plantão anterior foi encerrado automaticamente no início do novo dia.', 'info');
-              document.getElementById('noServiceModal').style.display = 'flex';
-              return;
-            }
-            this.servicoData = retry.servico;
-            this.rotinaItens = retry.rotina || [];
-            this.militares = retry.militares || [];
-            this.telegrafiaData = retry.telegrafia;
-            this.oficiaisData = retry.oficiais || [];
-            this.oficiaisTodos = retry.oficiaisTodos || [];
-            this.notificacoes = retry.notificacoes || [];
-            this.extrasData = retry.extras || [];
-            this.inicioServicoTime = this.servicoData.inicioServico ? new Date(this.servicoData.inicioServico) : null;
-            this._servicoActive = true;
-            this.carregarPainel();
-            this.iniciarRelogio();
-            this.atualizarFotos();
-            document.getElementById('noServiceModal').style.display = 'none';
+            data = retry;
+          } else {
+            const nsm = document.getElementById('noServiceModal');
+            if (nsm) nsm.style.display = 'flex';
             return;
           }
+        } else {
+          const nsm = document.getElementById('noServiceModal');
+          if (nsm) nsm.style.display = 'flex';
+          return;
         }
-        document.getElementById('noServiceModal').style.display = 'flex';
-        return;
       }
 
       // Se a data do serviço for anterior a hoje, encerra automaticamente no início do próximo dia
@@ -144,7 +138,8 @@ const Dashboard = {
       if (data.servico.data && data.servico.data < hoje) {
         await API.encerrarServico(data.servico.id);
         Utils.showToast('O plantão anterior foi encerrado automaticamente no início do novo dia.', 'info');
-        document.getElementById('noServiceModal').style.display = 'flex';
+        const nsm = document.getElementById('noServiceModal');
+        if (nsm) nsm.style.display = 'flex';
         return;
       }
 
@@ -156,7 +151,8 @@ const Dashboard = {
             if (access.motivo === 'Solicitação pendente') {
               Utils.showToast('Solicitação de acesso pendente', 'warning');
             } else if (access.motivo === 'Sem acesso ao serviço') {
-              document.getElementById('acessoModal').style.display = 'flex';
+              const am = document.getElementById('acessoModal');
+              if (am) am.style.display = 'flex';
               this._pendenteServicoId = data.servico.id;
               this._pendenteData = data;
               return;
@@ -166,22 +162,15 @@ const Dashboard = {
       }
 
       this.servico = data.servico;
+      const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
       this.rotina = data.rotina || [];
       this.telegrafia = data.telegrafia || null;
       this.telegrafiaVazioDesde = data.telegrafiaVazioDesde || null;
-      this.ocorrencias = data.ocorrencias || [];
-
-      // Normalizar viaturas na base que não estão em nenhuma ocorrência ativa:
-      const ocsAtivasInit = (this.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-      const vidsEmOcorrInit = new Set();
-      ocsAtivasInit.forEach(oc => (oc.viaturaIds || []).forEach(vid => vidsEmOcorrInit.add(String(vid))));
-      this.servicoViaturas = (data.servicoViaturas || []).map(sv => {
-        if (sv && sv.status === 'retornando' && !vidsEmOcorrInit.has(String(sv.viaturaId))) {
-          return { ...sv, status: 'ativa' };
-        }
-        return sv;
-      });
+      this.servicoViaturas = data.servicoViaturas || [];
+      this._setOcorrencias(data.ocorrencias);
       API.getTiposViatura();
+
+      this.reconciliarViaturasNaBase();
 
       NAV.updateProntidao(this.servico.prontidao);
       this.updateCountdown();
@@ -202,6 +191,11 @@ const Dashboard = {
       this.updateRotinaList();
       this.updateTimeline();
       this.renderViaturaPanel();
+      if (data.servicosAtivos && Array.isArray(data.servicosAtivos) && data.servicosAtivos.length > 0) {
+        this.renderPostosServicos(data.servicosAtivos);
+      } else {
+        API.getServicosAtivos().then(list => this.renderPostosServicos(list)).catch(() => {});
+      }
 
       this.countdownInterval = setInterval(() => this.updateCountdown(), 1000);
 
@@ -210,8 +204,13 @@ const Dashboard = {
       Sync.on('telegrafiavazio_updated', (v) => { this.telegrafiaVazioDesde = v; if (!this.telegrafia?.operador) this.updateTelegrafia(null); });
       Sync.on('oficiais_updated', (o) => { this.updateOficiais(o); this.updateTimeline(); });
       Sync.on('notificacoes_updated', (n) => this.updateNotificacoes(n));
-      Sync.on('viaturas_updated', (v) => { this.servicoViaturas = v || []; this.renderViaturaPanel(); this.updateTimeline(); });
-      Sync.on('ocorrencias_updated', (o) => { this.ocorrencias = o || []; this.renderViaturaPanel(); this.updateTimeline(); });
+      Sync.on('viaturas_updated', (v) => { this.servicoViaturas = v || []; this.reconciliarViaturasNaBase(); this.renderViaturaPanel(); this.updateTimeline(); });
+      Sync.on('ocorrencias_updated', (o) => {
+        this._setOcorrencias(o);
+        this.reconciliarViaturasNaBase();
+        this.renderViaturaPanel();
+        this.updateTimeline();
+      });
       Sync.on('servico_updated', (s) => {
         if (s && s.rotina) { this.rotina = s.rotina; this.updateRotinaList(); this.updateTimeline(); }
       });
@@ -231,6 +230,66 @@ const Dashboard = {
     } catch (err) {
       console.error('Dashboard load error:', err);
       Utils.showToast('Erro ao carregar dados: ' + err.message, 'error');
+    }
+  },
+
+  reconciliarViaturasNaBase() {
+    if (!this.servicoViaturas || !Array.isArray(this.servicoViaturas)) {
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sgpo_cached_servico');
+          if (raw) {
+            const cached = JSON.parse(raw);
+            if (cached && Array.isArray(cached.servicoViaturas) && cached.servicoViaturas.length > 0) {
+              this.servicoViaturas = cached.servicoViaturas;
+            }
+          }
+        } catch(e) {}
+      }
+      if (!this.servicoViaturas || !Array.isArray(this.servicoViaturas)) return;
+    }
+    const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+    const pertence = (o, sv) => (typeof Utils !== 'undefined' && Utils.viaturaPertenceAOcorrencia) ? Utils.viaturaPertenceAOcorrencia(o, sv) : (Array.isArray(o?.viaturaIds) ? o.viaturaIds.some(v => String(v?.viaturaId || v?.id || v) === String(sv?.viaturaId) || String(v?.viaturaId || v?.id || v) === String(sv?.id)) : false);
+
+    const sId = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+    const ocsAtivas = (this.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : true) && isAtiva(o));
+    let alterado = false;
+    const viatsParaSincronizar = [];
+
+    this.servicoViaturas.forEach(sv => {
+      if (sv.Status === 'encerrado' || sv.status === 'encerrada' || sv.status === 'reserva') return;
+      const emOcorr = ocsAtivas.some(o => pertence(o, sv));
+      if (!emOcorr) {
+        if (sv.status !== 'ativa' || sv.Status !== 'ativo') {
+          sv.status = 'ativa';
+          sv.Status = 'ativo';
+          alterado = true;
+          viatsParaSincronizar.push(sv);
+        }
+      }
+    });
+
+    if (alterado) {
+      if (typeof API !== 'undefined' && typeof API._reconciliarViaturasNaBase === 'function') {
+        API._reconciliarViaturasNaBase({
+          servicoViaturas: this.servicoViaturas,
+          ocorrencias: this.ocorrencias,
+          servico: this.servico
+        });
+      }
+      if (viatsParaSincronizar.length > 0 && typeof API !== 'undefined' && API.editarServicoViatura) {
+        viatsParaSincronizar.forEach(sv => {
+          API.editarServicoViatura({
+            id: sv.id,
+            servicoViaturaId: sv.id,
+            status: 'ativa'
+          }).catch(() => {});
+        });
+      }
+      this.renderViaturaPanel();
+      if (typeof NAV !== 'undefined' && NAV.checkOcorrenciasAtivas) {
+        NAV.checkOcorrenciasAtivas();
+      }
     }
   },
 
@@ -393,34 +452,121 @@ const Dashboard = {
 
   encerrarServico() {
     if (!this.servico) return;
-    document.getElementById('modalTitle').textContent = '⚠️ Encerrar Serviço Ativo';
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = '⚠️ Encerrar Serviço Ativo';
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <div style="padding:16px 0;text-align:center">
         <div style="font-size:2.4rem;margin-bottom:8px">🏁</div>
         <p style="font-weight:700;font-size:1.05rem;color:var(--text-primary);margin-bottom:8px">Deseja realmente encerrar o serviço atual?</p>
         <p style="font-size:0.85rem;color:var(--text-secondary)">Esta ação irá finalizar o plantão e desconectar o serviço ativo.</p>
       </div>
     `;
-    document.getElementById('modalFooter').innerHTML = `
+    const mFooter = document.getElementById('modalFooter');
+    if (mFooter) mFooter.innerHTML = `
       <button class="btn btn-secondary" onclick="Dashboard.closeModal()">Cancelar</button>
       <button class="btn btn-danger" onclick="Dashboard.confirmarEncerrarServico()">Confirmar Encerramento</button>
     `;
-    document.getElementById('modalOverlay').style.display = 'flex';
+    const mOverlay = document.getElementById('modalOverlay');
+    if (mOverlay) mOverlay.style.display = 'flex';
+  },
+
+  renderPostosServicos(servicosAtivos) {
+    const bar = document.getElementById('dashPostosBar');
+    const list = document.getElementById('dashPostosList');
+    const count = document.getElementById('dashPostosCount');
+    const badge = document.getElementById('dashActivePostoBadge');
+    if (!bar || !list) return;
+
+    if (!servicosAtivos || !Array.isArray(servicosAtivos) || servicosAtivos.length === 0) {
+      bar.style.display = 'none';
+      if (badge) badge.style.display = 'none';
+      return;
+    }
+
+    bar.style.display = 'block';
+    if (count) count.textContent = servicosAtivos.length;
+
+    const curServicoId = this.servico?.id;
+    const curPosto = servicosAtivos.find(s => s.id === curServicoId);
+    if (badge && curPosto) {
+      badge.style.display = 'inline-block';
+      badge.textContent = curPosto.postoNome || 'Posto Atual';
+    }
+
+    list.innerHTML = servicosAtivos.map(s => {
+      const isCurrent = s.id === curServicoId;
+      const ativ = s.atividadeAtual;
+      const ativNome = ativ?.nome ? Utils.escapeHtml(ativ.nome) : 'Nenhuma atividade iniciada';
+      const ativHorario = ativ?.horario || '--:--';
+      const ativStatus = ativ?.status || '-';
+      const statusBadge = ativStatus === 'concluida' ? 'badge-green' : (ativStatus === 'em_andamento' ? 'badge-yellow' : (ativStatus === 'nao_realizada' ? 'badge-warning' : 'badge-info'));
+      const statusLabel = ativStatus === 'concluida' ? 'Concluída' : (ativStatus === 'em_andamento' ? 'Em andamento' : (ativStatus === 'nao_realizada' ? 'Prejudicada' : 'Pendente'));
+
+      return `
+        <div class="dash-posto-card ${isCurrent ? 'active' : ''}" onclick="Dashboard.switchPostoServico('${s.id}')" style="cursor:pointer;padding:12px 14px;border-radius:10px;border:2px solid ${isCurrent ? 'var(--prontidao-color)' : 'var(--border-light)'};background:${isCurrent ? 'var(--prontidao-dim, rgba(255,255,255,0.05))' : 'var(--bg-secondary)'};transition:all 150ms">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-weight:700;font-size:0.9rem;display:flex;align-items:center;gap:6px">
+              <span>🏛️</span>
+              <span>${Utils.escapeHtml(s.postoNome || 'Posto')}</span>
+            </div>
+            <span class="badge" style="text-transform:capitalize;font-size:0.7rem;background:var(--prontidao-color);color:#000;font-weight:700">${s.prontidao || 'verde'}</span>
+          </div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:8px">
+            <span>👨‍✈️ ${Utils.escapeHtml(s.comandanteNome || '-')}</span>
+            <span style="margin:0 6px">•</span>
+            <span>Início: ${s.horarioInicio || '--:--'}</span>
+          </div>
+          <div style="background:var(--bg-card);padding:8px 10px;border-radius:8px;border:1px solid var(--border-light);margin-bottom:6px">
+            <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;margin-bottom:3px">⚡ Atividade do Posto</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+              <span style="font-weight:600;font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${ativNome}">${ativHorario} ${ativNome}</span>
+              <span class="badge ${statusBadge}" style="font-size:0.68rem;flex-shrink:0">${statusLabel}</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:0.75rem;color:var(--text-secondary)">
+            <span>Progresso: <strong>${s.totalConcluidas || 0}/${s.totalAtividades || 0}</strong></span>
+            <span style="font-weight:600;color:${isCurrent ? 'var(--prontidao-color)' : 'var(--text-muted)'}">${isCurrent ? '● Em foco' : 'Clique para alternar →'}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  async switchPostoServico(servicoId) {
+    if (this.servico?.id === servicoId) return;
+    localStorage.setItem('sgpo_active_servico_id', servicoId);
+    localStorage.removeItem('sgpo_cached_servico');
+    clearInterval(this.countdownInterval);
+    Sync.stop();
+    await this.loadServico();
+    Utils.showToast('Exibindo atividades do posto selecionado', 'info');
   },
 
   async confirmarEncerrarServico() {
     this.closeModal();
     try {
-      const result = await API.encerrarServico(this.servico.id);
+      const encerrandoId = this.servico.id;
+      const result = await API.encerrarServico(encerrandoId);
       if (result.success) {
-        Utils.log('encerrar_servico', 'Serviço encerrado via dashboard', 'dashboard');
+        Utils.log('encerrar_servico', `Serviço ${encerrandoId} encerrado via dashboard`, 'dashboard');
         Utils.showToast('Serviço encerrado com sucesso', 'success');
         clearInterval(this.countdownInterval);
         Sync.stop();
-        this.servico = null;
-        this.rotina = [];
-        this.telegrafia = null;
-        document.getElementById('noServiceModal').style.display = 'flex';
+        localStorage.removeItem('sgpo_active_servico_id');
+        localStorage.removeItem('sgpo_cached_servico');
+
+        const outros = await API.getServicosAtivos();
+        if (outros && outros.length > 0) {
+          localStorage.setItem('sgpo_active_servico_id', outros[0].id);
+          await this.loadServico();
+          Utils.showToast('Alternado para outro serviço ativo: ' + outros[0].postoNome, 'info');
+        } else {
+          this.servico = null;
+          this.rotina = [];
+          this.telegrafia = null;
+          document.getElementById('noServiceModal').style.display = 'flex';
+        }
       } else {
         Utils.showToast(result.error || 'Erro ao encerrar serviço', 'error');
       }
@@ -459,9 +605,12 @@ const Dashboard = {
   openEditSubModal(title, bodyHtml, footerHtml) {
     const modal = document.getElementById('editSubModal');
     if (!modal) return;
-    document.getElementById('editSubModalTitle').textContent = title;
-    document.getElementById('editSubModalBody').innerHTML = bodyHtml;
-    document.getElementById('editSubModalFooter').innerHTML = footerHtml || '<button class="btn btn-secondary" onclick="Dashboard.closeEditSubModal()">Fechar</button>';
+    const titleEl = document.getElementById('editSubModalTitle');
+    if (titleEl) titleEl.textContent = title;
+    const bodyEl = document.getElementById('editSubModalBody');
+    if (bodyEl) bodyEl.innerHTML = bodyHtml;
+    const footerEl = document.getElementById('editSubModalFooter');
+    if (footerEl) footerEl.innerHTML = footerHtml || '<button class="btn btn-secondary" onclick="Dashboard.closeEditSubModal()">Fechar</button>';
     modal.style.display = 'flex';
     modal.style.zIndex = '10000';
   },
@@ -576,7 +725,7 @@ const Dashboard = {
 
   async _addViaturaEdicao(viaturaId, viaturaNome) {
     if ((this._viaturasEdicao || []).some(sv => sv.viaturaId === viaturaId)) return;
-    const agora = Utils.formatDateTime(new Date());
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const tempId = 'sv-temp-' + Date.now();
     const novo = { id: tempId, servicoId: this.servico?.id || '', viaturaId, viaturaNome, comandante: '', comandanteId: '', motorista: '', motoristaId: '', tripulantes: [], horarioSaida: agora, horarioRetorno: '', status: 'ativa', Status: 'ativo' };
     this._viaturasEdicao = [...(this._viaturasEdicao || []), novo];
@@ -630,8 +779,9 @@ const Dashboard = {
       <div class="input-group" style="margin-bottom:12px">
         <label class="input-label">Situação / Status da Viatura</label>
         <select class="input select" id="subEditViaturaStatus">
-          <option value="ativa" ${(!sv.status || sv.status === 'ativa') ? 'selected' : ''}>Disponível na base (Ativa)</option>
-          <option value="retornando" ${sv.status === 'retornando' ? 'selected' : ''}>Retornando</option>
+          <option value="ativa" ${(!sv.status || sv.status === 'ativa') ? 'selected' : ''}>Disponível na Base (Pronta)</option>
+          <option value="em_ocorrencia" ${sv.status === 'em_ocorrencia' ? 'selected' : ''}>Em atendimento (Ocorrência)</option>
+          <option value="retornando" ${sv.status === 'retornando' ? 'selected' : ''}>Retornando ao Quartel</option>
           <option value="encerrada" ${(sv.status === 'encerrada' || sv.status === 'reserva') ? 'selected' : ''}>Encerrada (Reserva)</option>
         </select>
       </div>
@@ -734,7 +884,7 @@ const Dashboard = {
     if (status === 'encerrada' || status === 'reserva') {
       sv.Status = 'encerrado';
       if (!sv.horarioRetorno) {
-        sv.horarioRetorno = Utils.formatDateTime(new Date());
+        sv.horarioRetorno = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       }
     } else {
       sv.Status = 'ativo';
@@ -849,7 +999,7 @@ const Dashboard = {
 
         const data = await API.getServicoAtual(Auth.userId, true);
         this.servicoViaturas = data.servicoViaturas || [];
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
         this.rotina = data.rotina || [];
         this.renderViaturaPanel();
         this.updateRotinaList();
@@ -906,21 +1056,27 @@ const Dashboard = {
     const diff = fim - now;
 
     if (diff <= 0) {
-      document.getElementById('countdownTime').textContent = '00:00:00';
-      document.getElementById('progressFill').style.width = '100%';
-      document.getElementById('progressPercent').textContent = '100%';
+      const cdEl = document.getElementById('countdownTime');
+      if (cdEl) cdEl.textContent = '00:00:00';
+      const pfEl = document.getElementById('progressFill');
+      if (pfEl) pfEl.style.width = '100%';
+      const ppEl = document.getElementById('progressPercent');
+      if (ppEl) ppEl.textContent = '100%';
       if (this.servico && this.servico.Status === 'ativo' && !this._autoEncerrando) {
         this.autoEncerrarViradaDia();
       }
       return;
     }
 
-    document.getElementById('countdownTime').textContent = Utils.formatDuration(diff).display;
+    const cdEl = document.getElementById('countdownTime');
+    if (cdEl) cdEl.textContent = Utils.formatDuration(diff).display;
     const total = fim - inicio;
     const elapsed = now - inicio;
     const progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
-    document.getElementById('progressFill').style.width = progress + '%';
-    document.getElementById('progressPercent').textContent = Math.round(progress) + '%';
+    const pfEl = document.getElementById('progressFill');
+    if (pfEl) pfEl.style.width = progress + '%';
+    const ppEl = document.getElementById('progressPercent');
+    if (ppEl) ppEl.textContent = Math.round(progress) + '%';
   },
 
   updateAtividadeAtual() {
@@ -930,6 +1086,7 @@ const Dashboard = {
 
     for (const a of this.rotina) {
       if (a.status === 'cancelada' || a.status === 'nao_realizada') continue;
+      if (a.id?.startsWith('r-tele-') || a.programa === 'Telegrafia') continue;
       const [h, m] = (a.horario || '').split(':').map(Number);
       const t = (h || 0) * 60 + (m || 0);
       if (t <= ct && (!atual || t > atual._t)) atual = { ...a, _t: t };
@@ -951,49 +1108,59 @@ const Dashboard = {
 
     if (atual) {
       this._lastAtualAtivId = atual.id;
-      document.getElementById('atividadeAtualNome').textContent = atual.nome;
-      document.getElementById('atividadeAtualHorario').textContent = atual.horario;
-      document.getElementById('atividadeAtualResp').textContent = 'Responsável: ' + (atual.responsavel || '-');
+      const atNome = document.getElementById('atividadeAtualNome');
+      if (atNome) atNome.textContent = atual.nome;
+      const atHora = document.getElementById('atividadeAtualHorario');
+      if (atHora) atHora.textContent = atual.horario;
+      const atResp = document.getElementById('atividadeAtualResp');
+      if (atResp) atResp.textContent = 'Responsável: ' + (atual.responsavel || '-');
       const badgeMap = { concluida: ['Concluída', 'badge-green'], em_andamento: ['Em andamento', 'badge-yellow'], nao_iniciada: ['Pendente', 'badge-info'] };
       const b = badgeMap[atual.status] || badgeMap.nao_iniciada;
       const el = document.getElementById('atividadeStatus');
-      el.textContent = b[0];
-      el.className = 'badge ' + b[1];
+      if (el) {
+        el.textContent = b[0];
+        el.className = 'badge ' + b[1];
+      }
     }
   },
 
   updateTelegrafia(t) {
     if (this.teleInterval) clearInterval(this.teleInterval);
+    const nomeEl = document.getElementById('telegrafiaNome');
+    const avatarEl = document.getElementById('telegrafiaAvatar');
+    const badgeEl = document.getElementById('telegrafiaBadge');
+    const inicioEl = document.getElementById('telegrafiaInicio');
+    const tempoEl = document.getElementById('telegrafiaTempo');
 
     if (!t || !t.operador) {
-      document.getElementById('telegrafiaNome').textContent = 'Sem operador';
-      document.getElementById('telegrafiaAvatar').textContent = '--';
-      document.getElementById('telegrafiaBadge').style.display = 'inline';
+      if (nomeEl) nomeEl.textContent = 'Sem operador';
+      if (avatarEl) avatarEl.textContent = '--';
+      if (badgeEl) badgeEl.style.display = 'inline';
       if (this.telegrafiaVazioDesde) {
-        document.getElementById('telegrafiaInicio').textContent = this.telegrafiaVazioDesde;
+        if (inicioEl) inicioEl.textContent = this.telegrafiaVazioDesde;
         const update = () => {
           const d = Date.now() - new Date(this.telegrafiaVazioDesde).getTime();
-          if (d > 0) document.getElementById('telegrafiaTempo').textContent = Utils.formatDuration(d).display;
+          if (d > 0 && tempoEl) tempoEl.textContent = Utils.formatDuration(d).display;
         };
         update();
         this.teleInterval = setInterval(update, 1000);
       } else {
-        document.getElementById('telegrafiaTempo').textContent = '--:--:--';
-        document.getElementById('telegrafiaInicio').textContent = '--:--';
+        if (tempoEl) tempoEl.textContent = '--:--:--';
+        if (inicioEl) inicioEl.textContent = '--:--';
       }
       return;
     }
-    document.getElementById('telegrafiaBadge').style.display = 'none';
-    document.getElementById('telegrafiaNome').textContent = t.operador;
-    document.getElementById('telegrafiaAvatar').textContent = Utils.getInitials(t.operador);
-    document.getElementById('telegrafiaInicio').textContent = t.horario || '--:--';
+    if (badgeEl) badgeEl.style.display = 'none';
+    if (nomeEl) nomeEl.textContent = t.operador;
+    if (avatarEl) avatarEl.textContent = Utils.getInitials(t.operador);
+    if (inicioEl) inicioEl.textContent = t.horario || '--:--';
 
     if (t.horario) {
       const [h, m] = t.horario.split(':').map(Number);
       const start = new Date(); start.setHours(h, m, 0, 0);
       const update = () => {
         const d = Date.now() - start.getTime();
-        if (d > 0) document.getElementById('telegrafiaTempo').textContent = Utils.formatDuration(d).display;
+        if (d > 0 && tempoEl) tempoEl.textContent = Utils.formatDuration(d).display;
       };
       update();
       this.teleInterval = setInterval(update, 1000);
@@ -1001,12 +1168,14 @@ const Dashboard = {
   },
 
   updateOficiais(oficiais) {
+    const limpos = (oficiais || []).filter(o => o && o.id && !String(o.id).startsWith('o-00'));
     const el = document.getElementById('oficiaisList');
     const countEl = document.getElementById('oficiaisCount');
-    if (countEl) countEl.textContent = oficiais.length;
-    if (oficiais.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhum oficial presente</p></div>'; return; }
+    if (countEl) countEl.textContent = limpos.length;
+    if (!el) return;
+    if (limpos.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhum oficial presente</p></div>'; return; }
 
-    const sorted = Utils.sortByAntiguidade(oficiais);
+    const sorted = Utils.sortByAntiguidade(limpos);
     el.innerHTML = sorted.map(o => `
       <div class="list-item">
         <div class="avatar">${Utils.getInitials(o.nome)}</div>
@@ -1021,12 +1190,13 @@ const Dashboard = {
 
   updateNotificacoes(notifs) {
     const el = document.getElementById('notificacoesList');
+    if (!el) return;
     if (notifs.length === 0) { el.innerHTML = '<div class="empty-state"><p>Sem notificações</p></div>'; return; }
     el.innerHTML = notifs.slice(0, 15).map(n => `
       <div class="list-item" style="opacity:${n.lida ? 0.5 : 1}">
         <div style="flex:1">
           <div style="font-size:0.85rem;${n.lida ? '' : 'font-weight:600'}">${Utils.escapeHtml(n.mensagem)}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">${Utils.formatRegistroDateTime(n.horario) || n.horario || ''}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">${n.horario || ''}</div>
         </div>
       </div>
     `).join('');
@@ -1034,18 +1204,24 @@ const Dashboard = {
 
   updateRotinaList() {
     const el = document.getElementById('rotinaList');
-    document.getElementById('atividadesCount').textContent = this.rotina.length;
-    document.getElementById('concluidasCount').textContent = this.rotina.filter(a => a.status === 'concluida').length;
-    document.getElementById('equipeCount').textContent = (this.servico?.equipe || []).length;
+    // Apenas rotina diária real de atividades; não exibe eventos de telegrafia
+    const rotinaLimpa = (this.rotina || []).filter(a => !a.id?.startsWith('r-tele-') && a.programa !== 'Telegrafia' && !a.nome?.includes('assumiu a telegrafia') && !a.nome?.includes('Telegrafia vazia'));
+    const ativEl = document.getElementById('atividadesCount');
+    if (ativEl) ativEl.textContent = rotinaLimpa.length;
+    const concEl = document.getElementById('concluidasCount');
+    if (concEl) concEl.textContent = rotinaLimpa.filter(a => a.status === 'concluida').length;
+    const eqEl = document.getElementById('equipeCount');
+    if (eqEl) eqEl.textContent = (this.servico?.equipe || []).length;
 
-    if (this.rotina.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhuma atividade registrada</p></div>'; return; }
+    if (!el) return;
+    if (rotinaLimpa.length === 0) { el.innerHTML = '<div class="empty-state"><p>Nenhuma atividade registrada</p></div>'; return; }
 
     const badge = (s) => {
       const m = { concluida: '<span class="badge badge-green">Concluída</span>', em_andamento: '<span class="badge badge-yellow">Andamento</span>', nao_iniciada: '<span class="badge badge-info">Pendente</span>', cancelada: '<span class="badge badge-danger">Cancelada</span>', nao_realizada: '<span class="badge badge-warning">Prejudicada</span>' };
       return m[s] || m.nao_iniciada;
     };
 
-    const sorted = [...this.rotina].sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
+    const sorted = [...rotinaLimpa].sort((a, b) => { const getMin = (t) => { if(!t) return 99999; const p = String(t).split(':'); const mins = (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return mins < 450 ? mins + 1440 : mins; }; return getMin(a.horario) - getMin(b.horario); });
     el.innerHTML = sorted.map(a => `
       <div class="dash-atividade-item status-${a.status}" style="cursor:pointer" onclick="Dashboard.showAtividadeDetail('${a.id}')" title="Clique para ver detalhes e ações">
         <div class="dash-atividade-item-horario">${a.horario}</div>
@@ -1059,18 +1235,37 @@ const Dashboard = {
   updateTimeline() {
     const el = document.getElementById('timeline');
     if (!el) return;
+    const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
     if (typeof TimelineStore !== 'undefined') {
-      const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
       this.rotina = TimelineStore.mergeInto(this.rotina || [], sId);
     }
     const opPrefixes = ['r-ofe-', 'r-ofs-', 'r-sva-', 'r-svr-', 'r-desp-', 'r-ret-', 'r-oc-', 'r-ocf-', 'r-tele-', 'r-act-'];
     const activeStatuses = ['concluida', 'em_andamento', 'nao_realizada', 'cancelada'];
-    const items = (this.rotina || []).filter(a => activeStatuses.includes(a.status) || opPrefixes.some(p => (a.id || '').startsWith(p))).sort((a, b) => {
+    const isOc = (a) => {
+      if (!a) return false;
+      const id = String(a.id || '');
+      const prog = String(a.programa || '');
+      const nome = String(a.nome || '');
+      return id.startsWith('r-oc-') || id.startsWith('r-desp-') || id.startsWith('r-ret-') || id.startsWith('r-ocf-') ||
+             prog === 'Ocorrências' || prog === 'Ocorrência' ||
+             nome.includes('🚨') || nome.includes('Ocorrência #') || nome.includes('Despacho:');
+    };
+    const items = (this.rotina || []).filter(a => {
+      if (!a) return false;
+      // Garante que eventos de outros serviços nunca apareçam na linha do tempo do serviço atual
+      if (sId && a.servicoId && a.servicoId !== sId) return false;
+      // Garante que registros operacionais de ocorrências pertençam estritamente ao serviço atual
+      if (isOc(a)) {
+        if (!sId || !a.servicoId || a.servicoId !== sId) return false;
+      }
+      if (!activeStatuses.includes(a.status) && !opPrefixes.some(p => (a.id || '').startsWith(p))) return false;
+      // Não exibe eventos de telegrafia que foram gerados automaticamente sem alteração explícita pelo usuário
+      if (a.id?.startsWith('r-tele-') && (a.nome?.includes('após retorno da viatura') || a.nome?.includes('substituído automaticamente'))) return false;
+      return true;
+    }).sort((a, b) => {
       const getMin = (t) => {
         if (!t) return 99999;
-        const str = String(t);
-        const timePart = str.includes(' ') ? str.split(' ')[1] : str;
-        const p = timePart.split(':');
+        const p = String(t).split(':');
         const mins = (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0);
         return mins < 450 ? mins + 1440 : mins;
       };
@@ -1109,8 +1304,7 @@ const Dashboard = {
 
       const isOp = opPrefixes.some(p => (a.id || '').startsWith(p));
       const icon = explicitEmoji || (isOp ? (catIcons[prog] || '📌') : (a.status === 'concluida' ? '✅' : (a.status === 'em_andamento' ? '⏳' : (a.status === 'nao_realizada' ? '⚠️' : (a.status === 'cancelada' ? '❌' : '📌')))));
-      const rawTime = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
-      const displayTime = (typeof Utils !== 'undefined' && Utils.formatDateTime) ? Utils.formatDateTime(rawTime) : rawTime;
+      const displayTime = a.horaConclusao || a.horaInicio || a.horaAtualizacao || a.horario;
       const badge = !isOp ? statusBadge(a.status) : '';
       const cleanName = a.nome?.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\uFE0F]+\s*/u, '') || a.nome;
 
@@ -1131,18 +1325,6 @@ const Dashboard = {
     const container = document.getElementById('viaturasContainer');
     const badge = document.getElementById('viaturasBadge');
     if (!container) return;
-
-    const ocAtivas = (this.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-    const vidsEmOcorr = new Set();
-    ocAtivas.forEach(o => (o.viaturaIds || []).forEach(vid => vidsEmOcorr.add(String(vid))));
-
-    // Normalização: viaturas na base que não estão em nenhuma ocorrência ativa devem estar como 'ativa' (Disponível)
-    (this.servicoViaturas || []).forEach(sv => {
-      if (sv && sv.status === 'retornando' && !vidsEmOcorr.has(String(sv.viaturaId))) {
-        sv.status = 'ativa';
-      }
-    });
-
     if (!this.servicoViaturas || this.servicoViaturas.length === 0) {
       container.innerHTML = '<div class="empty-state"><p>Nenhuma viatura em serviço</p></div>';
       if (badge) badge.style.display = 'none';
@@ -1150,7 +1332,8 @@ const Dashboard = {
     }
     if (badge) { badge.style.display = 'inline-block'; badge.textContent = this.servicoViaturas.length; }
 
-    const ocAtivas = (this.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
+    const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
+    const ocAtivas = (this.ocorrencias || []).filter(o => (sId ? o.servicoId === sId : false) && o.status !== 'finalizada' && o.status !== 'cancelada');
     if (typeof NAV !== 'undefined' && NAV.checkOcorrenciasAtivas) NAV.checkOcorrenciasAtivas();
     const btnOcorr = document.getElementById('btnNovaOcorrencia');
     if (btnOcorr) {
@@ -1190,9 +1373,11 @@ const Dashboard = {
       const comandanteNome = sv.comandante || comandanteTrip?.nome || '';
       const auxTripulantes = (sv.tripulantes || []).filter(t => t.funcao === 'Auxiliar' || (!t.funcao && t.id !== sv.motoristaId && t.id !== sv.comandanteId));
       const auxiliaresStr = auxTripulantes.map(t => t.nome).join(', ');
-      const ocAtiva = (this.ocorrencias || []).find(o =>
-        (o.viaturaIds || []).includes(sv.viaturaId) && o.status !== 'finalizada' && o.status !== 'cancelada'
-      );
+      const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+      const pertence = (o, sv) => (typeof Utils !== 'undefined' && Utils.viaturaPertenceAOcorrencia) ? Utils.viaturaPertenceAOcorrencia(o, sv) : (Array.isArray(o?.viaturaIds) ? o.viaturaIds.some(v => String(v?.viaturaId || v?.id || v) === String(sv?.viaturaId) || String(v?.viaturaId || v?.id || v) === String(sv?.id)) : false);
+
+      const sId = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+      const ocAtiva = (this.ocorrencias || []).find(o => (sId ? o.servicoId === sId : false) && isAtiva(o) && pertence(o, sv));
       const tc = API.getTipoCor(tipo);
 
       return `
@@ -1232,7 +1417,9 @@ const Dashboard = {
               <button class="btn btn-sm btn-secondary" style="font-size:0.72rem" onclick="Dashboard.showGerenciarOcorrenciasModal('ativas')">📋 Detalhes</button>
             ` : ''}
             ${st === 'retornando' ? `
-              <button class="btn btn-sm" style="font-size:0.75rem;background:#ff910022;color:#ff9100;border:1px solid #ff910055;font-weight:600" onclick="Dashboard.confirmarRetornoViatura('${sv.id}')">🏠 Chegada ao Quartel</button>
+              <button class="btn btn-sm" style="font-size:0.75rem;background:#00c853;color:#fff;border:1px solid #00c853;font-weight:700" onclick="Dashboard.confirmarRetornoViatura('${sv.id}')" title="Confirmar chegada da viatura na base e disponibilizar para novas ocorrências">🏠 Chegada ao Quartel (Disponível)</button>
+              ${!ocAtiva ? `<button class="btn btn-sm" style="font-size:0.72rem;background:#e5393518;color:#e53935;border:1px solid #e5393544;font-weight:600" onclick="Dashboard.showEmpenharModal('${sv.id}')">🚨 Empenhar</button>` : ''}
+              <button class="btn btn-sm btn-secondary" style="font-size:0.72rem" onclick="Dashboard.editarServicoViatura('${sv.id}')">Compor / Editar</button>
             ` : ''}
           </div>
         </div>`;
@@ -1255,11 +1442,13 @@ const Dashboard = {
         }
       }
 
+      const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const result = await API.retornarViatura({
         id: servicoViaturaId,
         servicoViaturaId,
         status: 'ativa',
         destinoStatus: 'ativa',
+        horarioRetorno: agora,
         novoTelegrafistaId: novoTelegrafista?.militarId,
         novoTelegrafistaNome: novoTelegrafista?.militarNome,
         tempoVazia: duracaoVazia
@@ -1267,14 +1456,32 @@ const Dashboard = {
       if (result.success) {
         Utils.showToast(`Viatura ${sv.viaturaNome} retornou ao quartel e está disponível`, 'success');
 
+        const evt = {
+          id: 'r-ret-' + Date.now() + '-' + (sv.viaturaId || Math.random().toString(36).substr(2, 4)),
+          servicoId: this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : '') || '',
+          horario: agora,
+          nome: `🏠 Retorno à base: ${sv.viaturaNome} (disponível na base)`,
+          programa: 'Viaturas',
+          responsavel: sv.motorista || sv.comandante || '-',
+          status: 'concluida',
+          concluidoPor: (typeof Auth !== 'undefined' && Auth.userName) || 'Sistema',
+          horaConclusao: agora
+        };
+        if (!this.rotina) this.rotina = [];
+        if (!this.rotina.some(r => r.nome?.includes(sv.viaturaNome) && (r.nome?.includes('Retorno') || r.nome?.includes('Desempenho')))) {
+          this.rotina.push(evt);
+          if (typeof TimelineStore !== 'undefined') TimelineStore.add(evt, this.servico?.id);
+        }
+
         if (novoTelegrafista && novoTelegrafista.militarId) {
           await this.registrarAssuncaoTelegrafia(novoTelegrafista.militarId, novoTelegrafista.militarNome, duracaoVazia, sv.viaturaNome);
         }
 
         const data = await API.getServicoAtual(Auth.userId, true);
         this.servicoViaturas = data.servicoViaturas || [];
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
         if (data.telegrafia !== undefined) this.telegrafia = data.telegrafia;
+        this.reconciliarViaturasNaBase();
         this.renderViaturaPanel();
         this.updateTimeline();
         this.updateTelegrafia(this.telegrafia);
@@ -1296,7 +1503,8 @@ const Dashboard = {
         Utils.showToast(`${vNome} encerrada e enviada para reserva`, 'success');
         const data = await API.getServicoAtual(Auth.userId, true);
         this.servicoViaturas = data.servicoViaturas || [];
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
+        this.reconciliarViaturasNaBase();
         this.renderViaturaPanel();
         this.updateTimeline();
         if (typeof NAV !== 'undefined' && NAV.checkOcorrenciasAtivas) await NAV.checkOcorrenciasAtivas();
@@ -1324,17 +1532,34 @@ const Dashboard = {
         }
       }
 
+      const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const result = await API.retornarViatura({
         id: servicoViaturaId,
         servicoViaturaId,
         status: 'ativa',
         destinoStatus: 'ativa',
+        horarioRetorno: agora,
         novoTelegrafistaId: novoTelegrafista?.militarId,
         novoTelegrafistaNome: novoTelegrafista?.militarNome,
         tempoVazia: duracaoVazia
       });
       if (result.success) {
-        Utils.showToast(`${vNome} retornando ao quartel`, 'success');
+        Utils.showToast(`${vNome} retornou ao quartel e está disponível na base`, 'success');
+
+        const evt = {
+          id: 'r-ret-' + Date.now() + '-' + (sv ? sv.viaturaId : Math.random().toString(36).substr(2, 4)),
+          servicoId: this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : '') || '',
+          horario: agora,
+          nome: `🏠 Retorno à base: ${vNome} (disponível na base)`,
+          programa: 'Viaturas',
+          responsavel: sv?.motorista || sv?.comandante || '-',
+          status: 'concluida',
+          concluidoPor: (typeof Auth !== 'undefined' && Auth.userName) || 'Sistema',
+          horaConclusao: agora
+        };
+        if (!this.rotina) this.rotina = [];
+        this.rotina.push(evt);
+        if (typeof TimelineStore !== 'undefined') TimelineStore.add(evt, this.servico?.id);
 
         if (novoTelegrafista && novoTelegrafista.militarId) {
           await this.registrarAssuncaoTelegrafia(novoTelegrafista.militarId, novoTelegrafista.militarNome, duracaoVazia, vNome);
@@ -1342,8 +1567,9 @@ const Dashboard = {
 
         const data = await API.getServicoAtual(Auth.userId, true);
         this.servicoViaturas = data.servicoViaturas || [];
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
         if (data.telegrafia !== undefined) this.telegrafia = data.telegrafia;
+        this.reconciliarViaturasNaBase();
         this.renderViaturaPanel();
         this.updateTimeline();
         this.updateTelegrafia(this.telegrafia);
@@ -1376,8 +1602,10 @@ const Dashboard = {
     const motoristaId = sv.motoristaId || '';
     const atuaisAux = new Set((sv.tripulantes || []).filter(t => t.funcao === 'Auxiliar' || (!t.funcao && t.id !== motoristaId && t.id !== comandanteId)).map(t => t.id).filter(Boolean));
 
-    document.getElementById('modalTitle').textContent = `Compor Viatura - ${sv.viaturaNome}`;
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = `Compor Viatura - ${sv.viaturaNome}`;
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <div class="input-group" style="margin-bottom:12px">
         <label class="input-label" style="font-weight:700">Comandante da Viatura <span style="color:#e53935">* (Obrigatório)</span></label>
         <select class="input select" id="editViaturaComandante" onchange="Dashboard.onEditViaturaFuncoesChange()">
@@ -1422,10 +1650,11 @@ const Dashboard = {
         </div>
       </div>
       <div class="input-group">
-        <label class="input-label">Status</label>
+        <label class="input-label">Situação / Status da Viatura</label>
         <select class="input select" id="editViaturaStatus">
-          <option value="ativa" ${(!sv.status || sv.status === 'ativa') ? 'selected' : ''}>Disponível na base (Ativa)</option>
-          <option value="retornando" ${sv.status === 'retornando' ? 'selected' : ''}>Retornando</option>
+          <option value="ativa" ${(!sv.status || sv.status === 'ativa') ? 'selected' : ''}>Disponível na Base (Pronta)</option>
+          <option value="em_ocorrencia" ${sv.status === 'em_ocorrencia' ? 'selected' : ''}>Em atendimento (Ocorrência)</option>
+          <option value="retornando" ${sv.status === 'retornando' ? 'selected' : ''}>Retornando ao Quartel</option>
           <option value="encerrada" ${(sv.status === 'encerrada' || sv.status === 'reserva') ? 'selected' : ''}>Encerrada (Colocar na Reserva)</option>
         </select>
       </div>
@@ -1610,7 +1839,7 @@ const Dashboard = {
         this.closeModal();
         const data = await API.getServicoAtual(Auth.userId, true);
         this.servicoViaturas = data.servicoViaturas || [];
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
         this.renderViaturaPanel();
         this.updateTimeline();
       } else {
@@ -1622,15 +1851,13 @@ const Dashboard = {
   _getTempoDecorrido(horaStr) {
     if (!horaStr) return '-';
     try {
-      const timePart = horaStr.includes(' ') ? horaStr.split(' ')[1] : horaStr;
-      const parts = timePart.split(':');
+      const parts = horaStr.split(':');
       if (parts.length < 2) return '-';
       const h = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10);
-      const s = parseInt(parts[2], 10) || 0;
       const now = new Date();
       const acionamento = new Date();
-      acionamento.setHours(h, m, s, 0);
+      acionamento.setHours(h, m, 0, 0);
       let diffMs = now.getTime() - acionamento.getTime();
       if (diffMs < 0) diffMs += 24 * 3600 * 1000;
       const totalMin = Math.floor(diffMs / 60000);
@@ -1647,16 +1874,19 @@ const Dashboard = {
     const modalEl = document.querySelector('#modalOverlay .modal');
     if (modalEl) modalEl.style.maxWidth = '660px';
 
-    const ativas = (this.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-    const encerradas = (this.ocorrencias || []).filter(o => o.status === 'finalizada' || o.status === 'cancelada' || o.status === 'trote');
+    const sId = this.servico?.id || (typeof localStorage !== 'undefined' ? localStorage.getItem('sgpo_active_servico_id') : null);
+    const ativas = (this.ocorrencias || []).filter(o => (sId ? o.servicoId === sId : false) && o.status !== 'finalizada' && o.status !== 'cancelada' && o.status !== 'trote');
+    const encerradas = (this.ocorrencias || []).filter(o => (sId ? o.servicoId === sId : false) && (o.status === 'finalizada' || o.status === 'cancelada' || o.status === 'trote'));
 
     if (activeTab === 'empenhar' || (ativas.length === 0 && activeTab !== 'historico')) {
       this.showEmpenharModal();
       return;
     }
 
-    document.getElementById('modalTitle').textContent = '🚨 Central de Ocorrências do Plantão';
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = '🚨 Central de Ocorrências do Plantão';
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <div class="ocorr-tabs-nav">
         <button class="ocorr-tab-btn" onclick="Dashboard.showEmpenharModal()">🚨 + Empenhar Ocorrência</button>
         <button class="ocorr-tab-btn ${activeTab === 'ativas' ? 'active' : ''}" onclick="Dashboard.showGerenciarOcorrenciasModal('ativas')">📋 Em Atendimento (${ativas.length})</button>
@@ -1777,25 +2007,69 @@ const Dashboard = {
     const modalEl = document.querySelector('#modalOverlay .modal');
     if (modalEl) modalEl.style.maxWidth = '660px';
 
-    const ocorrenciasAtivas = (this.ocorrencias || []).filter(o => o.status !== 'finalizada' && o.status !== 'cancelada');
-    const vidsEmOcorr = new Set();
-    ocorrenciasAtivas.forEach(o => (o.viaturaIds || []).forEach(vid => vidsEmOcorr.add(String(vid))));
+    this.reconciliarViaturasNaBase();
 
-    // Garante que todas as viaturas na base (sem ocorrência ativa) estejam disponíveis para empenho
-    (this.servicoViaturas || []).forEach(sv => {
-      if (sv && sv.status === 'retornando' && !vidsEmOcorr.has(String(sv.viaturaId))) {
+    const isAtiva = (o) => (typeof Utils !== 'undefined' && Utils.isOcorrenciaAtiva) ? Utils.isOcorrenciaAtiva(o) : (!['finalizada', 'finalizado', 'cancelada', 'cancelado', 'trote', 'apoio_desnecessario', 'encerrada', 'encerrado', 'concluida', 'concluido', 'concluída', 'concluído', 'arquivada', 'arquivado', 'retornou', 'retornando', 'em_retorno'].includes(String(o?.status || '').toLowerCase().trim()) && !o?.horaRetorno && (String(o?.status || '').trim() !== ''));
+    const pertence = (o, sv) => (typeof Utils !== 'undefined' && Utils.viaturaPertenceAOcorrencia) ? Utils.viaturaPertenceAOcorrencia(o, sv) : (Array.isArray(o?.viaturaIds) ? o.viaturaIds.some(v => String(v?.viaturaId || v?.id || v) === String(sv?.viaturaId) || String(v?.viaturaId || v?.id || v) === String(sv?.id)) : false);
+
+    const sId = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+    const ocorrenciasAtivas = (this.ocorrencias || []).filter(o => (sId ? (o.servicoId === sId) : false) && isAtiva(o));
+
+    // Viaturas do serviço que não estão empenhadas em ocorrência ativa nem em reserva/encerradas
+    let viatsNaBase = (this.servicoViaturas || []).filter(sv => {
+      if (sv.Status === 'encerrado' || sv.status === 'encerrada' || sv.status === 'reserva') return false;
+      return !ocorrenciasAtivas.some(o => pertence(o, sv));
+    });
+
+    // Se this.servicoViaturas estiver temporariamente vazio, tenta recuperar do cache local
+    if (viatsNaBase.length === 0 && (!this.servicoViaturas || this.servicoViaturas.length === 0) && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('sgpo_cached_servico');
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached && Array.isArray(cached.servicoViaturas) && cached.servicoViaturas.length > 0) {
+            this.servicoViaturas = cached.servicoViaturas;
+            viatsNaBase = this.servicoViaturas.filter(sv => {
+              if (sv.Status === 'encerrado' || sv.status === 'encerrada' || sv.status === 'reserva') return false;
+              return !ocorrenciasAtivas.some(o => pertence(o, sv));
+            });
+          }
+        }
+      } catch(e) {}
+    }
+
+    // Se alguma viatura na base estava em 'retornando' ou 'em_ocorrencia' (sem ocorrência ativa), garante status 'ativa' e sincroniza
+    let alterouNaAbertura = false;
+    viatsNaBase.forEach(sv => {
+      if (sv.status !== 'ativa') {
         sv.status = 'ativa';
+        sv.Status = 'ativo';
+        alterouNaAbertura = true;
+        if (typeof API !== 'undefined' && API.editarServicoViatura) {
+          API.editarServicoViatura({ id: sv.id, servicoViaturaId: sv.id, status: 'ativa' }).catch(() => {});
+        }
       }
     });
 
-    const ativas = (this.servicoViaturas || []).filter(sv => sv.status === 'ativa');
-    const equipe = this.servico?.equipe || [];
+    if (alterouNaAbertura) {
+      this.renderViaturaPanel();
+      if (typeof API !== 'undefined' && typeof API._reconciliarViaturasNaBase === 'function') {
+        API._reconciliarViaturasNaBase({
+          servicoViaturas: this.servicoViaturas,
+          ocorrencias: this.ocorrencias,
+          servico: this.servico
+        });
+      }
+    }
+
+    let ativas = viatsNaBase;
 
     this._empenhoModo = preselectedOcorrenciaId ? 'apoio' : 'nova';
     this._preselectedSvId = preselectedServicoViaturaId;
     this._preselectedOcId = preselectedOcorrenciaId;
 
-    document.getElementById('modalTitle').textContent = '🚨 Empenhar Ocorrência — Despacho Operacional';
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = '🚨 Empenhar Ocorrência — Despacho Operacional';
     
     if (ativas.length === 0) {
       document.getElementById('modalBody').innerHTML = `
@@ -2228,7 +2502,7 @@ const Dashboard = {
 
       const fresh = await API.getServicoAtual(Auth.userId);
       this.servicoViaturas = fresh.servicoViaturas || [];
-      this.ocorrencias = fresh.ocorrencias || [];
+      this._setOcorrencias(fresh.ocorrencias);
       if (fresh.telegrafia !== undefined) this.telegrafia = fresh.telegrafia;
       this.renderViaturaPanel();
       this.updateTelegrafia(fresh.telegrafia);
@@ -2312,7 +2586,7 @@ const Dashboard = {
 
       const fresh = await API.getServicoAtual(Auth.userId);
       this.servicoViaturas = fresh.servicoViaturas || [];
-      this.ocorrencias = fresh.ocorrencias || [];
+      this._setOcorrencias(fresh.ocorrencias);
       if (fresh.telegrafia !== undefined) this.telegrafia = fresh.telegrafia;
       this.renderViaturaPanel();
       this.updateTelegrafia(fresh.telegrafia);
@@ -2346,7 +2620,7 @@ const Dashboard = {
         inicio = vaziaEvt.horario || vaziaEvt.horaConclusao;
       }
     }
-    const agora = Utils.formatDateTime(new Date());
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const duracao = this._calcularTempoVazia(inicio, agora);
     return { inicio: inicio || agora, duracao };
   },
@@ -2511,7 +2785,7 @@ const Dashboard = {
 
   async registrarAssuncaoTelegrafia(militarId, militarNome, duracaoVazia, viaturaNome) {
     if (!this.servico || !militarId) return;
-    const agora = Utils.formatDateTime(new Date());
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const duracaoStr = duracaoVazia || 'alguns minutos';
     const vNomeStr = viaturaNome ? ` após retorno da viatura ${viaturaNome}` : '';
 
@@ -2600,7 +2874,7 @@ const Dashboard = {
     }
 
     try {
-      const agora = Utils.formatDateTime(new Date());
+      const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const tempoDecorrido = oc ? this._getTempoDecorrido(oc.horaAcionamento) : '-';
       const desfechoPadrao = 'Ocorrência atendida e finalizada. Viatura retornou disponível à base.';
 
@@ -2680,7 +2954,7 @@ const Dashboard = {
 
       const fresh = await API.getServicoAtual(Auth.userId, true);
       this.servicoViaturas = fresh.servicoViaturas || [];
-      this.ocorrencias = fresh.ocorrencias || [];
+      this._setOcorrencias(fresh.ocorrencias);
       if (fresh.telegrafia !== undefined) this.telegrafia = fresh.telegrafia;
       this.renderViaturaPanel();
       this.updateTimeline();
@@ -2704,10 +2978,12 @@ const Dashboard = {
     const viaturasDaOcorr = (this.servicoViaturas || []).filter(sv => (oc.viaturaIds || []).includes(sv.viaturaId));
     const svAlvo = servicoViaturaId ? (this.servicoViaturas || []).find(x => x.id === servicoViaturaId) : null;
     const tempoDecorrido = this._getTempoDecorrido(oc.horaAcionamento);
-    const agoraHora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-    document.getElementById('modalTitle').textContent = `🏁 Encerrar Ocorrência #${oc.numero}`;
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = `🏁 Encerrar Ocorrência #${oc.numero}`;
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <!-- RESUMO OPERACIONAL -->
       <div style="background:var(--bg-card, rgba(255,255,255,0.03));border:1px solid var(--border-color);border-radius:10px;padding:12px 14px;margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
@@ -2758,9 +3034,9 @@ const Dashboard = {
             <option value="apoio_desnecessario">Apoio Dispensado no Local</option>
           </select>
         </div>
-        <div class="input-group" style="width:140px">
+        <div class="input-group" style="width:130px">
           <label class="input-label" style="font-weight:600">Hora Término</label>
-          <input type="time" step="1" class="input" id="encerrarHora" value="${agoraHora}">
+          <input type="time" class="input" id="encerrarHora" value="${agora}">
         </div>
       </div>
 
@@ -2812,8 +3088,7 @@ const Dashboard = {
     const oc = (this.ocorrencias || []).find(x => x.id === ocorrId);
     if (!oc) return;
 
-    const horaInput = document.getElementById('encerrarHora')?.value;
-    const horaRetorno = horaInput ? Utils.formatDateTime(horaInput) : Utils.formatDateTime(new Date());
+    const horaRetorno = document.getElementById('encerrarHora')?.value || Utils.formatTime(new Date());
     const status = document.getElementById('encerrarStatus')?.value || 'finalizada';
     const destinoStatus = document.getElementById('encerrarDestinoViatura')?.value || 'ativa';
     const desfecho = document.getElementById('encerrarDesfecho')?.value.trim() || '';
@@ -2825,9 +3100,10 @@ const Dashboard = {
     try {
       const isVazia = this.isTelegrafiaVazia();
       let novoTelegrafista = null;
-      let duracaoVazia = '';
+      duracaoVazia = '';
+      const svAlvo = servicoViaturaId ? (this.servicoViaturas || []).find(x => String(x.id) === String(servicoViaturaId)) : null;
       const viatsRetornando = (escopo === 'parcial' && servicoViaturaId)
-        ? [sv].filter(Boolean)
+        ? [svAlvo].filter(Boolean)
         : (this.servicoViaturas || []).filter(v => (oc.viaturaIds || []).some(vid => String(vid) === String(v.viaturaId)));
 
       if (isVazia && viatsRetornando.length > 0) {
@@ -2913,7 +3189,7 @@ const Dashboard = {
 
       const fresh = await API.getServicoAtual(Auth.userId, true);
       this.servicoViaturas = fresh.servicoViaturas || [];
-      this.ocorrencias = fresh.ocorrencias || [];
+      this._setOcorrencias(fresh.ocorrencias);
       if (fresh.telegrafia !== undefined) this.telegrafia = fresh.telegrafia;
       this.renderViaturaPanel();
       this.updateTimeline();
@@ -2931,8 +3207,10 @@ const Dashboard = {
     const modalEl = document.querySelector('#modalOverlay .modal');
     if (modalEl) modalEl.style.maxWidth = '540px';
 
-    document.getElementById('modalTitle').textContent = `Editar Ocorrência #${oc.numero}`;
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = `Editar Ocorrência #${oc.numero}`;
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <div class="input-group" style="margin-bottom:12px">
         <label class="input-label">Natureza</label>
         <select class="input select" id="editOcorrNatureza">
@@ -2971,7 +3249,7 @@ const Dashboard = {
         Utils.showToast('Ocorrência atualizada com sucesso', 'success');
         this.closeModal();
         const data = await API.getServicoAtual(Auth.userId);
-        this.ocorrencias = data.ocorrencias || [];
+        this._setOcorrencias(data.ocorrencias);
         this.renderViaturaPanel();
       } else {
         Utils.showToast(result.error || 'Erro', 'error');
@@ -3010,8 +3288,10 @@ const Dashboard = {
     const atualId = this.telegrafia?.militarId;
     const disponiveis = equipe.filter(m => !idsEmOcorrencia.has(m.id));
 
-    document.getElementById('modalTitle').textContent = 'Selecionar Operador de Telegrafia';
-    document.getElementById('modalBody').innerHTML = `
+    const mTitle = document.getElementById('modalTitle');
+    if (mTitle) mTitle.textContent = 'Selecionar Operador de Telegrafia';
+    const mBody = document.getElementById('modalBody');
+    if (mBody) mBody.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:6px">
         ${disponiveis.length === 0 ? '<div class="empty-state"><p>Todos os militares estão em ocorrência</p><p style="font-size:0.8rem;color:var(--text-muted);margin-top:4px">Nenhum operador disponível no quartel</p></div>' :
           disponiveis.map(m => {
@@ -3070,7 +3350,8 @@ const Dashboard = {
   },
 
   closeModal() {
-    document.getElementById('modalOverlay').style.display = 'none';
+    const overlay = document.getElementById('modalOverlay');
+    if (overlay) overlay.style.display = 'none';
     const modalEl = document.querySelector('#modalOverlay .modal');
     if (modalEl) modalEl.style.maxWidth = '520px';
   },
@@ -3098,13 +3379,14 @@ const Dashboard = {
 
   showAtividadesModal() {
     const modal = document.getElementById('atividadesIniciadasModal');
+    if (!modal) return;
     const listPanel = document.getElementById('atividadesListPanel');
     const detailPanel = document.getElementById('atividadesDetailPanel');
     const title = document.getElementById('atividadesModalTitle');
 
-    title.textContent = 'Atividades do Dia';
-    detailPanel.style.display = 'none';
-    listPanel.style.display = '';
+    if (title) title.textContent = 'Atividades do Dia';
+    if (detailPanel) detailPanel.style.display = 'none';
+    if (listPanel) listPanel.style.display = '';
 
     const atividades = this._getAtividadesIniciadas();
     this._renderAtividadesList(atividades);
@@ -3169,7 +3451,7 @@ const Dashboard = {
     const detailPanel = document.getElementById('atividadesDetailPanel');
     const title = document.getElementById('atividadesModalTitle');
 
-    title.textContent = atividade.nome;
+    if (title) title.textContent = atividade.nome;
     if (listPanel) listPanel.style.display = 'none';
     if (detailPanel) detailPanel.style.display = '';
     if (modal) modal.style.display = 'flex';
@@ -3341,6 +3623,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Rotina "${a.nome}" concluída às ${horaFinal}`, 'success');
         Utils.playSound('aviso');
@@ -3371,6 +3654,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Concluída no horário previsto (${a.horario})`, 'success');
         Utils.playSound('aviso');
@@ -3401,6 +3685,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Concluída às ${now}`, 'success');
         Utils.playSound('aviso');
@@ -3431,6 +3716,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Atividade "${a.nome}" iniciada`, 'success');
       } else {
@@ -3509,6 +3795,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Atividade "${a.nome}" marcada como prejudicada`, 'warning');
       } else {
@@ -3556,6 +3843,7 @@ const Dashboard = {
         this.updateRotinaList();
         this.updateTimeline();
         this.updateAtividadeAtual();
+        API.getNotificacoes(servId).then(n => { if (n && Array.isArray(n)) this.updateNotificacoes(n); }).catch(() => {});
         this.showAtividadeDetail(id);
         Utils.showToast(`Atividade "${a.nome}" cancelada`, 'success');
       } else {
@@ -3588,13 +3876,61 @@ const Dashboard = {
     const detailPanel = document.getElementById('atividadesDetailPanel');
     const title = document.getElementById('atividadesModalTitle');
 
-    title.textContent = 'Atividades do Dia';
-    detailPanel.style.display = 'none';
-    listPanel.style.display = '';
+    if (title) title.textContent = 'Atividades do Dia';
+    if (detailPanel) detailPanel.style.display = 'none';
+    if (listPanel) listPanel.style.display = '';
   },
 
   closeAtividadesModal() {
-    document.getElementById('atividadesIniciadasModal').style.display = 'none';
+    const modal = document.getElementById('atividadesIniciadasModal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  fecharAtividadesModal() {
+    this.closeAtividadesModal();
+  },
+
+  showEditarServicoModal() {
+    return this.showEditarServico();
+  },
+
+  showSolicitacoesModal() {
+    return this.showSolicitacoes();
+  },
+
+  showAdicionarViaturaEdicao() {
+    return this.showAddViaturaEditModal();
+  },
+
+  showAdicionarEquipeEdicao() {
+    return this.showAddEquipeEditModal();
+  },
+
+  salvarEdicaoServico() {
+    return this.salvarEditarServico();
+  },
+
+  enviarSolicitacaoAcesso() {
+    return this.enviarSolicitacao();
+  },
+
+  abrirEncerrarOcorrenciaDireto() {
+    if (typeof NAV !== 'undefined' && typeof NAV.abrirModalEncerrarDireto === 'function') {
+      return NAV.abrirModalEncerrarDireto();
+    }
+    const sId = this.servico?.id || localStorage.getItem('sgpo_active_servico_id');
+    const ocsAtivas = (this.ocorrencias || []).filter(o => (sId ? o.servicoId === sId : false) && o.status !== 'finalizada' && o.status !== 'cancelada');
+    if (ocsAtivas.length === 0) {
+      Utils.showToast('Nenhuma ocorrência em andamento no momento.', 'info');
+      return;
+    }
+    return this.encerrarOcorrenciaRapida(ocsAtivas[0].id);
+  },
+
+  fecharModalEncerrar() {
+    if (typeof NAV !== 'undefined' && typeof NAV.fecharModalEncerrar === 'function') {
+      return NAV.fecharModalEncerrar();
+    }
   },
 
   _refreshAtividadesModalIfOpen() {
